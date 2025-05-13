@@ -142,12 +142,12 @@
                 </tr>
               </thead>
               <tbody>
-                <tr v-for="(line, index) in purchaseOrder.lines" :key="index">
+                <tr v-for="(line, lineIndex) in purchaseOrder.lines" :key="lineIndex">
                   <td>
                     <select 
                       v-model="line.item_id" 
                       class="form-control"
-                      @change="updateLineItem(line, index)"
+                      @change="updateLineItem(line)"
                       :disabled="isEditMode && purchaseOrder.status !== 'draft'"
                       required
                     >
@@ -206,7 +206,7 @@
                     <button 
                       type="button" 
                       class="btn btn-sm btn-danger"
-                      @click="removeLine(index)"
+                      @click="removeLine(lineIndex)"
                       :disabled="isEditMode && purchaseOrder.status !== 'draft'"
                     >
                       <i class="fas fa-trash"></i>
@@ -380,13 +380,13 @@ export default {
         total: 0
       });
     },
-    removeLine(index) {
+    removeLine(lineIndex) {
       if (confirm('Are you sure you want to remove this line?')) {
-        this.purchaseOrder.lines.splice(index, 1);
+        this.purchaseOrder.lines.splice(lineIndex, 1);
         this.updateTotals();
       }
     },
-    updateLineItem(line, index) {
+    updateLineItem(line) {
       // Find the selected item
       const item = this.items.find(i => i.item_id === line.item_id);
       if (item) {

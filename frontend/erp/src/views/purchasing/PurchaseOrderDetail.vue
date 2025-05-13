@@ -198,7 +198,7 @@
             <div class="card-body">
               <div class="status-timeline">
                 <div 
-                  v-for="(status, index) in statusTimeline" 
+                  v-for="status in statusTimeline" 
                   :key="status.name"
                   class="timeline-item"
                   :class="{ 'active': isStatusActive(status.name), 'completed': isStatusCompleted(status.name) }"

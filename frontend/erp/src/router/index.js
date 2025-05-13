@@ -79,10 +79,10 @@ import RFQSend from "../views/purchasing/RFQSend.vue";
 import RFQCompare from "../views/purchasing/RFQCompare.vue";
 
 // Import Purchase Order components
-//import PurchaseOrderList from '@/views/purchasing/PurchaseOrderList.vue';
-// import PurchaseOrderDetail from '@/views/purchasing/PurchaseOrderDetail.vue';
-// import PurchaseOrderFormView from '@/views/purchasing/PurchaseOrderFormView.vue';
-// import PurchaseOrderTrack from '@/views/purchasing/PurchaseOrderTrack.vue';
+import PurchaseOrderList from '@/views/purchasing/PurchaseOrderList.vue';
+import PurchaseOrderDetail from '@/views/purchasing/PurchaseOrderDetail.vue';
+import PurchaseOrderFormView from '@/views/purchasing/PurchaseOrderFormView.vue';
+import PurchaseOrderTrack from '@/views/purchasing/PurchaseOrderTrack.vue';
 import CreatePOFromQuotation from '@/views/purchasing/CreatePOFromQuotation.vue';
 
 //GoodReceipt
@@ -733,39 +733,46 @@ const routes = [
             
 
             // Purchase Order routes
-            // {
-            //     path: '/purchasing/orders',
-            //     name: 'PurchaseOrders',
-            //     component: PurchaseOrderList,
-            //     meta: { requiresAuth: true }
-            // },
-            // {
-            //     path: '/purchasing/orders/create',
-            //     name: 'CreatePurchaseOrder',
-            //     component: PurchaseOrderFormView,
-            //     meta: { requiresAuth: true }
-            // },
-            // {
-            //     path: '/purchasing/orders/:id',
-            //     name: 'PurchaseOrderDetail',
-            //     component: PurchaseOrderDetail,
-            //     props: true,
-            //     meta: { requiresAuth: true }
-            // },
-            // {
-            //     path: '/purchasing/orders/:id/edit',
-            //     name: 'EditPurchaseOrder',
-            //     component: PurchaseOrderFormView,
-            //     props: true,
-            //     meta: { requiresAuth: true }
-            // },
-            // {
-            //     path: '/purchasing/orders/:id/track',
-            //     name: 'PurchaseOrderTrack',
-            //     component: PurchaseOrderTrack,
-            //     props: true,
-            //     meta: { requiresAuth: true }
-            // },
+            {
+                path: '/purchasing/orders',
+                name: 'PurchaseOrders',
+                component: PurchaseOrderList,
+                meta: { requiresAuth: true }
+            },
+            {
+                path: '/purchasing/orders/create',
+                name: 'CreatePurchaseOrder',
+                component: PurchaseOrderFormView,
+                meta: { requiresAuth: true }
+            },
+            {
+                path: '/purchasing/orders/:id',
+                name: 'PurchaseOrderDetail',
+                component: PurchaseOrderDetail,
+                props: true,
+                meta: { requiresAuth: true }
+            },
+            {
+                path: '/purchasing/orders/:id/edit',
+                name: 'EditPurchaseOrder',
+                component: PurchaseOrderFormView,
+                props: true,
+                meta: { requiresAuth: true }
+            },
+            {
+                path: '/purchasing/orders/:id/track',
+                name: 'PurchaseOrderTrack',
+                component: PurchaseOrderTrack,
+                props: true,
+                meta: { requiresAuth: true }
+            },
+            {
+                path: '/purchasing/quotations/:id/create-po',
+                name: 'CreatePOFromQuotation',
+                component: CreatePOFromQuotation,
+                props: true,
+                meta: { requiresAuth: true }
+            },
             {
                 path: '/purchasing/quotations/:id/create-po',
                 name: 'CreatePOFromQuotation',
