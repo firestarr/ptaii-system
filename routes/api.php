@@ -214,8 +214,15 @@ Route::get('purchase-orders/reports/outstanding-items', [PurchaseOrderController
     Route::post('purchase-orders/{purchaseOrder}/convert-currency', [PurchaseOrderController::class, 'convertCurrency']);
 
     // Goods Receipts
-    Route::apiResource('goods-receipts', GoodsReceiptController::class);
-    Route::post('goods-receipts/{goodsReceipt}/confirm', [GoodsReceiptController::class, 'confirm']);
+    Route::prefix('goods-receipts')->group(function () {
+        Route::get('/', 'App\Http\Controllers\API\GoodsReceiptController@index');
+        Route::post('/', 'App\Http\Controllers\API\GoodsReceiptController@store');
+        Route::get('/available-items', 'App\Http\Controllers\API\GoodsReceiptController@getAvailableItems');
+        Route::get('/{goodsReceipt}', 'App\Http\Controllers\API\GoodsReceiptController@show');
+        Route::put('/{goodsReceipt}', 'App\Http\Controllers\API\GoodsReceiptController@update');
+        Route::delete('/{goodsReceipt}', 'App\Http\Controllers\API\GoodsReceiptController@destroy');
+        Route::post('/{goodsReceipt}/confirm', 'App\Http\Controllers\API\GoodsReceiptController@confirm');
+    });
 
     // Vendor Invoices
     Route::apiResource('vendor-invoices', VendorInvoiceController::class);
