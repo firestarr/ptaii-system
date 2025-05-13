@@ -414,7 +414,7 @@
         this.error = null;
         
         try {
-          const response = await axios.get(`/api/purchase-requisitions/${this.id}`);
+          const response = await axios.get(`/purchase-requisitions/${this.id}`);
           this.purchaseRequisition = response.data.data;
           
           // Initialize selectedLines array with false for each line
@@ -436,7 +436,7 @@
         this.loadingVendors = true;
         
         try {
-          const response = await axios.get('/api/vendors?is_active=true');
+          const response = await axios.get('/vendors?is_active=true');
           this.vendors = response.data.data || [];
         } catch (error) {
           console.error('Error fetching vendors:', error);
@@ -568,28 +568,28 @@
           lines: lines
         };
         
-        try {
-          const response = await axios.post('/api/request-for-quotations/from-requisition', requestData);
-          
-          // Redirect to the RFQ list with success message
-          this.$router.push({
-            path: '/purchasing/rfqs',
-            query: { 
-              message: 'RFQ berhasil dibuat dari PR',
-              type: 'success'
+          try {
+            await axios.post('/request-for-quotations/from-requisition', requestData);
+            
+            // Redirect to the RFQ list with success message
+            this.$router.push({
+              path: '/purchasing/rfqs',
+              query: { 
+                message: 'RFQ berhasil dibuat dari PR',
+                type: 'success'
+              }
+            });
+          } catch (error) {
+            console.error('Error creating RFQ:', error);
+            
+            if (error.response && error.response.data && error.response.data.errors) {
+              this.errors = error.response.data.errors;
+            } else {
+              this.error = 'Gagal membuat RFQ. Silakan coba lagi.';
             }
-          });
-        } catch (error) {
-          console.error('Error creating RFQ:', error);
-          
-          if (error.response && error.response.data && error.response.data.errors) {
-            this.errors = error.response.data.errors;
-          } else {
-            this.error = 'Gagal membuat RFQ. Silakan coba lagi.';
+            
+            this.isSubmitting = false;
           }
-          
-          this.isSubmitting = false;
-        }
       }
     }
   };

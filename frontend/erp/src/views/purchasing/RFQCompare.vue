@@ -94,11 +94,11 @@
           
           <!-- By Item Comparison View -->
           <div v-if="compareBy === 'item'" class="item-comparison">
-            <div 
-              v-for="(item, itemIndex) in rfq.lines" 
-              :key="item.line_id" 
-              class="item-comparison-card"
-            >
+<div 
+  v-for="item in rfq.lines" 
+  :key="item.line_id" 
+  class="item-comparison-card"
+>
               <div class="item-header">
                 <div class="item-info">
                   <div class="item-name">{{ item.item.name }}</div>

@@ -807,9 +807,9 @@ class DeliveryController extends Controller
         // Calculate delivery progress
         $orderLines = $salesOrder->salesOrderLines;
         $totalOrderedQty = $orderLines->sum('quantity');
-        $totalDeliveredQty = DeliveryLine::join('Delivery', 'DeliveryLine.delivery_id', '=', 'Delivery.delivery_id')
+        $totalDeliveredQty = DeliveryLine::leftJoin('Delivery', 'DeliveryLine.delivery_id', '=', 'Delivery.delivery_id')
             ->where('Delivery.so_id', $soId)
-            ->where('Delivery.status', 'Completed')
+            ->whereIn('Delivery.status', ['Completed', 'Delivered', 'Invoiced'])
             ->sum('DeliveryLine.delivered_quantity');
 
         $deliveryProgress = $totalOrderedQty > 0 ?

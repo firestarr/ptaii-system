@@ -234,38 +234,6 @@
           }
         }
         
-        return pages; Show all pages if 7 or fewer
-          for (let i = 1; i <= total; i++) {
-            pages.push(i);
-          }
-        } else {
-          // Always include first page
-          pages.push(1);
-          
-          // Show ellipsis if current page is more than 3
-          if (current > 3) {
-            pages.push('...');
-          }
-          
-          // Add pages around current page
-          const startPage = Math.max(2, current - 1);
-          const endPage = Math.min(total - 1, current + 1);
-          
-          for (let i = startPage; i <= endPage; i++) {
-            pages.push(i);
-          }
-          
-          // Show ellipsis if current page is less than total - 2
-          if (current < total - 2) {
-            pages.push('...');
-          }
-          
-          // Always include last page
-          if (total > 1) {
-            pages.push(total);
-          }
-        }
-        
         return pages;
       }
     },
@@ -362,7 +330,7 @@
         }
       },
       
-      showMessage(message, type = 'info') {
+      showMessage(message) {
         // If you have a toast/notification system, integrate it here
         alert(message); // Simple fallback if no notification system
       }

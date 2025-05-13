@@ -9,7 +9,7 @@ use App\Models\Sales\SalesQuotation;
 use App\Models\Sales\SalesQuotationLine;
 use App\Models\Sales\DeliveryLine;
 use App\Models\Item;
-use App\Models\Customer;
+use App\Models\Sales\Customer;
 use App\Models\CurrencyRate;
 use App\Models\ItemStock;
 use Illuminate\Http\Request;

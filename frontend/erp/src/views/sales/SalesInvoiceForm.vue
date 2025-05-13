@@ -296,7 +296,7 @@
                             v-model.number="line.unit_price" 
                             class="form-control"
                             min="0" 
-                            step="0.01"
+                            step="0.00001"
                             @change="calculateLineTotals(index)"
                           >
                         </div>
@@ -311,7 +311,7 @@
                             v-model.number="line.discount" 
                             class="form-control"
                             min="0" 
-                            step="0.01"
+                            step="0.00001"
                             @change="calculateLineTotals(index)"
                           >
                         </div>
@@ -326,7 +326,7 @@
                             v-model.number="line.tax" 
                             class="form-control"
                             min="0" 
-                            step="0.01"
+                            step="0.00001"
                             @change="calculateLineTotals(index)"
                           >
                         </div>
@@ -759,9 +759,18 @@ async handleDeliverySelection() {
         const line = this.invoice.lines[index];
         
         if (!line) return;
+
+        // Convert unit_price, discount, and tax to numbers with 5 decimals
+        line.unit_price = Number(parseFloat(line.unit_price).toFixed(5));
+        line.discount = Number(parseFloat(line.discount || 0).toFixed(5));
+        line.tax = Number(parseFloat(line.tax || 0).toFixed(5));
         
-        line.subtotal = parseFloat((line.quantity * line.unit_price).toFixed(2));
-        line.total = parseFloat((line.subtotal - (line.discount || 0) + (line.tax || 0)).toFixed(2));
+        line.subtotal = Number((line.quantity * line.unit_price).toFixed(5));
+        // Ensure subtotal, discount, and tax are numbers before calculation
+        const subtotalNum = Number(line.subtotal) || 0;
+        const discountNum = Number(line.discount) || 0;
+        const taxNum = Number(line.tax) || 0;
+        line.total = Number((subtotalNum - discountNum + taxNum).toFixed(5));
         
         // Recalculate overall totals
         this.calculateTotals();
@@ -779,7 +788,7 @@ async handleDeliverySelection() {
           this.invoice.tax_amount += parseFloat(line.tax || 0);
         });
         
-        this.invoice.total_amount = parseFloat((this.subtotal - this.totalDiscount + this.invoice.tax_amount).toFixed(2));
+        this.invoice.total_amount = parseFloat((this.subtotal - this.totalDiscount + this.invoice.tax_amount).toFixed(5));
       },
       
       async saveInvoice() {
@@ -825,16 +834,16 @@ async handleDeliverySelection() {
           const invoiceId = response.data.data.invoice_id;
           this.$router.push(`/sales/invoices/${invoiceId}`);
         } catch (error) {
-          console.log('Caught error object:', error);
-          if (error && error.response && error.response.data && error.response.data.errors) {
+          console.error('Error saving invoice:', error);
+          
+          if (error.response?.data?.errors) {
             this.errors = error.response.data.errors;
             this.$toast.error('Please correct the errors in the form');
-          } else if (error && error.response && error.response.data && error.response.data.message) {
+          } else if (error.response?.data?.message) {
             this.$toast.error(error.response.data.message);
           } else {
             this.$toast.error('Failed to save invoice. Please try again.');
           }
-          console.error('Error saving invoice:', error);
         } finally {
           this.saving = false;
         }

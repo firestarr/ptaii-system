@@ -1,733 +1,402 @@
 <!-- src/views/purchasing/CreatePOFromQuotation.vue -->
 <template>
-    <div class="create-po-from-quotation-container">
-      <div class="page-header">
-        <div class="header-left">
-          <router-link to="/purchasing/rfqs" class="back-link">
-            <i class="fas fa-arrow-left"></i> Back to Quotations
-          </router-link>
-          <h1>Create Purchase Order from Quotation</h1>
-        </div>
-      </div>
-  
-      <div v-if="isLoading" class="loading-container">
-        <div class="loading-spinner">
-          <i class="fas fa-spinner fa-spin"></i>
-        </div>
-        <p>Loading quotation data...</p>
-      </div>
-  
-      <div v-else-if="!quotation" class="error-container">
-        <div class="error-icon">
-          <i class="fas fa-exclamation-triangle"></i>
-        </div>
-        <h2>Quotation Not Found</h2>
-        <p>The requested quotation could not be found or may have been deleted.</p>
-        <router-link to="/purchasing/rfqs" class="btn btn-primary">
-          Return to Quotations List
+  <div class="create-po-container">
+    <div class="page-header">
+      <h1>Create Purchase Order from Quotation</h1>
+      <div class="action-buttons">
+        <router-link to="/purchasing/rfqs" class="btn btn-secondary">
+          <i class="fas fa-arrow-left"></i> Back to RFQs
         </router-link>
       </div>
-  
-      <div v-else class="po-form-container">
-        <div class="card">
-          <div class="card-header">
-            <h3 class="card-title">Quotation Information</h3>
-          </div>
-          <div class="card-body">
-            <div class="info-grid">
-              <div class="info-item">
-                <span class="info-label">RFQ Number</span>
-                <span class="info-value">{{ quotation.requestForQuotation.rfq_number }}</span>
-              </div>
-              <div class="info-item">
-                <span class="info-label">Quotation Number</span>
-                <span class="info-value">{{ quotation.quotation_number || 'N/A' }}</span>
-              </div>
-              <div class="info-item">
-                <span class="info-label">Vendor</span>
-                <span class="info-value">{{ quotation.vendor.name }}</span>
-              </div>
-              <div class="info-item">
-                <span class="info-label">Quotation Date</span>
-                <span class="info-value">{{ formatDate(quotation.quotation_date) }}</span>
-              </div>
-              <div class="info-item">
-                <span class="info-label">Validity Date</span>
-                <span class="info-value">{{ formatDate(quotation.validity_date) }}</span>
-              </div>
-              <div class="info-item">
-                <span class="info-label">Status</span>
-                <span :class="['status-badge', getStatusClass(quotation.status)]">
-                  {{ quotation.status }}
-                </span>
-              </div>
-            </div>
-          </div>
+    </div>
+
+    <div v-if="isLoading" class="text-center py-5">
+      <div class="spinner-border text-primary" role="status">
+        <span class="sr-only">Loading...</span>
+      </div>
+      <p class="mt-2">Loading quotation data...</p>
+    </div>
+
+    <div v-else class="quotation-content">
+      <div class="card">
+        <div class="card-header">
+          <h2 class="card-title">Source Quotation Information</h2>
         </div>
-  
-        <div class="card mt-4">
-          <div class="card-header">
-            <h3 class="card-title">Quotation Line Items</h3>
-          </div>
-          <div class="card-body">
-            <div class="table-responsive">
-              <table class="table">
-                <thead>
-                  <tr>
-                    <th>Item</th>
-                    <th>Quantity</th>
-                    <th>UOM</th>
-                    <th>Unit Price</th>
-                    <th>Total</th>
-                    <th class="text-center">Include in PO</th>
-                  </tr>
-                </thead>
+        <div class="card-body">
+          <div class="row">
+            <div class="col-md-6">
+              <table class="table table-sm table-borderless detail-table">
                 <tbody>
-                  <tr v-for="(line, index) in quotationLines" :key="index">
-                    <td>
-                      <div class="item-name">{{ line.item.name }}</div>
-                      <div class="item-code">{{ line.item.item_code }}</div>
-                    </td>
-                    <td>
-                      <input
-                        type="number"
-                        v-model="line.quantity"
-                        class="form-control"
-                        min="0.01"
-                        step="0.01"
-                        :disabled="!line.include"
-                        @input="calculateLineTotal(line)"
-                      />
-                    </td>
-                    <td>{{ line.unitOfMeasure.symbol }}</td>
-                    <td>
-                      <input
-                        type="number"
-                        v-model="line.unit_price"
-                        class="form-control"
-                        min="0.01"
-                        step="0.01"
-                        :disabled="!line.include"
-                        @input="calculateLineTotal(line)"
-                      />
-                    </td>
-                    <td>{{ formatCurrency(line.total) }}</td>
-                    <td class="text-center">
-                      <div class="form-check">
-                        <input
-                          type="checkbox"
-                          class="form-check-input"
-                          :id="`include-line-${index}`"
-                          v-model="line.include"
-                        />
-                        <label class="form-check-label" :for="`include-line-${index}`"></label>
-                      </div>
-                    </td>
+                  <tr>
+                    <th>RFQ Number:</th>
+                    <td>{{ quotation.requestForQuotation ? quotation.requestForQuotation.rfq_number : 'N/A' }}</td>
                   </tr>
-                  <tr v-if="quotationLines.length === 0">
-                    <td colspan="6" class="text-center">No items available in this quotation.</td>
+                  <tr>
+                    <th>Quotation Date:</th>
+                    <td>{{ formatDate(quotation.quotation_date) }}</td>
+                  </tr>
+                  <tr>
+                    <th>Validity Date:</th>
+                    <td>{{ formatDate(quotation.validity_date) || 'Not specified' }}</td>
+                  </tr>
+                  <tr>
+                    <th>Status:</th>
+                    <td>
+                      <span class="badge" :class="getStatusBadgeClass(quotation.status)">
+                        {{ quotation.status }}
+                      </span>
+                    </td>
                   </tr>
                 </tbody>
-                <tfoot v-if="quotationLines.length > 0">
+              </table>
+            </div>
+            <div class="col-md-6">
+              <table class="table table-sm table-borderless detail-table">
+                <tbody>
                   <tr>
-                    <td colspan="4" class="text-right"><strong>Total:</strong></td>
-                    <td colspan="2">{{ formatCurrency(calculateTotal()) }}</td>
+                    <th>Vendor:</th>
+                    <td>{{ quotation.vendor ? quotation.vendor.name : 'Unknown' }}</td>
                   </tr>
-                </tfoot>
+                  <tr>
+                    <th>Vendor Contact:</th>
+                    <td>{{ quotation.vendor ? quotation.vendor.contact_person : 'Unknown' }}</td>
+                  </tr>
+                  <tr>
+                    <th>Vendor Email:</th>
+                    <td>{{ quotation.vendor ? quotation.vendor.email : 'Unknown' }}</td>
+                  </tr>
+                  <tr>
+                    <th>Vendor Phone:</th>
+                    <td>{{ quotation.vendor ? quotation.vendor.phone : 'Unknown' }}</td>
+                  </tr>
+                </tbody>
               </table>
             </div>
           </div>
         </div>
-  
-        <div class="card mt-4">
-          <div class="card-header">
-            <h3 class="card-title">Purchase Order Details</h3>
+      </div>
+
+      <div class="card mt-4">
+        <div class="card-header">
+          <h2 class="card-title">Quotation Items</h2>
+        </div>
+        <div class="card-body">
+          <div class="table-responsive">
+            <table class="table table-bordered">
+              <thead>
+                <tr>
+                  <th style="width: 5%">#</th>
+                  <th style="width: 40%">Item</th>
+                  <th style="width: 15%">Quantity</th>
+                  <th style="width: 15%">Unit Price</th>
+                  <th style="width: 25%">Subtotal</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="(line, index) in quotation.lines" :key="line.line_id">
+                  <td>{{ index + 1 }}</td>
+                  <td>
+                    {{ line.item ? line.item.name : 'Unknown Item' }}
+                    <small class="text-muted d-block">
+                      {{ line.item ? line.item.item_code : '' }}
+                    </small>
+                  </td>
+                  <td>
+                    {{ formatNumber(line.quantity) }}
+                    {{ line.unitOfMeasure ? line.unitOfMeasure.name : '' }}
+                  </td>
+                  <td>{{ formatCurrency(line.unit_price) }}</td>
+                  <td>{{ formatCurrency(line.unit_price * line.quantity) }}</td>
+                </tr>
+              </tbody>
+              <tfoot>
+                <tr>
+                  <td colspan="4" class="text-right font-weight-bold">Total:</td>
+                  <td class="font-weight-bold">{{ formatCurrency(calculateTotal()) }}</td>
+                </tr>
+              </tfoot>
+            </table>
           </div>
-          <div class="card-body">
-            <div class="grid-2">
-              <div class="form-group">
-                <label for="po_date">PO Date <span class="required">*</span></label>
-                <input
-                  id="po_date"
-                  type="date"
-                  v-model="poForm.po_date"
-                  class="form-control"
-                  :class="{ 'is-invalid': errors.po_date }"
-                  required
-                />
-                <div class="invalid-feedback" v-if="errors.po_date">
-                  {{ errors.po_date }}
+        </div>
+      </div>
+
+      <div class="card mt-4">
+        <div class="card-header">
+          <h2 class="card-title">Purchase Order Details</h2>
+        </div>
+        <div class="card-body">
+          <form @submit.prevent="createPurchaseOrder">
+            <div class="row">
+              <div class="col-md-4">
+                <div class="form-group">
+                  <label>PO Date <span class="text-danger">*</span></label>
+                  <input 
+                    type="date" 
+                    v-model="purchaseOrder.po_date" 
+                    class="form-control"
+                    required
+                  >
                 </div>
               </div>
-  
-              <div class="form-group">
-                <label for="payment_terms">Payment Terms</label>
-                <input
-                  id="payment_terms"
-                  type="text"
-                  v-model="poForm.payment_terms"
-                  class="form-control"
-                  :class="{ 'is-invalid': errors.payment_terms }"
-                  placeholder="e.g., Net 30, COD"
-                />
-                <div class="invalid-feedback" v-if="errors.payment_terms">
-                  {{ errors.payment_terms }}
+              <div class="col-md-4">
+                <div class="form-group">
+                  <label>Expected Delivery</label>
+                  <input 
+                    type="date" 
+                    v-model="purchaseOrder.expected_delivery" 
+                    class="form-control"
+                  >
                 </div>
               </div>
-  
-              <div class="form-group">
-                <label for="delivery_terms">Delivery Terms</label>
-                <input
-                  id="delivery_terms"
-                  type="text"
-                  v-model="poForm.delivery_terms"
-                  class="form-control"
-                  :class="{ 'is-invalid': errors.delivery_terms }"
-                  placeholder="e.g., FOB, CIF"
-                />
-                <div class="invalid-feedback" v-if="errors.delivery_terms">
-                  {{ errors.delivery_terms }}
-                </div>
-              </div>
-  
-              <div class="form-group">
-                <label for="expected_delivery">Expected Delivery Date</label>
-                <input
-                  id="expected_delivery"
-                  type="date"
-                  v-model="poForm.expected_delivery"
-                  class="form-control"
-                  :class="{ 'is-invalid': errors.expected_delivery }"
-                />
-                <div class="invalid-feedback" v-if="errors.expected_delivery">
-                  {{ errors.expected_delivery }}
-                </div>
-              </div>
-  
-              <div class="form-group">
-                <label for="currency_code">Currency</label>
-                <select
-                  id="currency_code"
-                  v-model="poForm.currency_code"
-                  class="form-control"
-                  :class="{ 'is-invalid': errors.currency_code }"
-                >
-                  <option value="USD">USD - US Dollar</option>
-                  <option value="EUR">EUR - Euro</option>
-                  <option value="GBP">GBP - British Pound</option>
-                  <option value="JPY">JPY - Japanese Yen</option>
-                  <option value="IDR">IDR - Indonesian Rupiah</option>
-                  <!-- Add more currencies as needed -->
-                </select>
-                <div class="invalid-feedback" v-if="errors.currency_code">
-                  {{ errors.currency_code }}
+              <div class="col-md-4">
+                <div class="form-group">
+                  <label>Currency</label>
+                  <select v-model="purchaseOrder.currency_code" class="form-control">
+                    <option value="USD">USD - US Dollar</option>
+                    <option value="EUR">EUR - Euro</option>
+                    <option value="GBP">GBP - British Pound</option>
+                    <option value="IDR">IDR - Indonesian Rupiah</option>
+                    <option value="JPY">JPY - Japanese Yen</option>
+                    <option value="CNY">CNY - Chinese Yuan</option>
+                    <option value="SGD">SGD - Singapore Dollar</option>
+                  </select>
                 </div>
               </div>
             </div>
-          </div>
-        </div>
-  
-        <div class="form-actions mt-4">
-          <button
-            type="button"
-            class="btn btn-secondary"
-            @click="cancel"
-            :disabled="isSubmitting"
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            class="btn btn-primary ml-2"
-            @click="createPurchaseOrder"
-            :disabled="isSubmitting || !hasSelectedLines"
-          >
-            {{ isSubmitting ? 'Creating...' : 'Create Purchase Order' }}
-          </button>
+
+            <div class="row mt-3">
+              <div class="col-md-6">
+                <div class="form-group">
+                  <label>Payment Terms</label>
+                  <select v-model="purchaseOrder.payment_terms" class="form-control">
+                    <option value="">Select Payment Terms</option>
+                    <option value="Net 30">Net 30</option>
+                    <option value="Net 45">Net 45</option>
+                    <option value="Net 60">Net 60</option>
+                    <option value="Immediate">Immediate</option>
+                  </select>
+                </div>
+              </div>
+              <div class="col-md-6">
+                <div class="form-group">
+                  <label>Delivery Terms</label>
+                  <select v-model="purchaseOrder.delivery_terms" class="form-control">
+                    <option value="">Select Delivery Terms</option>
+                    <option value="FOB">FOB (Free On Board)</option>
+                    <option value="CIF">CIF (Cost, Insurance, Freight)</option>
+                    <option value="EXW">EXW (Ex Works)</option>
+                    <option value="DDP">DDP (Delivered Duty Paid)</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            <div class="form-group mt-3">
+              <label>Notes</label>
+              <textarea v-model="purchaseOrder.notes" class="form-control" rows="3"></textarea>
+            </div>
+
+            <div class="alert alert-info mt-4">
+              <i class="fas fa-info-circle"></i>
+              Creating a purchase order will mark this quotation as accepted. All items and prices from the quotation will be transferred to the new purchase order.
+            </div>
+
+            <div class="form-actions mt-4">
+              <button type="button" class="btn btn-secondary" @click="$router.go(-1)">Cancel</button>
+              <button 
+                type="submit" 
+                class="btn btn-primary ml-2" 
+                :disabled="isCreating || !isQuotationValid"
+              >
+                <span v-if="isCreating">
+                  <i class="fas fa-spinner fa-spin"></i> Creating...
+                </span>
+                <span v-else>
+                  <i class="fas fa-file-invoice"></i> Create Purchase Order
+                </span>
+              </button>
+            </div>
+          </form>
         </div>
       </div>
     </div>
-  </template>
-  
-  <script>
-  import PurchaseOrderService from '@/services/PurchaseOrderService';
-  
-  export default {
-    name: 'CreatePOFromQuotation',
-    props: {
-      id: {
-        type: [Number, String],
-        required: true
+  </div>
+</template>
+
+<script>
+import axios from 'axios';
+
+export default {
+  name: 'CreatePOFromQuotation',
+  data() {
+    return {
+      isLoading: true,
+      isCreating: false,
+      quotation: {},
+      purchaseOrder: {
+        po_date: new Date().toISOString().split('T')[0],
+        expected_delivery: '',
+        payment_terms: '',
+        delivery_terms: '',
+        currency_code: 'USD',
+        notes: ''
       }
-    },
-    data() {
-      return {
-        quotation: null,
-        quotationLines: [],
-        poForm: {
-          po_date: new Date().toISOString().substr(0, 10),
-          payment_terms: '',
-          delivery_terms: '',
-          expected_delivery: '',
-          currency_code: 'USD',
-          quotation_id: null
-        },
-        isLoading: true,
-        isSubmitting: false,
-        errors: {}
-      };
-    },
-    computed: {
-      hasSelectedLines() {
-        return this.quotationLines.some(line => line.include);
-      }
-    },
-    methods: {
-      async fetchQuotation() {
-        this.isLoading = true;
-        try {
-          const response = await PurchaseOrderService.getVendorQuotationById(this.id);
+    };
+  },
+  computed: {
+    isQuotationValid() {
+      return (
+        this.quotation.status === 'accepted' && 
+        this.quotation.vendor_id && 
+        this.quotation.lines && 
+        this.quotation.lines.length > 0
+      );
+    }
+  },
+  created() {
+    const quotationId = this.$route.params.id;
+    if (quotationId) {
+      this.loadQuotation(quotationId);
+    } else {
+      this.$router.push('/purchasing/rfqs');
+    }
+  },
+  methods: {
+    async loadQuotation(quotationId) {
+      this.isLoading = true;
+      try {
+        const response = await axios.get(`/api/vendor-quotations/${quotationId}`);
+        
+        if (response.data.status === 'success') {
           this.quotation = response.data.data;
           
-          if (this.quotation && this.quotation.lines) {
-            this.quotationLines = this.quotation.lines.map(line => ({
-              ...line,
-              include: true, // Default: include all lines
-              total: line.unit_price * line.quantity
-            }));
-            
-            // Set quotation ID
-            this.poForm.quotation_id = this.quotation.quotation_id;
-            
-            // Set preferred currency if available
-            if (this.quotation.vendor && this.quotation.vendor.preferred_currency) {
-              this.poForm.currency_code = this.quotation.vendor.preferred_currency;
-            }
-          }
-        } catch (error) {
-          console.error('Error fetching quotation:', error);
-          this.quotation = null;
-        } finally {
-          this.isLoading = false;
-        }
-      },
-      
-      calculateLineTotal(line) {
-        line.total = line.unit_price * line.quantity;
-      },
-      
-      calculateTotal() {
-        return this.quotationLines
-          .filter(line => line.include)
-          .reduce((total, line) => total + line.total, 0);
-      },
-      
-      formatDate(dateString) {
-        if (!dateString) return 'N/A';
-        const date = new Date(dateString);
-        return date.toLocaleDateString('en-US', {
-          year: 'numeric',
-          month: 'short',
-          day: '2-digit'
-        });
-      },
-      
-      formatCurrency(amount) {
-        return new Intl.NumberFormat('en-US', {
-          style: 'currency',
-          currency: this.poForm.currency_code || 'USD'
-        }).format(amount);
-      },
-      
-      getStatusClass(status) {
-        switch (status) {
-          case 'draft':
-            return 'status-draft';
-          case 'sent':
-            return 'status-sent';
-          case 'accepted':
-            return 'status-approved';
-          case 'rejected':
-            return 'status-canceled';
-          default:
-            return 'status-draft';
-        }
-      },
-      
-      validateForm() {
-        this.errors = {};
-        let isValid = true;
-        
-        if (!this.poForm.po_date) {
-          this.errors.po_date = 'PO Date is required';
-          isValid = false;
-        }
-        
-        if (!this.hasSelectedLines) {
-          isValid = false;
-        }
-        
-        return isValid;
-      },
-      
-      async createPurchaseOrder() {
-        if (!this.validateForm()) {
-          return;
-        }
-        
-        this.isSubmitting = true;
-        
-        try {
-          // Prepare PO data
-          const poData = {
-            ...this.poForm,
-            vendor_id: this.quotation.vendor_id,
-            lines: this.quotationLines
-              .filter(line => line.include)
-              .map(line => ({
-                item_id: line.item_id,
-                quantity: line.quantity,
-                unit_price: line.unit_price,
-                uom_id: line.uom_id
-              }))
-          };
-          
-          // Create PO
-          const response = await PurchaseOrderService.createPurchaseOrder(poData);
-          
-          if (response.data && response.data.data) {
-            // Redirect to PO detail page
-            this.$router.push(`/purchasing/orders/${response.data.data.po_id}`);
-          } else {
-            throw new Error('Invalid response from server');
-          }
-        } catch (error) {
-          console.error('Error creating purchase order:', error);
-          
-          // Handle validation errors
-          if (error.response && error.response.status === 422) {
-            this.errors = error.response.data.errors || {};
-          } else if (error.response && error.response.data && error.response.data.message) {
-            alert(error.response.data.message);
-          } else {
-            alert('Failed to create purchase order. Please try again.');
+          // Use vendor's preferred currency if available
+          if (this.quotation.vendor && this.quotation.vendor.preferred_currency) {
+            this.purchaseOrder.currency_code = this.quotation.vendor.preferred_currency;
           }
           
-          this.isSubmitting = false;
+          // If the quotation is not in accepted status, show a warning
+          if (this.quotation.status !== 'accepted') {
+            alert('Warning: This quotation is not in accepted status. You should accept the quotation before creating a purchase order.');
+          }
         }
-      },
-      
-      cancel() {
-        this.$router.push(`/purchasing/rfqs/${this.id}`);
+      } catch (error) {
+        console.error('Error loading quotation:', error);
+        alert('Failed to load quotation data');
+      } finally {
+        this.isLoading = false;
       }
     },
-    mounted() {
-      this.fetchQuotation();
-    }
-  };
-  </script>
-  
-  <style scoped>
-  .create-po-from-quotation-container {
-    padding: 1rem;
-  }
-  
-  .page-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: flex-start;
-    margin-bottom: 1.5rem;
-  }
-  
-  .header-left {
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-  }
-  
-  .back-link {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.5rem;
-    color: var(--gray-600);
-    text-decoration: none;
-    font-size: 0.875rem;
-  }
-  
-  .back-link:hover {
-    color: var(--primary-color);
-  }
-  
-  .header-left h1 {
-    margin: 0;
-    font-size: 1.5rem;
-    color: var(--gray-800);
-  }
-  
-  .loading-container,
-  .error-container {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    padding: 4rem 2rem;
-    background-color: white;
-    border-radius: 0.5rem;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-    text-align: center;
-  }
-  
-  .loading-spinner {
-    font-size: 2rem;
-    color: var(--primary-color);
-    margin-bottom: 1rem;
-  }
-  
-  .error-icon {
-    font-size: 3rem;
-    color: var(--danger-color);
-    margin-bottom: 1rem;
-  }
-  
-  .card {
-    background-color: white;
-    border-radius: 0.5rem;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-    overflow: hidden;
-  }
-  
-  .card-header {
-    padding: 1rem 1.5rem;
-    background-color: var(--gray-50);
-    border-bottom: 1px solid var(--gray-200);
-  }
-  
-  .card-title {
-    margin: 0;
-    font-size: 1.25rem;
-    color: var(--gray-800);
-  }
-  
-  .card-body {
-    padding: 1.5rem;
-  }
-  
-  .info-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
-    gap: 1.5rem;
-  }
-  
-  .info-item {
-    display: flex;
-    flex-direction: column;
-    gap: 0.25rem;
-  }
-  
-  .info-label {
-    font-size: 0.875rem;
-    color: var(--gray-500);
-  }
-  
-  .info-value {
-    font-size: 1rem;
-    color: var(--gray-800);
-    font-weight: 500;
-  }
-  
-  .table {
-    width: 100%;
-    margin-bottom: 1rem;
-    color: var(--gray-700);
-    border-collapse: collapse;
-  }
-  
-  .table th,
-  .table td {
-    padding: 0.75rem;
-    vertical-align: middle;
-    border: 1px solid var(--gray-200);
-  }
-  
-  .table th {
-    background-color: var(--gray-50);
-    font-weight: 500;
-    text-align: left;
-  }
-  
-  .table-responsive {
-    overflow-x: auto;
-  }
-  
-  .item-name {
-    font-weight: 500;
-  }
-  
-  .item-code {
-    font-size: 0.75rem;
-    color: var(--gray-500);
-  }
-  
-  .form-control {
-    display: block;
-    width: 100%;
-    padding: 0.5rem 0.75rem;
-    font-size: 1rem;
-    line-height: 1.5;
-    color: var(--gray-700);
-    background-color: #fff;
-    border: 1px solid var(--gray-300);
-    border-radius: 0.375rem;
-    transition: border-color 0.15s ease-in-out;
-  }
-  
-  .form-control:focus {
-    border-color: var(--primary-color);
-    outline: 0;
-  }
-  
-  .form-control:disabled {
-    background-color: var(--gray-100);
-    cursor: not-allowed;
-  }
-  
-  .form-control.is-invalid {
-    border-color: var(--danger-color);
-  }
-  
-  .invalid-feedback {
-    display: block;
-    width: 100%;
-    margin-top: 0.25rem;
-    font-size: 0.875rem;
-    color: var(--danger-color);
-  }
-  
-  .form-check {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
-  
-  .form-check-input {
-    width: 1.25rem;
-    height: 1.25rem;
-    cursor: pointer;
-  }
-  
-  .grid-2 {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-    gap: 1.5rem;
-  }
-  
-  .form-group {
-    margin-bottom: 1rem;
-  }
-  
-  label {
-    display: block;
-    margin-bottom: 0.5rem;
-    font-weight: 500;
-    color: var(--gray-700);
-  }
-  
-  .required {
-    color: var(--danger-color);
-  }
-  
-  .form-actions {
-    display: flex;
-    justify-content: flex-end;
-    margin-top: 1.5rem;
-  }
-  
-  .btn {
-    display: inline-block;
-    font-weight: 500;
-    text-align: center;
-    vertical-align: middle;
-    cursor: pointer;
-    padding: 0.5rem 1rem;
-    font-size: 1rem;
-    line-height: 1.5;
-    border-radius: 0.375rem;
-    transition: all 0.15s ease-in-out;
-    border: none;
-  }
-  
-  .btn-primary {
-    background-color: var(--primary-color);
-    color: white;
-  }
-  
-  .btn-primary:hover:not(:disabled) {
-    background-color: var(--primary-dark);
-  }
-  
-  .btn-secondary {
-    background-color: var(--gray-200);
-    color: var(--gray-700);
-  }
-  
-  .btn-secondary:hover:not(:disabled) {
-    background-color: var(--gray-300);
-  }
-  
-  .btn:disabled {
-    opacity: 0.65;
-    cursor: not-allowed;
-  }
-  
-  .ml-2 {
-    margin-left: 0.5rem;
-  }
-  
-  .mt-4 {
-    margin-top: 1rem;
-  }
-  
-  .text-right {
-    text-align: right;
-  }
-  
-  .text-center {
-    text-align: center;
-  }
-  
-  .status-badge {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    padding: 0.25rem 0.5rem;
-    border-radius: 0.25rem;
-    font-size: 0.75rem;
-    font-weight: 500;
-  }
-  
-  .status-draft {
-    background-color: var(--gray-100);
-    color: var(--gray-700);
-  }
-  
-  .status-sent {
-    background-color: #dbeafe;
-    color: #1e40af;
-  }
-  
-  .status-approved {
-    background-color: #dcfce7;
-    color: #166534;
-  }
-  
-  .status-canceled {
-    background-color: #fee2e2;
-    color: #b91c1c;
-  }
-  
-  @media (max-width: 768px) {
-    .grid-2 {
-      grid-template-columns: 1fr;
+    calculateTotal() {
+      if (!this.quotation.lines) return 0;
+      return this.quotation.lines.reduce((sum, line) => sum + (line.unit_price * line.quantity), 0);
+    },
+    formatDate(dateString) {
+      if (!dateString) return '-';
+      const date = new Date(dateString);
+      return date.toLocaleDateString('id-ID', {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric'
+      });
+    },
+    formatCurrency(amount) {
+      if (amount === null || amount === undefined) return '-';
+      return new Intl.NumberFormat('id-ID', {
+        style: 'decimal',
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2
+      }).format(amount);
+    },
+    formatNumber(number) {
+      if (number === null || number === undefined) return '-';
+      return new Intl.NumberFormat('id-ID', {
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 2
+      }).format(number);
+    },
+    getStatusBadgeClass(status) {
+      const statusClasses = {
+        'draft': 'badge-secondary',
+        'sent': 'badge-primary',
+        'accepted': 'badge-success',
+        'rejected': 'badge-danger',
+        'expired': 'badge-warning'
+      };
+      
+      return `badge ${statusClasses[status] || 'badge-secondary'}`;
+    },
+    async createPurchaseOrder() {
+      if (!this.isQuotationValid) {
+        alert('This quotation cannot be used to create a purchase order.');
+        return;
+      }
+      
+      this.isCreating = true;
+      try {
+        const response = await axios.post('/api/purchase-orders/create-from-quotation', {
+          quotation_id: this.quotation.quotation_id,
+          po_date: this.purchaseOrder.po_date,
+          expected_delivery: this.purchaseOrder.expected_delivery,
+          payment_terms: this.purchaseOrder.payment_terms,
+          delivery_terms: this.purchaseOrder.delivery_terms,
+          currency_code: this.purchaseOrder.currency_code,
+          notes: this.purchaseOrder.notes
+        });
+        
+        if (response.data.status === 'success') {
+          // Show success message
+          alert('Purchase order created successfully');
+          
+          // Redirect to the new purchase order
+          this.$router.push(`/purchasing/orders/${response.data.data.po_id}`);
+        }
+      } catch (error) {
+        console.error('Error creating purchase order:', error);
+        
+        // Show error message
+        if (error.response && error.response.data && error.response.data.message) {
+          alert(`Error: ${error.response.data.message}`);
+        } else {
+          alert('An error occurred while creating the purchase order');
+        }
+      } finally {
+        this.isCreating = false;
+      }
     }
   }
-  </style>
+};
+</script>
+
+<style scoped>
+.create-po-container {
+  margin-bottom: 2rem;
+}
+
+.page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1.5rem;
+}
+
+.card-title {
+  margin-bottom: 0;
+  font-size: 1.25rem;
+}
+
+.detail-table th {
+  width: 40%;
+  font-weight: 600;
+}
+
+.badge {
+  padding: 0.5em 0.75em;
+  text-transform: capitalize;
+}
+
+.form-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+</style>

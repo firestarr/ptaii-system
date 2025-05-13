@@ -335,7 +335,7 @@
         }
       },
       
-      showMessage(message, type = 'info') {
+      showMessage(message) {
         // If you have a toast/notification system, integrate it here
         alert(message); // Simple fallback if no notification system
       }

@@ -271,7 +271,7 @@
         this.showConfirmationModal = false;
         
         try {
-          const response = await axios.patch(`/purchase-requisitions/${this.id}/status`, {
+          await axios.patch(`/purchase-requisitions/${this.id}/status`, {
             status: this.approvalStatus,
             notes: this.approvalNotes
           });

@@ -1,991 +1,704 @@
 <!-- src/views/purchasing/PurchaseOrderTrack.vue -->
 <template>
-    <div class="po-track-container">
-      <div class="page-header">
-        <div class="header-left">
-          <router-link :to="`/purchasing/orders/${id}`" class="back-link">
-            <i class="fas fa-arrow-left"></i> Back to Purchase Order
-          </router-link>
-          <h1>Purchase Order Status Tracking</h1>
-        </div>
-      </div>
-  
-      <div v-if="isLoading" class="loading-container">
-        <div class="loading-spinner">
-          <i class="fas fa-spinner fa-spin"></i>
-        </div>
-        <p>Loading purchase order data...</p>
-      </div>
-  
-      <div v-else-if="!purchaseOrder" class="error-container">
-        <div class="error-icon">
-          <i class="fas fa-exclamation-triangle"></i>
-        </div>
-        <h2>Purchase Order Not Found</h2>
-        <p>
-          The requested purchase order could not be found or may have been
-          deleted.
-        </p>
-        <router-link to="/purchasing/orders" class="btn btn-primary">
-          Return to Purchase Orders List
+  <div class="po-track-container">
+    <div class="page-header">
+      <h1>Purchase Order Tracking</h1>
+      <div class="action-buttons">
+        <router-link :to="`/purchasing/orders/${purchaseOrder.po_id}`" class="btn btn-secondary">
+          <i class="fas fa-arrow-left"></i> Back to PO Details
+        </router-link>
+        <router-link to="/purchasing/orders" class="btn btn-secondary ml-2">
+          <i class="fas fa-list"></i> All Purchase Orders
         </router-link>
       </div>
-  
-      <div v-else class="po-track-content">
-        <!-- Purchase Order Details -->
-        <div class="detail-card">
-          <div class="card-header">
-            <h2 class="card-title">Purchase Order Information</h2>
-          </div>
-          <div class="card-body">
-            <div class="info-grid">
-              <div class="info-item">
-                <span class="info-label">PO Number</span>
-                <span class="info-value">{{
-                  purchaseOrder.po_number
-                }}</span>
-              </div>
-              <div class="info-item">
-                <span class="info-label">PO Date</span>
-                <span class="info-value">{{
-                  formatDate(purchaseOrder.po_date)
-                }}</span>
-              </div>
-              <div class="info-item">
-                <span class="info-label">Vendor</span>
-                <span class="info-value">{{
-                  purchaseOrder.vendor.name
-                }}</span>
-              </div>
-              <div class="info-item">
-                <span class="info-label">Current Status</span>
-                <span
-                  :class="[
-                    'info-value status-badge',
-                    getStatusClass(purchaseOrder.status),
-                  ]"
-                >
-                  {{ formatStatus(purchaseOrder.status) }}
-                </span>
-              </div>
+    </div>
+
+    <div v-if="isLoading" class="text-center py-5">
+      <div class="spinner-border text-primary" role="status">
+        <span class="sr-only">Loading...</span>
+      </div>
+      <p class="mt-2">Loading purchase order data...</p>
+    </div>
+
+    <div v-else class="tracking-content">
+      <div class="card">
+        <div class="card-header">
+          <h2 class="card-title">Purchase Order Information</h2>
+        </div>
+        <div class="card-body">
+          <div class="row">
+            <div class="col-md-6">
+              <table class="table table-sm table-borderless detail-table">
+                <tbody>
+                  <tr>
+                    <th>PO Number:</th>
+                    <td>{{ purchaseOrder.po_number }}</td>
+                  </tr>
+                  <tr>
+                    <th>PO Date:</th>
+                    <td>{{ formatDate(purchaseOrder.po_date) }}</td>
+                  </tr>
+                  <tr>
+                    <th>Expected Delivery:</th>
+                    <td>{{ formatDate(purchaseOrder.expected_delivery) || 'Not specified' }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="col-md-6">
+              <table class="table table-sm table-borderless detail-table">
+                <tbody>
+                  <tr>
+                    <th>Vendor:</th>
+                    <td>{{ purchaseOrder.vendor ? purchaseOrder.vendor.name : 'Unknown' }}</td>
+                  </tr>
+                  <tr>
+                    <th>Status:</th>
+                    <td>
+                      <span class="badge" :class="getStatusBadgeClass(purchaseOrder.status)">
+                        {{ purchaseOrder.status }}
+                      </span>
+                    </td>
+                  </tr>
+                  <tr>
+                    <th>Amount:</th>
+                    <td>{{ formatCurrency(purchaseOrder.total_amount) }}</td>
+                  </tr>
+                </tbody>
+              </table>
             </div>
           </div>
         </div>
-  
-        <!-- Status Timeline -->
-        <div class="detail-card">
-          <div class="card-header">
-            <h2 class="card-title">Status Timeline</h2>
-          </div>
-          <div class="card-body">
-            <div class="status-timeline">
-              <div
-                v-for="(status, index) in statusFlow"
-                :key="status.id"
-                :class="[
-                  'timeline-item',
-                  {
-                    'status-completed': statusReached(status.id),
-                    'status-current': isCurrent(status.id),
-                    'status-pending': !statusReached(status.id),
-                  },
-                ]"
-              >
-                <div
-                  class="timeline-connector"
-                  v-if="index < statusFlow.length - 1"
-                ></div>
-                <div class="timeline-step">
-                  <div class="timeline-icon">
-                    <i :class="status.icon"></i>
-                  </div>
-                  <div class="timeline-content">
-                    <div class="timeline-title">
-                      {{ status.label }}
-                    </div>
-                    <div class="timeline-description">
-                      {{ status.description }}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
+      </div>
+
+      <div class="card mt-4">
+        <div class="card-header">
+          <h2 class="card-title">Status Timeline</h2>
         </div>
-  
-        <!-- Status Actions -->
-        <div v-if="canUpdateStatus" class="detail-card">
-          <div class="card-header">
-            <h2 class="card-title">Status Updates</h2>
-          </div>
-          <div class="card-body">
-            <div class="status-updates">
-              <p>
-                You can update the status of this purchase order to:
-              </p>
-              <div class="status-actions">
-                <div
-                  v-for="status in availableStatusTransitions"
-                  :key="status"
-                  class="status-action-card"
-                >
-                  <div class="status-action-header">
-                    <span
-                      :class="[
-                        'status-badge',
-                        getStatusClass(status),
-                      ]"
-                    >
-                      {{ formatStatus(status) }}
-                    </span>
-                  </div>
-                  <div class="status-action-description">
-                    <p>{{ getStatusDescription(status) }}</p>
-                  </div>
-                  <div class="status-action-footer">
-                    <button
-                      @click="updateStatus(status)"
-                      :disabled="isUpdating"
-                      class="btn btn-primary"
-                    >
-                      {{
-                        isUpdating
-                          ? "Updating..."
-                          : "Update to " +
-                            formatStatus(status)
-                      }}
-                    </button>
-                  </div>
+        <div class="card-body">
+          <div class="timeline">
+            <div v-for="status in statuses" :key="status.status" class="timeline-step">
+              <div :class="['timeline-marker', isStatusPassed(status.status) ? 'completed' : '']">
+                <i :class="status.icon"></i>
+              </div>
+              <div class="timeline-content">
+                <h3 class="timeline-title">{{ status.label }}</h3>
+                <p v-if="isStatusPassed(status.status) && status.date" class="timeline-date">
+                  {{ formatDate(status.date) }}
+                </p>
+                <p v-if="isCurrentStatus(status.status)" class="timeline-description">
+                  {{ status.description }}
+                </p>
+                <div v-if="isCurrentStatus(status.status) && status.actions" class="timeline-actions">
+                  <button 
+                    v-for="action in status.actions" 
+                    :key="action.action"
+                    class="btn btn-sm"
+                    :class="action.class"
+                    @click="performAction(action.action)"
+                  >
+                    <i :class="action.icon"></i> {{ action.label }}
+                  </button>
                 </div>
               </div>
             </div>
           </div>
         </div>
-  
-        <!-- Related Records -->
-        <div v-if="hasRelatedRecords" class="detail-card">
-          <div class="card-header">
-            <h2 class="card-title">Related Records</h2>
-          </div>
-          <div class="card-body">
-            <!-- Goods Receipts -->
-            <div
-              v-if="
-                purchaseOrder.goodsReceipts &&
-                purchaseOrder.goodsReceipts.length > 0
-              "
-              class="related-records-section"
-            >
-              <h3 class="section-subtitle">Goods Receipts</h3>
-              <div class="related-records-cards">
-                <div
-                  v-for="receipt in purchaseOrder.goodsReceipts"
-                  :key="receipt.receipt_id"
-                  class="related-record-card"
-                >
-                  <div class="related-record-header">
-                    <span>{{ receipt.receipt_number }}</span>
-                    <span
-                      :class="[
-                        'status-badge',
-                        getReceiptStatusClass(
-                          receipt.status
-                        ),
-                      ]"
-                    >
-                      {{ receipt.status }}
-                    </span>
-                  </div>
-                  <div class="related-record-content">
-                    <div class="record-info">
-                      <span class="info-label">Date:</span>
-                      <span>{{
-                        formatDate(receipt.receipt_date)
-                      }}</span>
-                    </div>
-                    <div class="record-info">
-                      <span class="info-label"
-                        >Received By:</span
-                      >
-                      <span>{{
-                        receipt.received_by || "N/A"
-                      }}</span>
-                    </div>
-                  </div>
-                  <div class="related-record-footer">
-                    <router-link
-                      :to="`/purchasing/goods-receipts/${receipt.receipt_id}`"
-                      class="btn btn-sm btn-outline"
-                    >
-                      View Details
-                    </router-link>
-                  </div>
-                </div>
+      </div>
+
+      <div class="row mt-4">
+        <div class="col-md-7">
+          <div class="card">
+            <div class="card-header">
+              <h2 class="card-title">Item Status</h2>
+            </div>
+            <div class="card-body">
+              <div class="table-responsive">
+                <table class="table table-bordered">
+                  <thead>
+                    <tr>
+                      <th style="width: 40%">Item</th>
+                      <th style="width: 15%">Ordered</th>
+                      <th style="width: 15%">Received</th>
+                      <th style="width: 15%">Outstanding</th>
+                      <th style="width: 15%">Progress</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="item in itemStatus" :key="item.line_id">
+                      <td>{{ item.item_name }}</td>
+                      <td>{{ formatNumber(item.ordered_quantity) }}</td>
+                      <td>{{ formatNumber(item.received_quantity) }}</td>
+                      <td>{{ formatNumber(item.outstanding_quantity) }}</td>
+                      <td>
+                        <div class="progress">
+                          <div 
+                            class="progress-bar" 
+                            :class="getProgressBarClass(item.percentage)"
+                            :style="{ width: `${item.percentage}%` }"
+                          >
+                            {{ item.percentage }}%
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
               </div>
             </div>
-  
-            <!-- Invoices -->
-            <div
-              v-if="
-                purchaseOrder.invoices &&
-                purchaseOrder.invoices.length > 0
-              "
-              class="related-records-section"
-            >
-              <h3 class="section-subtitle">Vendor Invoices</h3>
-              <div class="related-records-cards">
-                <div
-                  v-for="invoice in purchaseOrder.invoices"
-                  :key="invoice.invoice_id"
-                  class="related-record-card"
-                >
-                  <div class="related-record-header">
-                    <span>{{ invoice.invoice_number }}</span>
-                    <span
-                      :class="[
-                        'status-badge',
-                        getInvoiceStatusClass(
-                          invoice.status
-                        ),
-                      ]"
-                    >
-                      {{ invoice.status }}
-                    </span>
-                  </div>
-                  <div class="related-record-content">
-                    <div class="record-info">
-                      <span class="info-label">Date:</span>
-                      <span>{{
-                        formatDate(invoice.invoice_date)
-                      }}</span>
-                    </div>
-                    <div class="record-info">
-                      <span class="info-label">Amount:</span>
-                      <span>{{
-                        formatCurrency(invoice.total_amount)
-                      }}</span>
-                    </div>
-                    <div class="record-info">
-                      <span class="info-label"
-                        >Due Date:</span
-                      >
-                      <span>{{
-                        formatDate(invoice.due_date)
-                      }}</span>
-                    </div>
-                  </div>
-                  <div class="related-record-footer">
-                    <router-link
-                      :to="`/purchasing/vendor-invoices/${invoice.invoice_id}`"
-                      class="btn btn-sm btn-outline"
-                    >
-                      View Details
-                    </router-link>
-                  </div>
-                </div>
+          </div>
+        </div>
+
+        <div class="col-md-5">
+          <div class="card">
+            <div class="card-header">
+              <h2 class="card-title">Receipts</h2>
+            </div>
+            <div class="card-body">
+              <div v-if="purchaseOrder.goodsReceipts && purchaseOrder.goodsReceipts.length > 0">
+                <table class="table">
+                  <thead>
+                    <tr>
+                      <th>Receipt #</th>
+                      <th>Date</th>
+                      <th>Status</th>
+                      <th>Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="receipt in purchaseOrder.goodsReceipts" :key="receipt.receipt_id">
+                      <td>{{ receipt.receipt_number }}</td>
+                      <td>{{ formatDate(receipt.receipt_date) }}</td>
+                      <td>
+                        <span :class="getStatusBadgeClass(receipt.status)">
+                          {{ receipt.status }}
+                        </span>
+                      </td>
+                      <td>
+                        <router-link :to="`/purchasing/goods-receipts/${receipt.receipt_id}`" class="btn btn-sm btn-info">
+                          <i class="fas fa-eye"></i>
+                        </router-link>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
               </div>
+              <div v-else class="text-center py-3">
+                <i class="fas fa-inbox fa-2x text-muted"></i>
+                <p class="mt-2">No receipts created yet</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="card mt-4">
+            <div class="card-header">
+              <h2 class="card-title">Invoices</h2>
+            </div>
+            <div class="card-body">
+              <div v-if="invoices.length > 0">
+                <table class="table">
+                  <thead>
+                    <tr>
+                      <th>Invoice #</th>
+                      <th>Date</th>
+                      <th>Amount</th>
+                      <th>Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="invoice in invoices" :key="invoice.invoice_id">
+                      <td>{{ invoice.invoice_number }}</td>
+                      <td>{{ formatDate(invoice.invoice_date) }}</td>
+                      <td>{{ formatCurrency(invoice.total_amount) }}</td>
+                      <td>
+                        <span :class="getStatusBadgeClass(invoice.status)">
+                          {{ invoice.status }}
+                        </span>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+              <div v-else class="text-center py-3">
+                <i class="fas fa-file-invoice fa-2x text-muted"></i>
+                <p class="mt-2">No invoices created yet</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Status Update Confirmation Modal -->
+      <div class="modal fade" id="statusModal" tabindex="-1" role="dialog" aria-hidden="true" v-if="showStatusModal">
+        <div class="modal-dialog" role="document">
+          <div class="modal-content">
+            <div class="modal-header">
+              <h5 class="modal-title">Update Purchase Order Status</h5>
+              <button type="button" class="close" @click="showStatusModal = false">
+                <span aria-hidden="true">&times;</span>
+              </button>
+            </div>
+            <div class="modal-body">
+              Are you sure you want to change the status of this purchase order to <strong>{{ newStatus }}</strong>?
+            </div>
+            <div class="modal-footer">
+              <button type="button" class="btn btn-secondary" @click="showStatusModal = false">Cancel</button>
+              <button type="button" class="btn btn-primary" @click="confirmStatusUpdate()">Update Status</button>
             </div>
           </div>
         </div>
       </div>
     </div>
-  </template>
-  
-  <script>
-  import PurchaseOrderService from '@/services/PurchaseOrderService';
-  
-  export default {
-    name: 'PurchaseOrderTrack',
-    props: {
-      id: {
-        type: [Number, String],
-        required: true
-      }
-    },
-    data() {
-      return {
-        purchaseOrder: null,
-        isLoading: true,
-        isUpdating: false,
-  
-        // Status flow definition
-        statusFlow: [
-          {
-            id: 'draft',
-            label: 'Draft',
-            icon: 'fas fa-pencil-alt',
-            description:
-              'Purchase order created but not yet submitted for approval.'
-          },
-          {
-            id: 'submitted',
-            label: 'Submitted',
-            icon: 'fas fa-clipboard-check',
-            description: 'Purchase order submitted for approval.'
-          },
-          {
-            id: 'approved',
-            label: 'Approved',
-            icon: 'fas fa-check-circle',
-            description:
-              'Purchase order approved and ready to be sent to vendor.'
-          },
-          {
-            id: 'sent',
-            label: 'Sent to Vendor',
-            icon: 'fas fa-paper-plane',
-            description: 'Purchase order has been sent to the vendor.'
-          },
-          {
-            id: 'received',
-            label: 'Goods Received',
-            icon: 'fas fa-truck-loading',
-            description: 'Goods have been received from the vendor.'
-          },
-          {
-            id: 'completed',
-            label: 'Completed',
-            icon: 'fas fa-flag-checkered',
-            description: 'Purchase order completely fulfilled and closed.'
-          }
-        ],
-  
-        // Status transitions map
-        statusTransitions: {
-          'draft': ['submitted', 'canceled'],
-          'submitted': ['approved', 'canceled'],
-          'approved': ['sent', 'canceled'],
-          'sent': ['partial', 'received', 'canceled'],
-          'partial': ['completed', 'canceled'],
-          'received': ['completed', 'canceled'],
-          'completed': ['canceled'],
-          'canceled': []
+  </div>
+</template>
+
+<script>
+import axios from 'axios';
+
+export default {
+  name: 'PurchaseOrderTrack',
+  data() {
+    return {
+      isLoading: true,
+      purchaseOrder: {},
+      itemStatus: [],
+      invoices: [],
+      statuses: [
+        {
+          status: 'draft',
+          label: 'Draft',
+          date: null,
+          icon: 'fas fa-pencil-alt',
+          description: 'The purchase order is in draft mode and can be edited.',
+          actions: [
+            { action: 'submit', label: 'Submit', icon: 'fas fa-paper-plane', class: 'btn-primary' }
+          ]
         },
-  
-        // Status descriptions for status change actions
-        statusDescriptions: {
-          'submitted': 'Submit this purchase order for approval by the authorized personnel.',
-          'approved': 'Approve this purchase order. Ready to be sent to the vendor.',
-          'sent': 'Mark as sent to the vendor. The vendor will process the order.',
-          'partial': 'Mark as partially received. Some items have arrived, but not all.',
-          'received': 'Mark as received. All ordered items have been received.',
-          'completed': 'Mark as completed. All items received and administrative tasks completed.',
-          'canceled': 'Cancel this purchase order. This action cannot be reversed.'
+        {
+          status: 'submitted',
+          label: 'Submitted',
+          date: null,
+          icon: 'fas fa-paper-plane',
+          description: 'The purchase order has been submitted for approval.',
+          actions: [
+            { action: 'approve', label: 'Approve', icon: 'fas fa-check', class: 'btn-success' },
+            { action: 'cancel', label: 'Cancel', icon: 'fas fa-times', class: 'btn-danger' }
+          ]
+        },
+        {
+          status: 'approved',
+          label: 'Approved',
+          date: null,
+          icon: 'fas fa-check',
+          description: 'The purchase order has been approved and is ready to be sent to the vendor.',
+          actions: [
+            { action: 'sent', label: 'Mark as Sent', icon: 'fas fa-envelope', class: 'btn-info' },
+            { action: 'cancel', label: 'Cancel', icon: 'fas fa-times', class: 'btn-danger' }
+          ]
+        },
+        {
+          status: 'sent',
+          label: 'Sent to Vendor',
+          date: null,
+          icon: 'fas fa-envelope',
+          description: 'The purchase order has been sent to the vendor and is awaiting delivery.',
+          actions: [
+            { action: 'createReceipt', label: 'Create Receipt', icon: 'fas fa-truck-loading', class: 'btn-primary' },
+            { action: 'cancel', label: 'Cancel', icon: 'fas fa-times', class: 'btn-danger' }
+          ]
+        },
+        {
+          status: 'partial',
+          label: 'Partially Received',
+          date: null,
+          icon: 'fas fa-truck-loading',
+          description: 'Some items have been received, but not all items have been delivered yet.',
+          actions: [
+            { action: 'createReceipt', label: 'Create Receipt', icon: 'fas fa-truck-loading', class: 'btn-primary' },
+            { action: 'cancel', label: 'Cancel', icon: 'fas fa-times', class: 'btn-danger' }
+          ]
+        },
+        {
+          status: 'received',
+          label: 'Fully Received',
+          date: null,
+          icon: 'fas fa-check-circle',
+          description: 'All items have been received from the vendor.',
+          actions: [
+            { action: 'complete', label: 'Complete', icon: 'fas fa-flag-checkered', class: 'btn-success' }
+          ]
+        },
+        {
+          status: 'completed',
+          label: 'Completed',
+          date: null,
+          icon: 'fas fa-flag-checkered',
+          description: 'The purchase order has been fully completed.',
+          actions: []
+        },
+        {
+          status: 'canceled',
+          label: 'Canceled',
+          date: null,
+          icon: 'fas fa-ban',
+          description: 'The purchase order has been canceled.',
+          actions: []
         }
-      };
-    },
-    computed: {
-      // Available status transitions for current status
-      availableStatusTransitions() {
-        if (!this.purchaseOrder) return [];
-        return this.statusTransitions[this.purchaseOrder.status] || [];
-      },
-  
-      // Determine if user can update status
-      canUpdateStatus() {
-        return this.purchaseOrder && this.availableStatusTransitions.length > 0;
-      },
-  
-      // Determine if there are related records
-      hasRelatedRecords() {
-        if (!this.purchaseOrder) return false;
-  
-        const hasGoodsReceipts =
-          this.purchaseOrder.goodsReceipts &&
-          this.purchaseOrder.goodsReceipts.length > 0;
-        const hasInvoices =
-          this.purchaseOrder.invoices &&
-          this.purchaseOrder.invoices.length > 0;
-  
-        return hasGoodsReceipts || hasInvoices;
+      ],
+      showStatusModal: false,
+      newStatus: ''
+    };
+  },
+  created() {
+    const poId = this.$route.params.id;
+    if (poId) {
+      this.loadPurchaseOrder(poId);
+    } else {
+      this.$router.push('/purchasing/orders');
+    }
+  },
+  methods: {
+    async loadPurchaseOrder(poId) {
+      this.isLoading = true;
+      try {
+        const response = await axios.get(`/api/purchase-orders/${poId}`);
+        
+        if (response.data.status === 'success') {
+          this.purchaseOrder = response.data.data;
+          
+          // Load outstanding items
+          await this.loadOutstandingItems(poId);
+          
+          // Load vendor invoices for this PO
+          await this.loadInvoices(poId);
+          
+          // Set dates in the status timeline
+          this.updateStatusTimeline();
+        }
+      } catch (error) {
+        console.error('Error loading purchase order:', error);
+        alert('Failed to load purchase order data');
+      } finally {
+        this.isLoading = false;
       }
     },
-    methods: {
-      async fetchPurchaseOrder() {
-        this.isLoading = true;
+    async loadOutstandingItems(poId) {
+      try {
+        const response = await axios.get(`/api/purchase-orders/${poId}/outstanding`);
         
-        try {
-          const response = await PurchaseOrderService.getPurchaseOrderById(this.id);
-          this.purchaseOrder = response.data.data || null;
-        } catch (error) {
-          console.error('Error fetching purchase order:', error);
-          this.purchaseOrder = null;
-        } finally {
-          this.isLoading = false;
-        }
-      },
-  
-      // Check if a status has been reached
-      statusReached(statusId) {
-        if (!this.purchaseOrder) return false;
-  
-        const statusOrder = this.statusFlow.map(s => s.id);
-        const currentIndex = statusOrder.indexOf(this.purchaseOrder.status);
-        const targetIndex = statusOrder.indexOf(statusId);
-  
-        // Special handling for 'partial' status
-        if (this.purchaseOrder.status === 'partial' && statusId !== 'partial') {
-          return (
-            statusId === 'draft' ||
-            statusId === 'submitted' ||
-            statusId === 'approved' ||
-            statusId === 'sent'
-          );
-        }
-  
-        // Special handling for 'canceled' status
-        if (this.purchaseOrder.status === 'canceled') {
-          return false;
-        }
-  
-        return targetIndex <= currentIndex;
-      },
-  
-      // Check if a status is the current status
-      isCurrent(statusId) {
-        if (!this.purchaseOrder) return false;
-  
-        // Special handling for 'partial' status which isn't in the normal flow
-        if (this.purchaseOrder.status === 'partial' && statusId === 'received') {
-          return true;
-        }
-  
-        return this.purchaseOrder.status === statusId;
-      },
-  
-      // Get status description for action cards
-      getStatusDescription(status) {
-        return this.statusDescriptions[status] || '';
-      },
-  
-      // Update purchase order status
-      async updateStatus(status) {
-        if (!status) return;
-  
-        this.isUpdating = true;
-  
-        try {
-          await PurchaseOrderService.updatePurchaseOrderStatus(this.id, status);
-  
-          // Refresh data
-          await this.fetchPurchaseOrder();
-        } catch (error) {
-          console.error('Error updating purchase order status:', error);
-  
-          if (error.response && error.response.data && error.response.data.message) {
-            alert(error.response.data.message);
-          } else {
-            alert('Failed to update status. Please try again.');
+        if (response.data.status === 'success') {
+          // Process items to calculate percentage
+          const outstandingLines = response.data.data.outstanding_lines || [];
+          this.itemStatus = [];
+          
+          // Calculate received and outstanding for all lines
+          if (this.purchaseOrder.lines) {
+            this.purchaseOrder.lines.forEach(line => {
+              let receivedQuantity = 0;
+              
+              // Calculate received quantity for this item
+              if (this.purchaseOrder.goodsReceipts) {
+                this.purchaseOrder.goodsReceipts.forEach(receipt => {
+                  if (receipt.lines) {
+                    receipt.lines.forEach(receiptLine => {
+                      if (receiptLine.po_line_id === line.line_id) {
+                        receivedQuantity += parseFloat(receiptLine.received_quantity);
+                      }
+                    });
+                  }
+                });
+              }
+              
+              const outstandingQuantity = parseFloat(line.quantity) - receivedQuantity;
+              const percentage = line.quantity > 0 ? Math.round((receivedQuantity / line.quantity) * 100) : 0;
+              
+              this.itemStatus.push({
+                line_id: line.line_id,
+                item_name: line.item ? line.item.name : 'Unknown Item',
+                ordered_quantity: line.quantity,
+                received_quantity: receivedQuantity,
+                outstanding_quantity: outstandingQuantity,
+                percentage: percentage
+              });
+            });
           }
-        } finally {
-          this.isUpdating = false;
         }
-      },
-  
-      formatDate(dateString) {
-        if (!dateString) return 'N/A';
+      } catch (error) {
+        console.error('Error loading outstanding items:', error);
+      }
+    },
+    async loadInvoices(poId) {
+      try {
+        const response = await axios.get(`/api/vendor-invoices?po_id=${poId}`);
         
-        const date = new Date(dateString);
-        return date.toLocaleDateString('en-US', {
-          year: 'numeric',
-          month: 'short',
-          day: '2-digit'
-        });
-      },
-  
-      formatCurrency(amount) {
-        if (amount === null || amount === undefined) return '$0.00';
+        if (response.data.status === 'success') {
+          this.invoices = response.data.data.data || [];
+        }
+      } catch (error) {
+        console.error('Error loading invoices:', error);
+      }
+    },
+    updateStatusTimeline() {
+      // Set dates in the status timeline based on the PO's history
+      // This is just a placeholder - in a real application, you would have
+      // actual timestamps for each status change stored in the database
+      
+      const statusOrder = ['draft', 'submitted', 'approved', 'sent', 'partial', 'received', 'completed', 'canceled'];
+      const currentIndex = statusOrder.indexOf(this.purchaseOrder.status);
+      
+      // For simplicity, let's just set dates for all past statuses
+      for (let i = 0; i < statusOrder.length; i++) {
+        const status = statusOrder[i];
+        const statusObj = this.statuses.find(s => s.status === status);
         
-        return new Intl.NumberFormat('en-US', {
-          style: 'currency',
-          currency: this.purchaseOrder?.currency_code || 'USD'
-        }).format(amount);
-      },
-  
-      formatStatus(status) {
-        switch (status) {
-          case 'draft':
-            return 'Draft';
-          case 'submitted':
-            return 'Submitted';
-          case 'approved':
-            return 'Approved';
-          case 'sent':
-            return 'Sent';
-          case 'partial':
-            return 'Partially Received';
-          case 'received':
-            return 'Received';
-          case 'completed':
-            return 'Completed';
-          case 'canceled':
-            return 'Canceled';
-          default:
-            return status;
-        }
-      },
-  
-      getStatusClass(status) {
-        switch (status) {
-          case 'draft':
-            return 'status-draft';
-          case 'submitted':
-            return 'status-pending';
-          case 'approved':
-            return 'status-approved';
-          case 'sent':
-            return 'status-sent';
-          case 'partial':
-            return 'status-partial';
-          case 'received':
-            return 'status-received';
-          case 'completed':
-            return 'status-completed';
-          case 'canceled':
-            return 'status-canceled';
-          default:
-            return 'status-draft';
-        }
-      },
-  
-      getReceiptStatusClass(status) {
-        switch (status) {
-          case 'pending':
-            return 'status-pending';
-          case 'confirmed':
-            return 'status-completed';
-          case 'canceled':
-            return 'status-canceled';
-          default:
-            return 'status-draft';
-        }
-      },
-  
-      getInvoiceStatusClass(status) {
-        switch (status) {
-          case 'pending':
-            return 'status-pending';
-          case 'approved':
-            return 'status-approved';
-          case 'paid':
-            return 'status-completed';
-          case 'canceled':
-            return 'status-canceled';
-          default:
-            return 'status-draft';
+        if (i <= currentIndex && statusObj) {
+          // Generate a fake date for demonstration purposes
+          // In a real app, these would come from the database
+          const daysAgo = (currentIndex - i) * 2; // 2 days between statuses
+          const date = new Date();
+          date.setDate(date.getDate() - daysAgo);
+          statusObj.date = date.toISOString();
         }
       }
     },
-    mounted() {
-      this.fetchPurchaseOrder();
-    }
-  };
-  </script>
-  
-  <style scoped>
-  .po-track-container {
-    padding: 1rem;
-  }
-  
-  .page-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: flex-start;
-    margin-bottom: 1.5rem;
-  }
-  
-  .header-left {
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-  }
-  
-  .back-link {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.5rem;
-    color: var(--gray-600);
-    text-decoration: none;
-    font-size: 0.875rem;
-  }
-  
-  .back-link:hover {
-    color: var(--primary-color);
-  }
-  
-  .header-left h1 {
-    margin: 0;
-    font-size: 1.5rem;
-    color: var(--gray-800);
-  }
-  
-  .loading-container,
-  .error-container {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    padding: 4rem 2rem;
-    background-color: white;
-    border-radius: 0.5rem;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-    text-align: center;
-  }
-  
-  .loading-spinner {
-    font-size: 2rem;
-    color: var(--primary-color);
-    margin-bottom: 1rem;
-  }
-  
-  .error-icon {
-    font-size: 3rem;
-    color: var(--danger-color);
-    margin-bottom: 1rem;
-  }
-  
-  .po-track-content {
-    display: flex;
-    flex-direction: column;
-    gap: 1.5rem;
-  }
-  
-  .detail-card {
-    background-color: white;
-    border-radius: 0.5rem;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-    overflow: hidden;
-  }
-  
-  .card-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 1rem 1.5rem;
-    background-color: var(--gray-50);
-    border-bottom: 1px solid var(--gray-200);
-  }
-  
-  .card-title {
-    margin: 0;
-    font-size: 1.25rem;
-    color: var(--gray-800);
-  }
-  
-  .card-body {
-    padding: 1.5rem;
-  }
-  
-  .info-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
-    gap: 1.5rem;
-  }
-  
-  .info-item {
-    display: flex;
-    flex-direction: column;
-    gap: 0.25rem;
-  }
-  
-  .info-label {
-    font-size: 0.875rem;
-    color: var(--gray-500);
-  }
-  
-  .info-value {
-    font-size: 1rem;
-    color: var(--gray-800);
-    font-weight: 500;
-  }
-  
-  /* Status Timeline Styling */
-  .status-timeline {
-    position: relative;
-    display: flex;
-    flex-direction: column;
-    gap: 2rem;
-  }
-  
-  .timeline-item {
-    position: relative;
-    display: flex;
-    flex-direction: column;
-  }
-  
-  .timeline-connector {
-    position: absolute;
-    top: 2rem;
-    left: 1rem;
-    width: 2px;
-    height: calc(100% + 2rem);
-    background-color: var(--gray-200);
-    z-index: 1;
-  }
-  
-  .timeline-step {
-    display: flex;
-    gap: 1.5rem;
-    position: relative;
-    z-index: 2;
-  }
-  
-  .timeline-icon {
-    width: 2rem;
-    height: 2rem;
-    border-radius: 50%;
-    background-color: var(--gray-200);
-    color: var(--gray-600);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-  }
-  
-  .timeline-content {
-    flex: 1;
-    padding-top: 0.25rem;
-  }
-  
-  .timeline-title {
-    font-weight: 600;
-    color: var(--gray-700);
-    margin-bottom: 0.25rem;
-  }
-  
-  .timeline-description {
-    font-size: 0.875rem;
-    color: var(--gray-500);
-  }
-  
-  /* Status styles */
-  .status-completed .timeline-icon {
-    background-color: var(--primary-color);
-    color: white;
-  }
-  
-  .status-completed .timeline-connector {
-    background-color: var(--primary-color);
-  }
-  
-  .status-completed .timeline-title {
-    color: var(--primary-color);
-  }
-  
-  .status-current .timeline-icon {
-    background-color: var(--warning-color);
-    color: white;
-    box-shadow: 0 0 0 4px rgba(245, 158, 11, 0.2);
-  }
-  
-  .status-current .timeline-title {
-    color: var(--warning-color);
-  }
-  
-  /* Status Actions Styling */
-  .status-updates p {
-    margin-top: 0;
-    margin-bottom: 1.5rem;
-  }
-  
-  .status-actions {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-    gap: 1rem;
-  }
-  
-  .status-action-card {
-    border: 1px solid var(--gray-200);
-    border-radius: 0.5rem;
-    overflow: hidden;
-  }
-  
-  .status-action-header {
-    padding: 1rem;
-    background-color: var(--gray-50);
-    border-bottom: 1px solid var(--gray-200);
-  }
-  
-  .status-action-description {
-    padding: 1rem;
-  }
-  
-  .status-action-description p {
-    margin: 0;
-    font-size: 0.875rem;
-    color: var(--gray-600);
-  }
-  
-  .status-action-footer {
-    padding: 1rem;
-    background-color: var(--gray-50);
-    border-top: 1px solid var(--gray-200);
-    display: flex;
-    justify-content: flex-end;
-  }
-  
-  /* Related Records Styling */
-  .related-records-section {
-    margin-bottom: 2rem;
-  }
-  
-  .related-records-section:last-child {
-    margin-bottom: 0;
-  }
-  
-  .section-subtitle {
-    font-size: 1.125rem;
-    color: var(--gray-700);
-    margin-top: 0;
-    margin-bottom: 1rem;
-    padding-bottom: 0.5rem;
-    border-bottom: 1px solid var(--gray-200);
-  }
-  
-  .related-records-cards {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-    gap: 1rem;
-  }
-  
-  .related-record-card {
-    border: 1px solid var(--gray-200);
-    border-radius: 0.5rem;
-    overflow: hidden;
-  }
-  
-  .related-record-header {
-    padding: 0.75rem 1rem;
-    background-color: var(--gray-50);
-    border-bottom: 1px solid var(--gray-200);
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-  }
-  
-  .related-record-content {
-    padding: 1rem;
-  }
-  
-  .record-info {
-    margin-bottom: 0.5rem;
-    display: flex;
-    font-size: 0.875rem;
-  }
-  
-  .record-info .info-label {
-    min-width: 100px;
-    font-weight: 500;
-  }
-  
-  .related-record-footer {
-    padding: 0.75rem 1rem;
-    background-color: var(--gray-50);
-    border-top: 1px solid var(--gray-200);
-    text-align: right;
-  }
-  
-  .status-badge {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    padding: 0.25rem 0.5rem;
-    border-radius: 0.25rem;
-    font-size: 0.75rem;
-    font-weight: 500;
-  }
-  
-  .status-draft {
-    background-color: var(--gray-100);
-    color: var(--gray-700);
-  }
-  
-  .status-pending {
-    background-color: #fef3c7;
-    color: #92400e;
-  }
-  
-  .status-approved {
-    background-color: #dcfce7;
-    color: #166534;
-  }
-  
-  .status-sent {
-    background-color: #dbeafe;
-    color: #1e40af;
-  }
-  
-  .status-partial {
-    background-color: #fef9c3;
-    color: #854d0e;
-  }
-  
-  .status-received {
-    background-color: #d1fae5;
-    color: #065f46;
-  }
-  
-  .status-completed {
-    background-color: #bbf7d0;
-    color: #15803d;
-  }
-  
-  .status-canceled {
-    background-color: #fee2e2;
-    color: #b91c1c;
-  }
-  
-  .btn {
-    padding: 0.625rem 1.25rem;
-    font-size: 0.875rem;
-    font-weight: 500;
-    border-radius: 0.375rem;
-    cursor: pointer;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.5rem;
-    border: none;
-    transition: background-color 0.2s, color 0.2s;
-  }
-  
-  .btn-sm {
-    padding: 0.375rem 0.75rem;
-    font-size: 0.75rem;
-  }
-  
-  .btn-primary {
-    background-color: var(--primary-color);
-    color: white;
-  }
-  
-  .btn-primary:hover:not(:disabled) {
-    background-color: var(--primary-dark);
-  }
-  
-  .btn-primary:disabled {
-    background-color: #93c5fd;
-    cursor: not-allowed;
-  }
-  
-  .btn-outline {
-    background-color: transparent;
-    border: 1px solid var(--primary-color);
-    color: var(--primary-color);
-  }
-  
-  .btn-outline:hover {
-    background-color: var(--primary-bg);
-  }
-  
-  @media (max-width: 768px) {
-    .info-grid {
-      grid-template-columns: 1fr;
-    }
-  
-    .status-actions,
-    .related-records-cards {
-      grid-template-columns: 1fr;
+    isStatusPassed(status) {
+      const statusOrder = ['draft', 'submitted', 'approved', 'sent', 'partial', 'received', 'completed', 'canceled'];
+      const currentIndex = statusOrder.indexOf(this.purchaseOrder.status);
+      const statusIndex = statusOrder.indexOf(status);
+      
+      // Special case for canceled status
+      if (this.purchaseOrder.status === 'canceled') {
+        return status === 'canceled';
+      }
+      
+      // Special case for partial
+      if (status === 'partial' && this.purchaseOrder.status === 'received') {
+        return true;
+      }
+      
+      return statusIndex <= currentIndex;
+    },
+    isCurrentStatus(status) {
+      return this.purchaseOrder.status === status;
+    },
+    performAction(action) {
+      switch (action) {
+        case 'submit':
+          this.updateStatus('submitted');
+          break;
+        case 'approve':
+          this.updateStatus('approved');
+          break;
+        case 'sent':
+          this.updateStatus('sent');
+          break;
+        case 'createReceipt':
+          this.createGoodsReceipt();
+          break;
+        case 'complete':
+          this.updateStatus('completed');
+          break;
+        case 'cancel':
+          this.updateStatus('canceled');
+          break;
+      }
+    },
+    updateStatus(status) {
+      this.newStatus = status;
+      this.showStatusModal = true;
+    },
+    async confirmStatusUpdate() {
+      try {
+        const response = await axios.patch(
+          `/api/purchase-orders/${this.purchaseOrder.po_id}/status`,
+          { status: this.newStatus }
+        );
+        
+        if (response.data.status === 'success') {
+          // Update local data
+          this.purchaseOrder.status = this.newStatus;
+          
+          // Show success message
+          alert(`Purchase order status updated to ${this.newStatus}`);
+          
+          // Reload the purchase order to get the latest data
+          this.loadPurchaseOrder(this.purchaseOrder.po_id);
+        }
+      } catch (error) {
+        console.error('Error updating status:', error);
+        
+        // Show error message
+        if (error.response && error.response.data && error.response.data.message) {
+          alert(`Error: ${error.response.data.message}`);
+        } else {
+          alert('An error occurred while updating the purchase order status');
+        }
+      } finally {
+        this.showStatusModal = false;
+      }
+    },
+    createGoodsReceipt() {
+      this.$router.push(`/purchasing/goods-receipts/create?po_id=${this.purchaseOrder.po_id}`);
+    },
+    formatDate(dateString) {
+      if (!dateString) return '-';
+      const date = new Date(dateString);
+      return date.toLocaleDateString('id-ID', {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric'
+      });
+    },
+    formatCurrency(amount) {
+      if (amount === null || amount === undefined) return '-';
+      return new Intl.NumberFormat('id-ID', {
+        style: 'decimal',
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2
+      }).format(amount);
+    },
+    formatNumber(number) {
+      if (number === null || number === undefined) return '-';
+      return new Intl.NumberFormat('id-ID', {
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 2
+      }).format(number);
+    },
+    getStatusBadgeClass(status) {
+      const statusClasses = {
+        'draft': 'badge-secondary',
+        'submitted': 'badge-info',
+        'approved': 'badge-primary',
+        'sent': 'badge-warning',
+        'partial': 'badge-info',
+        'received': 'badge-success',
+        'completed': 'badge-success',
+        'canceled': 'badge-danger'
+      };
+      
+      return `badge ${statusClasses[status] || 'badge-secondary'}`;
+    },
+    getProgressBarClass(percentage) {
+      if (percentage === 100) {
+        return 'bg-success';
+      } else if (percentage > 50) {
+        return 'bg-info';
+      } else if (percentage > 0) {
+        return 'bg-warning';
+      } else {
+        return 'bg-danger';
+      }
     }
   }
-  </style>
+};
+</script>
+
+<style scoped>
+.po-track-container {
+  margin-bottom: 2rem;
+}
+
+.page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1.5rem;
+}
+
+.card-title {
+  margin-bottom: 0;
+  font-size: 1.25rem;
+}
+
+.detail-table th {
+  width: 40%;
+  font-weight: 600;
+}
+
+.badge {
+  padding: 0.5em 0.75em;
+  text-transform: capitalize;
+}
+
+/* Timeline styles */
+.timeline {
+  position: relative;
+  padding-left: 50px;
+}
+
+.timeline-step {
+  position: relative;
+  padding-bottom: 2.5rem;
+}
+
+.timeline-step:last-child {
+  padding-bottom: 0;
+}
+
+.timeline::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 20px;
+  width: 2px;
+  background-color: #e2e8f0;
+}
+
+.timeline-marker {
+  position: absolute;
+  left: -50px;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background-color: #e2e8f0;
+  color: #64748b;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 1;
+}
+
+.timeline-marker.completed {
+  background-color: #10b981;
+  color: white;
+}
+
+.timeline-title {
+  font-size: 1.125rem;
+  margin-bottom: 0.25rem;
+  font-weight: 600;
+}
+
+.timeline-date {
+  font-size: 0.875rem;
+  color: #64748b;
+  margin-bottom: 0.5rem;
+}
+
+.timeline-description {
+  color: #1e293b;
+  margin-bottom: 0.5rem;
+}
+
+.timeline-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.progress {
+  height: 1.25rem;
+}
+
+.progress-bar {
+  line-height: 1.25rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+/* Modal styles */
+.modal {
+  display: block;
+  background-color: rgba(0, 0, 0, 0.5);
+}
+</style>

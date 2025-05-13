@@ -689,6 +689,47 @@ const routes = [
                 props: true,
                 meta: { requiresAuth: true },
             },
+
+            // Add these routes to your router.js file in the purchasing section
+            {
+                path: "/purchasing/quotations",
+                name: "VendorQuotations",
+                component: () => import("../views/purchasing/VendorQuotationList.vue"),
+                meta: { requiresAuth: true }
+            },
+            {
+                path: "/purchasing/quotations/create",
+                name: "CreateVendorQuotation",
+                component: () => import("../views/purchasing/VendorQuotationForm.vue"),
+                meta: { requiresAuth: true }
+            },
+            {
+                path: "/purchasing/quotations/:id",
+                name: "VendorQuotationDetail",
+                component: () => import("../views/purchasing/VendorQuotationDetail.vue"),
+                props: true,
+                meta: { requiresAuth: true }
+            },
+            {
+                path: "/purchasing/quotations/:id/edit",
+                name: "EditVendorQuotation",
+                component: () => import("../views/purchasing/VendorQuotationForm.vue"),
+                props: true,
+                meta: { requiresAuth: true }
+            },
+            {
+                path: "/purchasing/quotations/compare",
+                name: "CompareVendorQuotations",
+                component: () => import("../views/purchasing/VendorQuotationCompare.vue"),
+                meta: { requiresAuth: true }
+            },
+            {
+                path: "/purchasing/quotations/:id/create-po",
+                name: "CreatePOFromQuotation",
+                component: () => import("../views/purchasing/CreatePOFromQuotation.vue"),
+                props: true,
+                meta: { requiresAuth: true }
+            },
             
 
             // Purchase Order routes

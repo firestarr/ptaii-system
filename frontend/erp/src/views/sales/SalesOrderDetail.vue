@@ -622,11 +622,11 @@ export default {
             
             // Sum up quantities from completed deliveries
             return line.deliveryLines.reduce((total, deliveryLine) => {
-                // Check if the delivery is completed
+                // Check if the delivery status is one of the accepted statuses
                 const delivery = order.value.deliveries.find(d => 
                     d.deliveryId === deliveryLine.deliveryId);
                 
-                if (delivery && delivery.status === 'Completed') {
+                if (delivery && ['Completed', 'Delivered', 'Invoiced'].includes(delivery.status)) {
                     return total + (parseFloat(deliveryLine.deliveredQuantity) || 0);
                 }
                 return total;

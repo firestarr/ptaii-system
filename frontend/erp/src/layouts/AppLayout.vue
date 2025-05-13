@@ -299,6 +299,33 @@
                         <span v-if="!sidebarCollapsed">PR to RFQ</span>
                         </router-link>
 
+                        <!-- After the RFQs menu items and before the Purchase Orders menu item -->
+                        <router-link
+                            to="/purchasing/quotations"
+                            class="menu-item"
+                            active-class="active"
+                        >
+                            <i class="fas fa-file-invoice-dollar"></i>
+                            <span v-if="!sidebarCollapsed">Vendor Quotations</span>
+                        </router-link>
+
+                        <router-link
+                            to="/purchasing/quotations/create"
+                            class="menu-item"
+                            active-class="active"
+                        >
+                            <i class="fas fa-plus-circle"></i>
+                            <span v-if="!sidebarCollapsed">Create Quotation</span>
+                        </router-link>
+
+                        <router-link
+                            to="/purchasing/quotations/compare"
+                            class="menu-item"
+                            active-class="active"
+                        >
+                            <i class="fas fa-balance-scale"></i>
+                            <span v-if="!sidebarCollapsed">Compare Quotations</span>
+                        </router-link>
 
                         <router-link
                             to="/purchasing/rfqs"
@@ -899,6 +926,18 @@ export default {
                     return "Movement Report";
                 case "SalesReport":
                     return "Sales Report";
+                case 'VendorQuotations':
+                    return 'Vendor Quotations';
+                case 'CreateVendorQuotation':
+                    return 'Create Vendor Quotation';
+                case 'VendorQuotationDetail':
+                    return 'Vendor Quotation Detail';
+                case 'EditVendorQuotation':
+                    return 'Edit Vendor Quotation';
+                case 'CompareVendorQuotations':
+                    return 'Compare Quotations';
+                case 'CreatePOFromQuotation':
+                    return 'Create PO from Quotation';
                 case "Users":
                     return "User Management";
                 default:
