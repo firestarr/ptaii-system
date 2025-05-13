@@ -265,7 +265,7 @@ export default {
     async loadQuotation(quotationId) {
       this.isLoading = true;
       try {
-        const response = await axios.get(`/api/vendor-quotations/${quotationId}`);
+        const response = await axios.get(`/vendor-quotations/${quotationId}`);
         
         if (response.data.status === 'success') {
           this.quotation = response.data.data;
@@ -334,7 +334,7 @@ export default {
       
       this.isCreating = true;
       try {
-        const response = await axios.post('/api/purchase-orders/create-from-quotation', {
+        const response = await axios.post('/purchase-orders/create-from-quotation', {
           quotation_id: this.quotation.quotation_id,
           po_date: this.purchaseOrder.po_date,
           expected_delivery: this.purchaseOrder.expected_delivery,

@@ -35,12 +35,12 @@
               <div class="col-md-3">
                 <div class="form-group">
                   <label>Vendor</label>
-                  <select v-model="filters.vendor_id" class="form-control" @change="loadPurchaseOrders()">
-                    <option value="">All Vendors</option>
-                    <option v-for="vendor in vendors" :key="vendor.vendor_id" :value="vendor.vendor_id">
-                      {{ vendor.name }}
-                    </option>
-                  </select>
+<select v-model="filters.vendor_id" class="form-control" @change="loadPurchaseOrders()">
+  <option value="">All Vendors</option>
+  <option v-for="vendor in filteredVendors" :key="vendor.vendor_id" :value="vendor.vendor_id">
+    {{ vendor.name }}
+  </option>
+</select>
                 </div>
               </div>
               <div class="col-md-3">
@@ -300,6 +300,9 @@ export default {
       }
       
       return pages;
+    },
+    filteredVendors() {
+      return this.vendors.filter(vendor => vendor);
     }
   },
   created() {
@@ -307,14 +310,29 @@ export default {
     this.loadPurchaseOrders();
   },
   methods: {
-    async loadVendors() {
-      try {
-        const response = await axios.get('/api/vendors');
-        this.vendors = response.data.data;
-      } catch (error) {
-        console.error('Error loading vendors:', error);
+async loadVendors() {
+  try {
+    const response = await axios.get('/vendors');
+    // Adjusted to handle paginated response data structure correctly
+    if (Array.isArray(response.data)) {
+      this.vendors = response.data.filter(vendor => vendor !== null && vendor !== undefined);
+    } else if (response.data && response.data.data) {
+      if (Array.isArray(response.data.data)) {
+        this.vendors = response.data.data.filter(vendor => vendor !== null && vendor !== undefined);
+      } else if (Array.isArray(response.data.data.data)) {
+        this.vendors = response.data.data.data.filter(vendor => vendor !== null && vendor !== undefined);
+      } else {
+        this.vendors = [];
+        console.error('Unexpected vendors data format:', response.data);
       }
-    },
+    } else {
+      this.vendors = [];
+      console.error('Unexpected vendors data format:', response.data);
+    }
+  } catch (error) {
+    console.error('Error loading vendors:', error);
+  }
+},
     async loadPurchaseOrders() {
       this.isLoading = true;
       try {
@@ -326,7 +344,7 @@ export default {
           ...this.filters
         };
 
-        const response = await axios.get('/api/purchase-orders', { params });
+        const response = await axios.get('/purchase-orders', { params });
         
         if (response.data.status === 'success') {
           this.purchaseOrders = response.data.data.data;
@@ -380,7 +398,7 @@ export default {
       if (!this.poToDelete) return;
       
       try {
-        const response = await axios.delete(`/api/purchase-orders/${this.poToDelete.po_id}`);
+        const response = await axios.delete(`/purchase-orders/${this.poToDelete.po_id}`);
         
         if (response.data.status === 'success') {
           // Show success notification

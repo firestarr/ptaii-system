@@ -51,12 +51,12 @@ class PurchaseOrderController extends Controller
         // Filter untuk Outstanding PO
         if ($request->has('has_outstanding') && $request->has_outstanding) {
             $query->whereHas('lines', function($q) {
-                $q->whereRaw('quantity > (
+$q->whereRaw('quantity > (
                     SELECT COALESCE(SUM(grl.received_quantity), 0)
                     FROM goods_receipt_lines grl
                     JOIN goods_receipts gr ON grl.receipt_id = gr.receipt_id
                     WHERE grl.po_line_id = po_lines.line_id
-                    AND gr.status = "confirmed"
+                    AND gr.status = \'confirmed\'
                 )');
             });
         }
@@ -728,7 +728,7 @@ class PurchaseOrderController extends Controller
      */
     public function getAllOutstanding(Request $request)
     {
-        $query = PurchaseOrder::with(['vendor', 'lines.item'])
+$query = PurchaseOrder::with(['vendor', 'lines.item'])
             ->whereIn('status', ['sent', 'partial']) // Hanya PO yang relevan
             ->whereHas('lines', function($q) {
                 $q->whereRaw('quantity > (
@@ -736,7 +736,7 @@ class PurchaseOrderController extends Controller
                     FROM goods_receipt_lines grl
                     JOIN goods_receipts gr ON grl.receipt_id = gr.receipt_id
                     WHERE grl.po_line_id = po_lines.line_id
-                    AND gr.status = "confirmed"
+                    AND gr.status = \'confirmed\'
                 )');
             });
         
@@ -769,7 +769,7 @@ class PurchaseOrderController extends Controller
             
             foreach ($po->lines as $line) {
                 // Hitung received quantity
-                $receivedQuantity = DB::table('goods_receipt_lines')
+$receivedQuantity = DB::table('goods_receipt_lines')
                     ->join('goods_receipts', 'goods_receipt_lines.receipt_id', '=', 'goods_receipts.receipt_id')
                     ->where('goods_receipt_lines.po_line_id', $line->line_id)
                     ->where('goods_receipts.status', 'confirmed')

@@ -355,6 +355,15 @@
                         </router-link>
 
                         <router-link
+                            to="/purchasing/orders/create"
+                            class="menu-item"
+                            active-class="active"
+                        >
+                            <i class="fas fa-plus-circle"></i>
+                            <span v-if="!sidebarCollapsed">Create Purchase Order</span>
+                        </router-link>
+
+                        <router-link
                             to="/purchasing/goods-receipts"
                             class="menu-item"
                             active-class="active"

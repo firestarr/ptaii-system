@@ -361,7 +361,7 @@ export default {
     async loadPurchaseOrder(poId) {
       this.isLoading = true;
       try {
-        const response = await axios.get(`/api/purchase-orders/${poId}`);
+        const response = await axios.get(`/purchase-orders/${poId}`);
         
         if (response.data.status === 'success') {
           this.purchaseOrder = response.data.data;
@@ -384,19 +384,38 @@ export default {
     },
     async loadOutstandingItems(poId) {
       try {
-        const response = await axios.get(`/api/purchase-orders/${poId}/outstanding`);
+        const response = await axios.get(`/purchase-orders/${poId}/outstanding`);
         
         if (response.data.status === 'success') {
           // Process items to calculate percentage
           const outstandingLines = response.data.data.outstanding_lines || [];
           this.itemStatus = [];
           
-          // Calculate received and outstanding for all lines
+          // First add any items from outstandingLines that have outstanding quantities
+          outstandingLines.forEach(line => {
+            this.itemStatus.push({
+              line_id: line.line_id,
+              item_name: line.item_name || line.item_code || 'Unknown Item',
+              ordered_quantity: line.ordered_quantity,
+              received_quantity: line.received_quantity,
+              outstanding_quantity: line.outstanding_quantity,
+              percentage: line.ordered_quantity > 0 
+                ? Math.round(((line.ordered_quantity - line.outstanding_quantity) / line.ordered_quantity) * 100) 
+                : 0
+            });
+          });
+          
+          // Then check for any items in purchaseOrder.lines that aren't in outstandingLines
+          // (these might be fully received items)
           if (this.purchaseOrder.lines) {
             this.purchaseOrder.lines.forEach(line => {
-              let receivedQuantity = 0;
+              // Skip if this line is already in itemStatus
+              if (this.itemStatus.some(item => item.line_id === line.line_id)) {
+                return;
+              }
               
               // Calculate received quantity for this item
+              let receivedQuantity = 0;
               if (this.purchaseOrder.goodsReceipts) {
                 this.purchaseOrder.goodsReceipts.forEach(receipt => {
                   if (receipt.lines) {
@@ -425,17 +444,6 @@ export default {
         }
       } catch (error) {
         console.error('Error loading outstanding items:', error);
-      }
-    },
-    async loadInvoices(poId) {
-      try {
-        const response = await axios.get(`/api/vendor-invoices?po_id=${poId}`);
-        
-        if (response.data.status === 'success') {
-          this.invoices = response.data.data.data || [];
-        }
-      } catch (error) {
-        console.error('Error loading invoices:', error);
       }
     },
     updateStatusTimeline() {
@@ -510,7 +518,7 @@ export default {
     async confirmStatusUpdate() {
       try {
         const response = await axios.patch(
-          `/api/purchase-orders/${this.purchaseOrder.po_id}/status`,
+          `/purchase-orders/${this.purchaseOrder.po_id}/status`,
           { status: this.newStatus }
         );
         

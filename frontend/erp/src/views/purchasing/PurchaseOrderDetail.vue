@@ -396,7 +396,7 @@ export default {
     async loadPurchaseOrder(poId) {
       this.isLoading = true;
       try {
-        const response = await axios.get(`/api/purchase-orders/${poId}`);
+        const response = await axios.get(`/purchase-orders/${poId}`);
         
         if (response.data.status === 'success') {
           this.purchaseOrder = response.data.data;
@@ -416,7 +416,7 @@ export default {
     },
     async loadOutstandingItems(poId) {
       try {
-        const response = await axios.get(`/api/purchase-orders/${poId}/outstanding`);
+        const response = await axios.get(`/purchase-orders/${poId}/outstanding`);
         
         if (response.data.status === 'success') {
           this.outstandingItems = response.data.data.outstanding_lines || [];
@@ -484,7 +484,7 @@ export default {
     async confirmStatusUpdate() {
       try {
         const response = await axios.patch(
-          `/api/purchase-orders/${this.purchaseOrder.po_id}/status`,
+          `/purchase-orders/${this.purchaseOrder.po_id}/status`,
           { status: this.newStatus }
         );
         
@@ -526,7 +526,7 @@ export default {
       
       try {
         const response = await axios.post(
-          `/api/purchase-orders/${this.purchaseOrder.po_id}/convert-currency`,
+          `/purchase-orders/${this.purchaseOrder.po_id}/convert-currency`,
           {
             currency_code: this.newCurrency,
             use_exchange_rate_date: this.useExchangeRateDate
