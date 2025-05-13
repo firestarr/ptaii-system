@@ -313,22 +313,23 @@ export default {
     async loadVendors() {
   try {
     const response = await axios.get('/vendors');
-    console.log('Vendors API response:', response);
     
-    // Handle different possible response formats
-    if (response.data && response.data.data && Array.isArray(response.data.data)) {
-      // Standard format: { data: [...] }
+    // Handle paginated response structure
+    if (response.data && response.data.data && response.data.data.data) {
+      // The vendors are in response.data.data.data (paginated response)
+      this.vendors = response.data.data.data.filter(vendor => vendor && vendor.vendor_id);
+    } else if (response.data && response.data.data && Array.isArray(response.data.data)) {
+      // Regular response structure: response.data.data
       this.vendors = response.data.data.filter(vendor => vendor && vendor.vendor_id);
     } else if (response.data && Array.isArray(response.data)) {
-      // Direct array format
+      // Direct array structure
       this.vendors = response.data.filter(vendor => vendor && vendor.vendor_id);
-    } else if (response.data && response.data.status === 'success' && Array.isArray(response.data.data)) {
-      // API format with status: { status: 'success', data: [...] }
-      this.vendors = response.data.data.filter(vendor => vendor && vendor.vendor_id);
     } else {
       console.warn('Unexpected vendors response format:', response.data);
       this.vendors = [];
     }
+    
+    console.log('Processed vendors:', this.vendors);
   } catch (error) {
     console.error('Error loading vendors:', error);
     this.vendors = [];
