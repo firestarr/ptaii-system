@@ -35,7 +35,7 @@ class SalesInvoiceController extends Controller
         $validator = Validator::make($request->all(), [
             'invoice_number' => 'required|unique:SalesInvoice,invoice_number',
             'invoice_date' => 'required|date',
-            'so_id' => 'required|exists:SalesOrder,so_id',
+            'do_id' => 'required|exists:Delivery,delivery_id',
             'due_date' => 'required|date|after_or_equal:invoice_date',
             'status' => 'required|string|max:50',
             'lines' => 'required|array',
@@ -50,8 +50,9 @@ class SalesInvoiceController extends Controller
         try {
             DB::beginTransaction();
 
-            // Get the sales order
-            $salesOrder = SalesOrder::find($request->so_id);
+            // Get the delivery
+            $delivery = Delivery::find($request->do_id);
+            $salesOrder = SalesOrder::find($delivery->so_id);
             
             $totalAmount = 0;
             $taxAmount = 0;
@@ -61,7 +62,7 @@ class SalesInvoiceController extends Controller
                 'invoice_number' => $request->invoice_number,
                 'invoice_date' => $request->invoice_date,
                 'customer_id' => $salesOrder->customer_id,
-                'so_id' => $request->so_id,
+                'do_id' => $request->do_id,
                 'due_date' => $request->due_date,
                 'status' => $request->status,
                 'total_amount' => 0, // Will be updated later
@@ -336,10 +337,10 @@ class SalesInvoiceController extends Controller
             
             // Update sales order status if needed
             $salesOrder = SalesOrder::find($invoice->so_id);
-            $remainingInvoices = SalesInvoice::where('so_id', $invoice->so_id)->count();
+            $remainingInvoices = SalesInvoice::where('do_id', $invoice->do_id)->count();
             
             if ($remainingInvoices === 0) {
-                $salesOrder->update(['status' => 'Confirmed']);
+                // $salesOrder->update(['status' => 'Confirmed']); // Removed because so_id no longer exists in SalesInvoice
             }
             
             DB::commit();

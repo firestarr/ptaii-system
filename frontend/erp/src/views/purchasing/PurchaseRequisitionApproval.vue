@@ -1,696 +1,622 @@
 <!-- src/views/purchasing/PurchaseRequisitionApproval.vue -->
 <template>
-    <div class="pr-approval-container">
+    <div class="pr-approval-page">
+      <div v-if="loading" class="loading-indicator">
+        <i class="fas fa-spinner fa-spin"></i> Memuat data...
+      </div>
+  
+      <div v-else-if="error" class="error-message">
+        <i class="fas fa-exclamation-circle"></i> {{ error }}
+      </div>
+  
+      <div v-else>
         <div class="page-header">
-            <div class="header-left">
-                <router-link
-                    :to="`/purchasing/requisitions/${id}`"
-                    class="back-link"
-                >
-                    <i class="fas fa-arrow-left"></i> Back to Requisition
-                </router-link>
-                <h1>Approve Purchase Requisition</h1>
-            </div>
+          <h2 class="title">Persetujuan Permintaan Pembelian</h2>
+          <div class="status-badge" :class="getStatusClass(purchaseRequisition.status)">
+            {{ purchaseRequisition.status }}
+          </div>
         </div>
-
-        <div v-if="isLoading" class="loading-container">
-            <div class="loading-spinner">
-                <i class="fas fa-spinner fa-spin"></i>
+  
+        <div class="info-card">
+          <div class="card-header">
+            <h3>Informasi PR</h3>
+          </div>
+          <div class="card-body">
+            <div class="info-grid">
+              <div class="info-item">
+                <div class="label">Nomor PR</div>
+                <div class="value">{{ purchaseRequisition.pr_number }}</div>
+              </div>
+              <div class="info-item">
+                <div class="label">Tanggal PR</div>
+                <div class="value">{{ formatDate(purchaseRequisition.pr_date) }}</div>
+              </div>
+              <div class="info-item">
+                <div class="label">Pemohon</div>
+                <div class="value">{{ requesterName }}</div>
+              </div>
+              <div class="info-item">
+                <div class="label">Catatan</div>
+                <div class="value">{{ purchaseRequisition.notes || '-' }}</div>
+              </div>
             </div>
-            <p>Loading purchase requisition data...</p>
+          </div>
         </div>
-
-        <div v-else-if="!pr" class="error-container">
-            <div class="error-icon">
-                <i class="fas fa-exclamation-triangle"></i>
+  
+        <div class="info-card">
+          <div class="card-header">
+            <h3>Daftar Item</h3>
+          </div>
+          <div class="card-body">
+            <div class="table-container">
+              <table class="items-table">
+                <thead>
+                  <tr>
+                    <th>No.</th>
+                    <th>Kode Item</th>
+                    <th>Nama Item</th>
+                    <th>Jumlah</th>
+                    <th>Satuan</th>
+                    <th>Tanggal Dibutuhkan</th>
+                    <th>Catatan</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="(line, index) in purchaseRequisition.lines" :key="index">
+                    <td>{{ index + 1 }}</td>
+                    <td>{{ line.item.item_code }}</td>
+                    <td>{{ line.item.name }}</td>
+                    <td class="text-right">{{ formatNumber(line.quantity) }}</td>
+                    <td>{{ line.unitOfMeasure?.name || '-' }}</td>
+                    <td>{{ formatDate(line.required_date) }}</td>
+                    <td>{{ line.notes || '-' }}</td>
+                  </tr>
+                </tbody>
+              </table>
             </div>
-            <h2>Purchase Requisition Not Found</h2>
+          </div>
+        </div>
+  
+        <div class="info-card">
+          <div class="card-header">
+            <h3>Persetujuan</h3>
+          </div>
+          <div class="card-body">
+            <div class="form-group">
+              <label for="approval-notes">Catatan Persetujuan</label>
+              <textarea 
+                id="approval-notes" 
+                v-model="approvalNotes" 
+                rows="3" 
+                class="form-control" 
+                placeholder="Tambahkan catatan persetujuan (opsional)">
+              </textarea>
+            </div>
+  
+            <div class="radio-group">
+              <div class="radio-label">Status Persetujuan:</div>
+              <div class="radio-options">
+                <div class="radio-option">
+                  <input 
+                    type="radio" 
+                    id="approve" 
+                    value="approved" 
+                    v-model="approvalStatus"
+                    :disabled="isSubmitting"
+                  >
+                  <label for="approve">Setujui</label>
+                </div>
+                <div class="radio-option">
+                  <input 
+                    type="radio" 
+                    id="reject" 
+                    value="rejected" 
+                    v-model="approvalStatus"
+                    :disabled="isSubmitting"
+                  >
+                  <label for="reject">Tolak</label>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+  
+        <div class="action-buttons">
+          <button 
+            type="button" 
+            class="btn btn-secondary" 
+            @click="goBack"
+            :disabled="isSubmitting"
+          >
+            Kembali
+          </button>
+          <button 
+            type="button" 
+            class="btn"
+            :class="{ 'btn-success': approvalStatus === 'approved', 'btn-danger': approvalStatus === 'rejected' }"
+            @click="submitApproval"
+            :disabled="!approvalStatus || isSubmitting"
+          >
+            <i class="fas fa-spinner fa-spin" v-if="isSubmitting"></i>
+            {{ approvalStatus === 'approved' ? 'Setujui PR' : 'Tolak PR' }}
+          </button>
+        </div>
+      </div>
+  
+      <div v-if="showConfirmationModal" class="modal">
+        <div class="modal-backdrop" @click="showConfirmationModal = false"></div>
+        <div class="modal-content modal-sm">
+          <div class="modal-header">
+            <h2>Konfirmasi Persetujuan</h2>
+            <button class="close-btn" @click="showConfirmationModal = false">
+              <i class="fas fa-times"></i>
+            </button>
+          </div>
+          <div class="modal-body">
             <p>
-                The requested purchase requisition could not be found or may
-                have been deleted.
+              Apakah Anda yakin ingin 
+              <strong>{{ approvalStatus === 'approved' ? 'menyetujui' : 'menolak' }}</strong> 
+              permintaan pembelian ini?
             </p>
-            <router-link to="/purchasing/requisitions" class="btn btn-primary">
-                Return to Purchase Requisitions
-            </router-link>
+            
+            <div class="form-actions">
+              <button 
+                type="button" 
+                class="btn btn-secondary" 
+                @click="showConfirmationModal = false"
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                :class="{ 'btn btn-success': approvalStatus === 'approved', 'btn btn-danger': approvalStatus === 'rejected' }"
+                @click="confirmApproval"
+              >
+                {{ approvalStatus === 'approved' ? 'Setujui' : 'Tolak' }}
+              </button>
+            </div>
+          </div>
         </div>
-
-        <div v-else-if="pr.status !== 'pending'" class="error-container">
-            <div class="error-icon">
-                <i class="fas fa-exclamation-circle"></i>
-            </div>
-            <h2>Cannot Approve This Requisition</h2>
-            <p>
-                This purchase requisition is in
-                {{ getStatusLabel(pr.status) }} status and cannot be approved or
-                rejected.
-            </p>
-            <router-link
-                :to="`/purchasing/requisitions/${id}`"
-                class="btn btn-primary"
-            >
-                Return to Requisition Details
-            </router-link>
-        </div>
-
-        <div v-else class="approval-content">
-            <!-- PR Summary Card -->
-            <div class="summary-card">
-                <div class="card-header">
-                    <h2 class="card-title">Requisition Summary</h2>
-                    <span class="status-badge status-pending">{{
-                        getStatusLabel(pr.status)
-                    }}</span>
-                </div>
-                <div class="card-body">
-                    <div class="info-grid">
-                        <div class="info-item">
-                            <span class="info-label">PR Number</span>
-                            <span class="info-value">{{ pr.pr_number }}</span>
-                        </div>
-                        <div class="info-item">
-                            <span class="info-label">Date</span>
-                            <span class="info-value">{{
-                                formatDate(pr.pr_date)
-                            }}</span>
-                        </div>
-                        <div class="info-item">
-                            <span class="info-label">Requester</span>
-                            <span class="info-value">{{
-                                pr.requester ? pr.requester.name : "N/A"
-                            }}</span>
-                        </div>
-                        <div class="info-item info-item-full">
-                            <span class="info-label">Notes</span>
-                            <span class="info-value">{{
-                                pr.notes || "No notes provided"
-                            }}</span>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Items Summary Card -->
-            <div class="summary-card">
-                <div class="card-header">
-                    <h2 class="card-title">Requested Items</h2>
-                </div>
-                <div class="card-body">
-                    <table class="items-table">
-                        <thead>
-                            <tr>
-                                <th>Item</th>
-                                <th>Quantity</th>
-                                <th>Unit</th>
-                                <th>Required Date</th>
-                                <th>Notes</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr v-for="line in pr.lines" :key="line.line_id">
-                                <td>
-                                    <div class="item-info">
-                                        <span class="item-name">{{
-                                            line.item ? line.item.name : "N/A"
-                                        }}</span>
-                                        <span class="item-code">{{
-                                            line.item ? line.item.item_code : ""
-                                        }}</span>
-                                    </div>
-                                </td>
-                                <td>{{ line.quantity }}</td>
-                                <td>
-                                    {{
-                                        line.unitOfMeasure
-                                            ? line.unitOfMeasure.name
-                                            : "N/A"
-                                    }}
-                                </td>
-                                <td>{{ formatDate(line.required_date) }}</td>
-                                <td>{{ line.notes || "No notes" }}</td>
-                            </tr>
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-
-            <!-- Approval Form -->
-            <div class="approval-card">
-                <div class="card-header">
-                    <h2 class="card-title">Approval Decision</h2>
-                </div>
-                <div class="card-body">
-                    <form @submit.prevent="submitDecision">
-                        <div class="decision-options">
-                            <div class="decision-option">
-                                <input
-                                    type="radio"
-                                    id="approve"
-                                    value="approved"
-                                    v-model="decision.status"
-                                    required
-                                />
-                                <label for="approve" class="option-label">
-                                    <div class="option-icon approve-icon">
-                                        <i class="fas fa-check-circle"></i>
-                                    </div>
-                                    <div class="option-text">
-                                        <span class="option-title"
-                                            >Approve</span
-                                        >
-                                        <span class="option-description"
-                                            >Approve this purchase
-                                            requisition</span
-                                        >
-                                    </div>
-                                </label>
-                            </div>
-
-                            <div class="decision-option">
-                                <input
-                                    type="radio"
-                                    id="reject"
-                                    value="rejected"
-                                    v-model="decision.status"
-                                />
-                                <label for="reject" class="option-label">
-                                    <div class="option-icon reject-icon">
-                                        <i class="fas fa-times-circle"></i>
-                                    </div>
-                                    <div class="option-text">
-                                        <span class="option-title">Reject</span>
-                                        <span class="option-description"
-                                            >Reject this purchase
-                                            requisition</span
-                                        >
-                                    </div>
-                                </label>
-                            </div>
-                        </div>
-
-                        <div class="form-group">
-                            <label for="approval-notes">Notes</label>
-                            <textarea
-                                id="approval-notes"
-                                v-model="decision.notes"
-                                rows="3"
-                                placeholder="Add any comments or reasoning for your decision"
-                            ></textarea>
-                        </div>
-
-                        <div class="form-actions">
-                            <router-link
-                                :to="`/purchasing/requisitions/${id}`"
-                                class="btn btn-secondary"
-                            >
-                                Cancel
-                            </router-link>
-                            <button
-                                type="submit"
-                                class="btn btn-primary"
-                                :disabled="isSubmitting"
-                            >
-                                {{
-                                    isSubmitting
-                                        ? "Processing..."
-                                        : "Submit Decision"
-                                }}
-                            </button>
-                        </div>
-                    </form>
-                </div>
-            </div>
-        </div>
+      </div>
     </div>
-</template>
-
-<script>
-import { ref, reactive, onMounted } from "vue";
-import { useRouter } from "vue-router";
-import PurchaseRequisitionService from "@/services/PurchaseRequisitionService";
-
-export default {
-    name: "PurchaseRequisitionApproval",
+  </template>
+  
+  <script>
+  import axios from 'axios';
+  
+  export default {
+    name: 'PurchaseRequisitionApproval',
     props: {
-        id: {
-            type: [Number, String],
-            required: true,
-        },
+      id: {
+        type: [Number, String],
+        required: true
+      }
     },
-    setup(props) {
-        const router = useRouter();
-        const pr = ref(null);
-        const isLoading = ref(true);
-        const isSubmitting = ref(false);
-
-        const decision = reactive({
-            status: "approved", // Default to approve
-            notes: "",
-        });
-
-        // Fetch PR details
-        const fetchPRDetails = async () => {
-            isLoading.value = true;
-            try {
-                const response =
-                    await PurchaseRequisitionService.getPurchaseRequisitionById(
-                        props.id
-                    );
-                pr.value = response.data.data || null;
-            } catch (error) {
-                console.error(
-                    "Error fetching purchase requisition details:",
-                    error
-                );
-                pr.value = null;
-            } finally {
-                isLoading.value = false;
-            }
-        };
-
-        // Format date strings
-        const formatDate = (dateString) => {
-            if (!dateString) return "N/A";
-            const date = new Date(dateString);
-            return date.toLocaleDateString("en-US", {
-                year: "numeric",
-                month: "short",
-                day: "2-digit",
-            });
-        };
-
-        // Get readable status label
-        const getStatusLabel = (status) => {
-            switch (status) {
-                case "draft":
-                    return "Draft";
-                case "pending":
-                    return "Pending Approval";
-                case "approved":
-                    return "Approved";
-                case "rejected":
-                    return "Rejected";
-                case "canceled":
-                    return "Canceled";
-                default:
-                    return status;
-            }
-        };
-
-        // Submit approval/rejection decision
-        const submitDecision = async () => {
-            isSubmitting.value = true;
-
-            try {
-                await PurchaseRequisitionService.updatePurchaseRequisitionStatus(
-                    props.id,
-                    decision.status
-                );
-
-                // If there are notes, update the PR with approval notes
-                if (decision.notes) {
-                    await PurchaseRequisitionService.updatePurchaseRequisition(
-                        props.id,
-                        {
-                            approval_notes: decision.notes,
-                        }
-                    );
-                }
-
-                // Redirect back to PR detail page
-                router.push(`/purchasing/requisitions/${props.id}`);
-            } catch (error) {
-                console.error("Error processing approval decision:", error);
-                alert("Failed to process your decision. Please try again.");
-                isSubmitting.value = false;
-            }
-        };
-
-        // Initialize
-        onMounted(() => {
-            fetchPRDetails();
-        });
-
-        return {
-            pr,
-            isLoading,
-            isSubmitting,
-            decision,
-            formatDate,
-            getStatusLabel,
-            submitDecision,
-        };
+    data() {
+      return {
+        purchaseRequisition: {},
+        loading: true,
+        error: null,
+        approvalNotes: '',
+        approvalStatus: null,
+        isSubmitting: false,
+        showConfirmationModal: false
+      };
     },
-};
-</script>
-
-<style scoped>
-.pr-approval-container {
-    padding: 1rem;
-}
-
-.page-header {
+    computed: {
+      requesterName() {
+        return this.purchaseRequisition.requester?.name || '-';
+      }
+    },
+    created() {
+      this.fetchPurchaseRequisition();
+    },
+    methods: {
+      async fetchPurchaseRequisition() {
+        this.loading = true;
+        this.error = null;
+        
+        try {
+          const response = await axios.get(`/purchase-requisitions/${this.id}`);
+          this.purchaseRequisition = response.data.data;
+          
+          // Check if PR is in a valid state for approval
+          if (this.purchaseRequisition.status !== 'pending') {
+            this.error = `PR ini tidak dalam status 'pending'. Status saat ini: ${this.purchaseRequisition.status}`;
+          }
+        } catch (error) {
+          console.error('Error fetching purchase requisition:', error);
+          this.error = 'Gagal memuat data PR. Silakan coba lagi.';
+        } finally {
+          this.loading = false;
+        }
+      },
+      
+      getStatusClass(status) {
+        switch (status) {
+          case 'draft': return 'status-draft';
+          case 'pending': return 'status-pending';
+          case 'approved': return 'status-approved';
+          case 'rejected': return 'status-rejected';
+          case 'canceled': return 'status-canceled';
+          default: return '';
+        }
+      },
+      
+      formatDate(dateString) {
+        if (!dateString) return '-';
+        
+        const options = { year: 'numeric', month: 'short', day: 'numeric' };
+        return new Date(dateString).toLocaleDateString('id-ID', options);
+      },
+      
+      formatNumber(value) {
+        if (value === null || value === undefined) return '-';
+        
+        return new Intl.NumberFormat('id-ID').format(value);
+      },
+      
+      goBack() {
+        this.$router.push(`/purchasing/requisitions/${this.id}`);
+      },
+      
+      submitApproval() {
+        if (!this.approvalStatus) return;
+        
+        this.showConfirmationModal = true;
+      },
+      
+      async confirmApproval() {
+        this.isSubmitting = true;
+        this.showConfirmationModal = false;
+        
+        try {
+          const response = await axios.patch(`/purchase-requisitions/${this.id}/status`, {
+            status: this.approvalStatus,
+            notes: this.approvalNotes
+          });
+          
+          this.$router.push({
+            path: `/purchasing/requisitions/${this.id}`,
+            query: { 
+              message: `PR berhasil ${this.approvalStatus === 'approved' ? 'disetujui' : 'ditolak'}`,
+              type: 'success'
+            }
+          });
+        } catch (error) {
+          console.error('Error updating PR status:', error);
+          this.error = `Gagal ${this.approvalStatus === 'approved' ? 'menyetujui' : 'menolak'} PR. Silakan coba lagi.`;
+          this.isSubmitting = false;
+        }
+      }
+    }
+  };
+  </script>
+  
+  <style scoped>
+  .pr-approval-page {
+    padding: 20px;
+    max-width: 100%;
+  }
+  
+  .page-header {
     display: flex;
     justify-content: space-between;
-    align-items: flex-start;
-    margin-bottom: 1.5rem;
-}
-
-.header-left {
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-}
-
-.back-link {
-    display: inline-flex;
     align-items: center;
-    gap: 0.5rem;
-    color: var(--gray-600);
-    text-decoration: none;
-    font-size: 0.875rem;
-}
-
-.back-link:hover {
-    color: var(--primary-color);
-}
-
-.header-left h1 {
-    margin: 0;
+    margin-bottom: 24px;
+  }
+  
+  .title {
     font-size: 1.5rem;
-    color: var(--gray-800);
-}
-
-.loading-container {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    padding: 4rem 2rem;
-    background-color: white;
-    border-radius: 0.5rem;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-}
-
-.loading-spinner {
-    font-size: 2rem;
-    color: var(--primary-color);
-    margin-bottom: 1rem;
-}
-
-.error-container {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    padding: 4rem 2rem;
-    background-color: white;
-    border-radius: 0.5rem;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-    text-align: center;
-}
-
-.error-icon {
-    font-size: 3rem;
-    color: var(--danger-color);
-    margin-bottom: 1rem;
-}
-
-.approval-content {
-    display: flex;
-    flex-direction: column;
-    gap: 1.5rem;
-    max-width: 1000px;
-    margin: 0 auto;
-}
-
-.summary-card,
-.approval-card {
-    background-color: white;
-    border-radius: 0.5rem;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-    overflow: hidden;
-}
-
-.card-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 1rem 1.5rem;
-    background-color: var(--gray-50);
-    border-bottom: 1px solid var(--gray-200);
-}
-
-.card-title {
+    font-weight: 600;
     margin: 0;
-    font-size: 1.25rem;
-    color: var(--gray-800);
-}
-
-.card-body {
-    padding: 1.5rem;
-}
-
-.info-grid {
+  }
+  
+  .status-badge {
+    padding: 6px 12px;
+    border-radius: 4px;
+    font-weight: 600;
+    font-size: 0.875rem;
+    text-transform: uppercase;
+  }
+  
+  .status-draft {
+    background-color: var(--gray-200);
+    color: var(--gray-700);
+  }
+  
+  .status-pending {
+    background-color: #ffecb3;
+    color: #8b6d00;
+  }
+  
+  .status-approved {
+    background-color: #d0f0c0;
+    color: #38761d;
+  }
+  
+  .status-rejected {
+    background-color: #ffcdd2;
+    color: #c62828;
+  }
+  
+  .status-canceled {
+    background-color: var(--gray-300);
+    color: var(--gray-600);
+  }
+  
+  .info-card {
+    background-color: white;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+    margin-bottom: 24px;
+    overflow: hidden;
+  }
+  
+  .card-header {
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--gray-200);
+  }
+  
+  .card-header h3 {
+    margin: 0;
+    font-size: 1.125rem;
+    font-weight: 600;
+  }
+  
+  .card-body {
+    padding: 20px;
+  }
+  
+  .info-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-    gap: 1.5rem;
-}
-
-.info-item {
-    display: flex;
-    flex-direction: column;
-    gap: 0.25rem;
-}
-
-.info-item-full {
-    grid-column: 1 / -1;
-}
-
-.info-label {
+    gap: 16px;
+  }
+  
+  .info-item {
+    margin-bottom: 8px;
+  }
+  
+  .label {
     font-size: 0.875rem;
     color: var(--gray-500);
-}
-
-.info-value {
+    margin-bottom: 4px;
+  }
+  
+  .value {
     font-size: 1rem;
     color: var(--gray-800);
-    font-weight: 500;
-}
-
-.items-table {
+  }
+  
+  .table-container {
+    overflow-x: auto;
+  }
+  
+  .items-table {
     width: 100%;
     border-collapse: collapse;
-    font-size: 0.875rem;
-}
-
-.items-table th {
+  }
+  
+  .items-table th,
+  .items-table td {
+    padding: 12px 16px;
     text-align: left;
-    padding: 0.75rem 1rem;
-    background-color: var(--gray-50);
     border-bottom: 1px solid var(--gray-200);
-    font-weight: 500;
-    color: var(--gray-600);
-}
-
-.items-table td {
-    padding: 0.75rem 1rem;
-    border-bottom: 1px solid var(--gray-100);
-}
-
-.items-table tr:last-child td {
-    border-bottom: none;
-}
-
-.item-info {
-    display: flex;
-    flex-direction: column;
-}
-
-.item-name {
-    font-weight: 500;
-}
-
-.item-code {
-    font-size: 0.75rem;
-    color: var(--gray-500);
-}
-
-.decision-options {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 1.5rem;
-    margin-bottom: 1.5rem;
-}
-
-.decision-option {
-    position: relative;
-}
-
-.decision-option input[type="radio"] {
-    position: absolute;
-    opacity: 0;
-    width: 0;
-    height: 0;
-}
-
-.option-label {
-    display: flex;
-    align-items: center;
-    gap: 1rem;
-    padding: 1.5rem;
-    border: 2px solid var(--gray-200);
-    border-radius: 0.5rem;
-    cursor: pointer;
-    transition: all 0.2s;
-}
-
-.decision-option input[type="radio"]:checked + .option-label {
-    border-color: var(--primary-color);
-    background-color: var(--primary-bg);
-}
-
-.decision-option input[type="radio"][value="rejected"]:checked + .option-label {
-    border-color: var(--danger-color);
-    background-color: var(--danger-bg);
-}
-
-.option-icon {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 3rem;
-    height: 3rem;
-    border-radius: 50%;
-    font-size: 1.5rem;
-}
-
-.approve-icon {
-    background-color: var(--success-bg);
-    color: var(--success-color);
-}
-
-.reject-icon {
-    background-color: var(--danger-bg);
-    color: var(--danger-color);
-}
-
-.option-text {
-    display: flex;
-    flex-direction: column;
-    gap: 0.25rem;
-}
-
-.option-title {
+  }
+  
+  .items-table th {
+    background-color: var(--gray-50);
     font-weight: 600;
-    font-size: 1.125rem;
-}
-
-.option-description {
-    font-size: 0.875rem;
-    color: var(--gray-500);
-}
-
-.form-group {
-    margin-bottom: 1.5rem;
-}
-
-label {
-    display: block;
-    margin-bottom: 0.5rem;
-    font-weight: 500;
     color: var(--gray-700);
-    font-size: 0.875rem;
-}
-
-textarea {
+  }
+  
+  .items-table tbody tr:hover {
+    background-color: var(--gray-50);
+  }
+  
+  .text-right {
+    text-align: right;
+  }
+  
+  .form-group {
+    margin-bottom: 20px;
+  }
+  
+  .form-group label {
+    display: block;
+    margin-bottom: 8px;
+    font-weight: 500;
+  }
+  
+  .form-control {
     width: 100%;
-    padding: 0.625rem;
-    border: 1px solid var(--gray-200);
-    border-radius: 0.375rem;
-    font-size: 0.875rem;
-    background-color: white;
-    transition: border-color 0.2s;
-    resize: vertical;
-    min-height: 100px;
-}
-
-textarea:focus {
+    padding: 10px 12px;
+    border: 1px solid var(--gray-300);
+    border-radius: 4px;
+    font-size: 1rem;
+    transition: border-color 0.2s, box-shadow 0.2s;
+  }
+  
+  .form-control:focus {
     border-color: var(--primary-color);
     outline: none;
     box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
-}
-
-.form-actions {
+  }
+  
+  .radio-group {
+    margin-bottom: 20px;
+  }
+  
+  .radio-label {
+    font-weight: 500;
+    margin-bottom: 10px;
+  }
+  
+  .radio-options {
+    display: flex;
+    gap: 24px;
+  }
+  
+  .radio-option {
+    display: flex;
+    align-items: center;
+  }
+  
+  .radio-option input {
+    margin-right: 8px;
+  }
+  
+  .action-buttons {
     display: flex;
     justify-content: flex-end;
-    gap: 1rem;
-}
-
-.status-badge {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    padding: 0.25rem 0.5rem;
-    border-radius: 0.25rem;
-    font-size: 0.75rem;
+    gap: 12px;
+    margin-top: 24px;
+  }
+  
+  .btn {
+    padding: 10px 16px;
+    border-radius: 4px;
     font-weight: 500;
-}
-
-.status-pending {
-    background-color: #fef3c7;
-    color: #92400e;
-}
-
-.btn {
-    padding: 0.625rem 1.25rem;
-    font-size: 0.875rem;
-    font-weight: 500;
-    border-radius: 0.375rem;
     cursor: pointer;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.5rem;
     border: none;
-    transition: background-color 0.2s, color 0.2s;
-    text-decoration: none;
-}
-
-.btn-primary {
-    background-color: var(--primary-color);
-    color: white;
-}
-
-.btn-primary:hover:not(:disabled) {
-    background-color: var(--primary-dark);
-}
-
-.btn-primary:disabled {
+    transition: background-color 0.2s;
+  }
+  
+  .btn:disabled {
     opacity: 0.7;
     cursor: not-allowed;
-}
-
-.btn-secondary {
-    background-color: var(--gray-100);
-    color: var(--gray-700);
-}
-
-.btn-secondary:hover {
+  }
+  
+  .btn-secondary {
     background-color: var(--gray-200);
-}
-
-@media (max-width: 768px) {
+    color: var(--gray-700);
+  }
+  
+  .btn-secondary:hover:not(:disabled) {
+    background-color: var(--gray-300);
+  }
+  
+  .btn-success {
+    background-color: #38761d;
+    color: white;
+  }
+  
+  .btn-success:hover:not(:disabled) {
+    background-color: #2c5a16;
+  }
+  
+  .btn-danger {
+    background-color: #c62828;
+    color: white;
+  }
+  
+  .btn-danger:hover:not(:disabled) {
+    background-color: #b51c1c;
+  }
+  
+  .loading-indicator,
+  .error-message {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding: 40px 0;
+    font-size: 1rem;
+  }
+  
+  .loading-indicator i,
+  .error-message i {
+    margin-right: 8px;
+  }
+  
+  .error-message {
+    color: #c62828;
+  }
+  
+  .modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 50;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+  }
+  
+  .modal-backdrop {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgba(0, 0, 0, 0.5);
+    z-index: 50;
+  }
+  
+  .modal-content {
+    background-color: white;
+    border-radius: 8px;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    width: 100%;
+    z-index: 60;
+    overflow: hidden;
+  }
+  
+  .modal-sm {
+    max-width: 400px;
+  }
+  
+  .modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--gray-200);
+  }
+  
+  .modal-header h2 {
+    font-size: 1.25rem;
+    font-weight: 600;
+    margin: 0;
+  }
+  
+  .close-btn {
+    background: none;
+    border: none;
+    color: var(--gray-500);
+    cursor: pointer;
+  }
+  
+  .modal-body {
+    padding: 20px;
+  }
+  
+  .form-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 12px;
+    margin-top: 20px;
+  }
+  
+  @media (max-width: 768px) {
     .info-grid {
-        grid-template-columns: 1fr;
+      grid-template-columns: 1fr;
     }
-
-    .decision-options {
-        grid-template-columns: 1fr;
+    
+    .radio-options {
+      flex-direction: column;
+      gap: 12px;
     }
-
-    .items-table {
-        display: block;
-        overflow-x: auto;
+    
+    .action-buttons {
+      flex-direction: column;
+      gap: 12px;
     }
-}
-</style>
+    
+    .btn {
+      width: 100%;
+    }
+  }
+  </style>

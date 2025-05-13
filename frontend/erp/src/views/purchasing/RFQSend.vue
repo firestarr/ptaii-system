@@ -1,587 +1,619 @@
 <!-- src/views/purchasing/RFQSend.vue -->
 <template>
     <div class="rfq-send-container">
-        <div class="page-header">
-            <div class="header-left">
-                <router-link :to="`/purchasing/rfqs/${id}`" class="back-link">
-                    <i class="fas fa-arrow-left"></i> Back to RFQ Details
-                </router-link>
-                <h1>Send RFQ to Vendors</h1>
-            </div>
+      <div class="page-header">
+        <h1>Send RFQ to Vendors</h1>
+        <div class="header-actions">
+          <router-link :to="`/purchasing/rfqs/${rfqId}`" class="btn btn-outline">
+            <i class="fas fa-arrow-left"></i> Back to RFQ
+          </router-link>
         </div>
-
-        <div v-if="isLoading" class="loading-container">
-            <div class="loading-spinner">
-                <i class="fas fa-spinner fa-spin"></i>
-            </div>
-            <p>Loading data...</p>
+      </div>
+  
+      <div v-if="loading" class="loading-indicator">
+        <i class="fas fa-spinner fa-spin"></i> Loading...
+      </div>
+  
+      <div v-else-if="!rfq" class="error-state">
+        <div class="error-icon">
+          <i class="fas fa-exclamation-circle"></i>
         </div>
-
-        <div v-else-if="!rfq" class="error-container">
-            <div class="error-icon">
-                <i class="fas fa-exclamation-triangle"></i>
-            </div>
-            <h2>RFQ Not Found</h2>
-            <p>
-                The requested RFQ could not be found or may have been deleted.
-            </p>
-            <router-link to="/purchasing/rfqs" class="btn btn-primary">
-                Return to RFQs List
-            </router-link>
+        <h3>Request for Quotation Not Found</h3>
+        <p>The RFQ you are trying to send does not exist or has been deleted.</p>
+        <router-link to="/purchasing/rfqs" class="btn btn-primary">
+          Go Back to RFQ List
+        </router-link>
+      </div>
+  
+      <div v-else-if="rfq.status !== 'draft'" class="error-state">
+        <div class="error-icon">
+          <i class="fas fa-ban"></i>
         </div>
-
-        <div v-else-if="rfq.status !== 'draft'" class="error-container">
-            <div class="error-icon">
-                <i class="fas fa-exclamation-circle"></i>
+        <h3>RFQ Cannot Be Sent</h3>
+        <p>This RFQ has already been sent or is in a state that cannot be modified.</p>
+        <router-link :to="`/purchasing/rfqs/${rfqId}`" class="btn btn-primary">
+          View RFQ Details
+        </router-link>
+      </div>
+  
+      <div v-else class="rfq-send-content">
+        <div class="detail-card">
+          <div class="card-header">
+            <h2 class="card-title">RFQ Information</h2>
+            <div class="status-badge status-draft">
+              {{ capitalizeFirstLetter(rfq.status) }}
             </div>
-            <h2>Cannot Send RFQ</h2>
-            <p>
-                This RFQ is not in draft status and cannot be sent to vendors.
-            </p>
-            <router-link :to="`/purchasing/rfqs/${id}`" class="btn btn-primary">
-                Return to RFQ Details
-            </router-link>
+          </div>
+  
+          <div class="card-body">
+            <div class="detail-row">
+              <div class="detail-group">
+                <label>RFQ Number</label>
+                <div class="detail-value">{{ rfq.rfq_number }}</div>
+              </div>
+              
+              <div class="detail-group">
+                <label>RFQ Date</label>
+                <div class="detail-value">{{ formatDate(rfq.rfq_date) }}</div>
+              </div>
+              
+              <div class="detail-group">
+                <label>Validity Date</label>
+                <div class="detail-value">{{ formatDate(rfq.validity_date) || 'N/A' }}</div>
+              </div>
+            </div>
+            
+            <div class="detail-row">
+              <div class="detail-group full-width">
+                <label>Items</label>
+                <div class="item-chips">
+                  <div class="item-chip" v-for="line in rfq.lines" :key="line.line_id">
+                    <span class="item-code">{{ line.item.item_code }}</span>
+                    <span class="item-quantity">{{ formatNumber(line.quantity) }} {{ line.unit_of_measure.symbol }}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
-
-        <div v-else class="send-content">
-            <!-- RFQ Summary Card -->
-            <div class="detail-card">
-                <div class="card-header">
-                    <h2 class="card-title">RFQ Summary</h2>
-                </div>
-                <div class="card-body">
-                    <div class="info-grid">
-                        <div class="info-item">
-                            <span class="info-label">RFQ Number</span>
-                            <span class="info-value">{{ rfq.rfq_number }}</span>
-                        </div>
-                        <div class="info-item">
-                            <span class="info-label">Date</span>
-                            <span class="info-value">{{
-                                formatDate(rfq.rfq_date)
-                            }}</span>
-                        </div>
-                        <div class="info-item">
-                            <span class="info-label">Valid Until</span>
-                            <span class="info-value">{{
-                                formatDate(rfq.validity_date)
-                            }}</span>
-                        </div>
-                        <div class="info-item">
-                            <span class="info-label">Items</span>
-                            <span class="info-value"
-                                >{{ rfq.lines.length }} items</span
-                            >
-                        </div>
-                    </div>
-                </div>
+  
+        <div class="detail-card">
+          <div class="card-header">
+            <h2 class="card-title">Select Vendors</h2>
+            <div class="vendor-actions">
+              <button 
+                type="button" 
+                class="btn btn-outline-primary btn-sm" 
+                @click="selectAllVendors"
+              >
+                Select All
+              </button>
+              <button 
+                type="button" 
+                class="btn btn-outline-secondary btn-sm" 
+                @click="deselectAllVendors"
+              >
+                Deselect All
+              </button>
             </div>
-
-            <!-- Select Vendors Card -->
-            <div class="form-card">
-                <div class="card-header">
-                    <h2 class="card-title">Select Vendors</h2>
-                    <button
-                        type="button"
-                        class="btn btn-sm btn-primary"
-                        @click="selectAllVendors"
-                    >
-                        <i class="fas fa-check-double"></i> Select All
-                    </button>
-                </div>
-                <div class="card-body">
-                    <div v-if="vendors.length === 0" class="empty-state">
-                        <div class="empty-icon">
-                            <i class="fas fa-users"></i>
-                        </div>
-                        <h3>No Vendors Available</h3>
-                        <p>
-                            There are no active vendors in the system. Please
-                            add vendors before sending RFQs.
-                        </p>
-                        <router-link
-                            to="/purchasing/vendors/create"
-                            class="btn btn-primary"
-                        >
-                            Add Vendor
-                        </router-link>
-                    </div>
-
-                    <div v-else>
-                        <div class="search-filter">
-                            <div class="search-box">
-                                <i class="fas fa-search search-icon"></i>
-                                <input
-                                    type="text"
-                                    v-model="vendorSearch"
-                                    placeholder="Search vendors..."
-                                />
-                                <button
-                                    v-if="vendorSearch"
-                                    @click="vendorSearch = ''"
-                                    class="clear-search"
-                                >
-                                    <i class="fas fa-times"></i>
-                                </button>
-                            </div>
-                        </div>
-
-                        <div class="vendors-list">
-                            <div
-                                v-for="vendor in filteredVendors"
-                                :key="vendor.vendor_id"
-                                class="vendor-item"
-                                :class="{
-                                    selected: selectedVendors.includes(
-                                        vendor.vendor_id
-                                    ),
-                                }"
-                                @click="toggleVendorSelection(vendor.vendor_id)"
-                            >
-                                <div class="vendor-checkbox">
-                                    <input
-                                        type="checkbox"
-                                        :checked="
-                                            selectedVendors.includes(
-                                                vendor.vendor_id
-                                            )
-                                        "
-                                        @click.stop
-                                    />
-                                </div>
-                                <div class="vendor-info">
-                                    <h3 class="vendor-name">
-                                        {{ vendor.name }}
-                                    </h3>
-                                    <div class="vendor-details">
-                                        <span
-                                            v-if="vendor.contact_person"
-                                            class="vendor-contact"
-                                        >
-                                            <i class="fas fa-user"></i>
-                                            {{ vendor.contact_person }}
-                                        </span>
-                                        <span
-                                            v-if="vendor.email"
-                                            class="vendor-email"
-                                        >
-                                            <i class="fas fa-envelope"></i>
-                                            {{ vendor.email }}
-                                        </span>
-                                        <span
-                                            v-if="vendor.phone"
-                                            class="vendor-phone"
-                                        >
-                                            <i class="fas fa-phone"></i>
-                                            {{ vendor.phone }}
-                                        </span>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div
-                            v-if="filteredVendors.length === 0"
-                            class="search-empty-state"
-                        >
-                            <p>No vendors match your search criteria.</p>
-                        </div>
-                    </div>
-                </div>
+          </div>
+  
+          <div class="card-body">
+            <div class="search-filter">
+              <div class="search-box">
+                <i class="fas fa-search search-icon"></i>
+                <input 
+                  type="text" 
+                  v-model="vendorSearch" 
+                  placeholder="Search vendors..." 
+                  class="form-control"
+                />
+                <button v-if="vendorSearch" @click="vendorSearch = ''" class="clear-search">
+                  <i class="fas fa-times"></i>
+                </button>
+              </div>
+              
+              <div class="filter-group">
+                <label>Filter by Category</label>
+                <select v-model="categoryFilter" class="form-control">
+                  <option value="">All Categories</option>
+                  <option v-for="category in vendorCategories" :key="category" :value="category">
+                    {{ category }}
+                  </option>
+                </select>
+              </div>
             </div>
-
-            <!-- Send Options Card -->
-            <div class="form-card">
-                <div class="card-header">
-                    <h2 class="card-title">Send Options</h2>
-                </div>
-                <div class="card-body">
-                    <div class="form-group">
-                        <label for="notification_method"
-                            >Notification Method</label
-                        >
-                        <select
-                            id="notification_method"
-                            v-model="notificationMethod"
-                        >
-                            <option value="system">
-                                System Notification Only
-                            </option>
-                            <option value="email">Email Notification</option>
-                            <option value="both">Both System and Email</option>
-                        </select>
-                    </div>
-
-                    <div class="form-group">
-                        <label for="message"
-                            >Additional Message (Optional)</label
-                        >
-                        <textarea
-                            id="message"
-                            v-model="additionalMessage"
-                            rows="4"
-                            placeholder="Add any additional information or instructions for vendors"
-                        ></textarea>
-                    </div>
-                </div>
+  
+            <div v-if="loadingVendors" class="loading-indicator">
+              <i class="fas fa-spinner fa-spin"></i> Loading vendors...
             </div>
-
-            <!-- Action Buttons -->
+            
+            <div v-else-if="filteredVendors.length === 0" class="empty-vendors">
+              <div class="empty-icon">
+                <i class="fas fa-users"></i>
+              </div>
+              <h3>No Vendors Found</h3>
+              <p>No vendors match your search criteria.</p>
+            </div>
+            
+            <div v-else class="vendors-grid">
+              <div 
+                v-for="vendor in filteredVendors" 
+                :key="vendor.vendor_id" 
+                class="vendor-card"
+                :class="{ 'vendor-selected': selectedVendors.includes(vendor.vendor_id) }"
+                @click="toggleVendorSelection(vendor.vendor_id)"
+              >
+                <div class="vendor-card-header">
+                  <div class="vendor-info">
+                    <div class="vendor-name">{{ vendor.name }}</div>
+                    <div class="vendor-code">{{ vendor.vendor_code }}</div>
+                  </div>
+                  <div class="vendor-checkbox">
+                    <input 
+                      type="checkbox" 
+                      :checked="selectedVendors.includes(vendor.vendor_id)"
+                      @click.stop
+                      @change="toggleVendorSelection(vendor.vendor_id)"
+                    />
+                  </div>
+                </div>
+                
+                <div class="vendor-details">
+                  <div class="vendor-contact">
+                    <div v-if="vendor.contact_person" class="contact-person">
+                      <i class="fas fa-user"></i> {{ vendor.contact_person }}
+                    </div>
+                    <div v-if="vendor.email" class="contact-email">
+                      <i class="fas fa-envelope"></i> {{ vendor.email }}
+                    </div>
+                    <div v-if="vendor.phone" class="contact-phone">
+                      <i class="fas fa-phone"></i> {{ vendor.phone }}
+                    </div>
+                  </div>
+                  
+                  <div v-if="vendor.category" class="vendor-category">
+                    <span class="category-badge">{{ vendor.category }}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+  
+        <div class="form-actions">
+          <button type="button" @click="$router.go(-1)" class="btn btn-secondary">
+            Cancel
+          </button>
+          <button 
+            type="button" 
+            @click="sendRFQ" 
+            class="btn btn-primary" 
+            :disabled="selectedVendors.length === 0 || isSending"
+          >
+            <i v-if="isSending" class="fas fa-spinner fa-spin"></i>
+            {{ isSending ? 'Sending...' : 'Send RFQ to Vendors' }}
+          </button>
+        </div>
+      </div>
+  
+      <!-- Success Modal -->
+      <div v-if="showSuccessModal" class="modal">
+        <div class="modal-backdrop"></div>
+        <div class="modal-content modal-sm">
+          <div class="modal-header">
+            <h2>RFQ Sent Successfully</h2>
+            <button class="close-btn" @click="closeSuccessModal">
+              <i class="fas fa-times"></i>
+            </button>
+          </div>
+          <div class="modal-body">
+            <div class="success-icon">
+              <i class="fas fa-check-circle"></i>
+            </div>
+            <p>RFQ {{ rfq?.rfq_number }} has been successfully sent to {{ selectedVendors.length }} vendors.</p>
+            
             <div class="form-actions">
-                <button type="button" class="btn btn-secondary" @click="cancel">
-                    Cancel
-                </button>
-                <button
-                    type="button"
-                    class="btn btn-primary"
-                    :disabled="isSubmitting || selectedVendors.length === 0"
-                    @click="sendRFQ"
-                >
-                    <i v-if="isSubmitting" class="fas fa-spinner fa-spin"></i>
-                    <i v-else class="fas fa-paper-plane"></i>
-                    {{ isSubmitting ? "Sending..." : "Send RFQ" }}
-                </button>
+              <router-link :to="`/purchasing/rfqs/${rfqId}`" class="btn btn-primary">
+                View RFQ Details
+              </router-link>
             </div>
+          </div>
         </div>
+      </div>
     </div>
-</template>
-
-<script>
-import { ref, computed, onMounted } from "vue";
-import { useRouter } from "vue-router";
-import axios from "axios";
-
-export default {
-    name: "RFQSend",
+  </template>
+  
+  <script>
+  import axios from 'axios';
+  
+  export default {
+    name: 'RFQSend',
     props: {
-        id: {
-            type: [Number, String],
-            required: true,
-        },
+      rfqId: {
+        type: [Number, String],
+        required: true
+      }
     },
-    setup(props) {
-        const router = useRouter();
-        const rfq = ref(null);
-        const vendors = ref([]);
-        const selectedVendors = ref([]);
-        const vendorSearch = ref("");
-        const notificationMethod = ref("system");
-        const additionalMessage = ref("");
-        const isLoading = ref(true);
-        const isSubmitting = ref(false);
-
-        // Filtered vendors based on search
-        const filteredVendors = computed(() => {
-            if (!vendorSearch.value) {
-                return vendors.value;
-            }
-
-            const search = vendorSearch.value.toLowerCase();
-            return vendors.value.filter(
-                (vendor) =>
-                    vendor.name.toLowerCase().includes(search) ||
-                    (vendor.contact_person &&
-                        vendor.contact_person.toLowerCase().includes(search)) ||
-                    (vendor.email &&
-                        vendor.email.toLowerCase().includes(search)) ||
-                    (vendor.vendor_code &&
-                        vendor.vendor_code.toLowerCase().includes(search))
-            );
+    data() {
+      return {
+        rfq: null,
+        loading: true,
+        loadingVendors: true,
+        vendors: [],
+        selectedVendors: [],
+        vendorSearch: '',
+        categoryFilter: '',
+        isSending: false,
+        showSuccessModal: false
+      }
+    },
+    computed: {
+      vendorCategories() {
+        const categories = [...new Set(this.vendors
+          .filter(vendor => vendor.category)
+          .map(vendor => vendor.category))];
+        
+        return categories.sort();
+      },
+      filteredVendors() {
+        if (!this.vendors) return [];
+        
+        return this.vendors.filter(vendor => {
+          // Filter by search term
+          const searchMatches = !this.vendorSearch || 
+            vendor.name.toLowerCase().includes(this.vendorSearch.toLowerCase()) ||
+            vendor.vendor_code.toLowerCase().includes(this.vendorSearch.toLowerCase()) ||
+            (vendor.contact_person && vendor.contact_person.toLowerCase().includes(this.vendorSearch.toLowerCase()));
+          
+          // Filter by category
+          const categoryMatches = !this.categoryFilter || vendor.category === this.categoryFilter;
+          
+          return searchMatches && categoryMatches;
         });
-
-        // Load data
-        const loadData = async () => {
-            isLoading.value = true;
-
-            try {
-                // Fetch RFQ and vendors in parallel
-                const [rfqResponse, vendorsResponse] = await Promise.all([
-                    axios.get(`/request-for-quotations/${props.id}`),
-                    axios.get("/vendors", { params: { status: "active" } }),
-                ]);
-
-                rfq.value = rfqResponse.data.data;
-                vendors.value = vendorsResponse.data.data.data || [];
-            } catch (error) {
-                console.error("Error loading data:", error);
-                rfq.value = null;
-            } finally {
-                isLoading.value = false;
+      }
+    },
+    async mounted() {
+      try {
+        await Promise.all([
+          this.loadRFQ(),
+          this.loadVendors()
+        ]);
+      } catch (error) {
+        console.error('Error initializing component:', error);
+      }
+    },
+    methods: {
+      async loadRFQ() {
+        try {
+          const response = await axios.get(`/request-for-quotations/${this.rfqId}`);
+          
+          if (response.data.status === 'success' && response.data.data) {
+            this.rfq = response.data.data;
+          } else {
+            throw new Error(response.data.message || 'Failed to load RFQ');
+          }
+        } catch (error) {
+          console.error('Error loading RFQ:', error);
+          this.rfq = null;
+          
+          if (error.response && error.response.status === 404) {
+            this.$toast.error('Request for Quotation not found');
+          } else {
+            this.$toast.error('Failed to load RFQ details. Please try again.');
+          }
+        } finally {
+          this.loading = false;
+        }
+      },
+      async loadVendors() {
+        this.loadingVendors = true;
+        
+        try {
+          const response = await axios.get('/vendors', {
+            params: {
+              status: 'active'
             }
-        };
-
-        // Vendor selection helpers
-        const toggleVendorSelection = (vendorId) => {
-            const index = selectedVendors.value.indexOf(vendorId);
-            if (index === -1) {
-                selectedVendors.value.push(vendorId);
-            } else {
-                selectedVendors.value.splice(index, 1);
-            }
-        };
-
-        const selectAllVendors = () => {
-            if (selectedVendors.value.length === vendors.value.length) {
-                // Deselect all if all are selected
-                selectedVendors.value = [];
-            } else {
-                // Select all
-                selectedVendors.value = vendors.value.map(
-                    (vendor) => vendor.vendor_id
-                );
-            }
-        };
-
-        // Date formatter
-        const formatDate = (dateString) => {
-            if (!dateString) return "N/A";
-            const date = new Date(dateString);
-            return date.toLocaleDateString();
-        };
-
-        // Send RFQ
-        const sendRFQ = async () => {
-            if (selectedVendors.value.length === 0) {
-                alert("Please select at least one vendor to send the RFQ.");
-                return;
-            }
-
-            isSubmitting.value = true;
-
-            try {
-                // First update RFQ status to 'sent'
-                await axios.patch(
-                    `/request-for-quotations/${props.id}/status`,
-                    {
-                        status: "sent",
-                    }
-                );
-
-                // Create vendor quotations (as placeholders) for each selected vendor
-                for (const vendorId of selectedVendors.value) {
-                    await createVendorQuotation(vendorId);
-                }
-
-                // If email notification is requested, send emails (mock)
-                if (
-                    notificationMethod.value === "email" ||
-                    notificationMethod.value === "both"
-                ) {
-                    // This would be implemented on the backend
-                    console.log("Sending email notifications to vendors");
-                }
-
-                // Show success message
-                alert(
-                    `RFQ successfully sent to ${selectedVendors.value.length} vendors.`
-                );
-
-                // Navigate back to RFQ details
-                router.push(`/purchasing/rfqs/${props.id}`);
-            } catch (error) {
-                console.error("Error sending RFQ:", error);
-                alert("Failed to send RFQ. Please try again.");
-            } finally {
-                isSubmitting.value = false;
-            }
-        };
-
-        // Create placeholder vendor quotation
-        const createVendorQuotation = async (vendorId) => {
-            // Define quotation lines based on RFQ lines
-            const lines = rfq.value.lines.map((line) => ({
-                item_id: line.item_id,
-                quantity: line.quantity,
-                uom_id: line.uom_id,
-                delivery_date: line.required_date,
-            }));
-
-            // Create the quotation
-            await axios.post("/vendor-quotations", {
-                rfq_id: props.id,
-                vendor_id: vendorId,
-                quotation_date: new Date().toISOString().split("T")[0],
-                validity_date: rfq.value.validity_date,
-                lines: lines,
+          });
+          
+          if (response.data.data) {
+            this.vendors = response.data.data;
+          } else {
+            throw new Error('Failed to load vendors');
+          }
+        } catch (error) {
+          console.error('Error loading vendors:', error);
+          this.$toast.error('Failed to load vendors. Please try again.');
+        } finally {
+          this.loadingVendors = false;
+        }
+      },
+      formatDate(dateString) {
+        if (!dateString) return null;
+        
+        const date = new Date(dateString);
+        return date.toLocaleDateString('id-ID', {
+          year: 'numeric',
+          month: 'long',
+          day: 'numeric'
+        });
+      },
+      formatNumber(number) {
+        return new Intl.NumberFormat('id-ID').format(number);
+      },
+      capitalizeFirstLetter(string) {
+        if (!string) return '';
+        return string.charAt(0).toUpperCase() + string.slice(1);
+      },
+      toggleVendorSelection(vendorId) {
+        const index = this.selectedVendors.indexOf(vendorId);
+        
+        if (index === -1) {
+          this.selectedVendors.push(vendorId);
+        } else {
+          this.selectedVendors.splice(index, 1);
+        }
+      },
+      selectAllVendors() {
+        this.selectedVendors = this.filteredVendors.map(vendor => vendor.vendor_id);
+      },
+      deselectAllVendors() {
+        this.selectedVendors = [];
+      },
+      async sendRFQ() {
+        if (this.selectedVendors.length === 0) {
+          this.$toast.warning('Please select at least one vendor');
+          return;
+        }
+        
+        this.isSending = true;
+        
+        try {
+          const response = await axios.post('/vendor-quotations/create-from-rfq', {
+            rfq_id: this.rfqId,
+            vendor_ids: this.selectedVendors
+          });
+          
+          if (response.data.status === 'success') {
+            // Update RFQ status
+            await axios.patch(`/request-for-quotations/${this.rfqId}/status`, {
+              status: 'sent'
             });
-        };
-
-        // Cancel
-        const cancel = () => {
-            router.push(`/purchasing/rfqs/${props.id}`);
-        };
-
-        // Initialize
-        onMounted(() => {
-            loadData();
-        });
-
-        return {
-            rfq,
-            vendors,
-            selectedVendors,
-            vendorSearch,
-            notificationMethod,
-            additionalMessage,
-            isLoading,
-            isSubmitting,
-            filteredVendors,
-            toggleVendorSelection,
-            selectAllVendors,
-            formatDate,
-            sendRFQ,
-            cancel,
-        };
-    },
-};
-</script>
-
-<style scoped>
-.rfq-send-container {
+            
+            // Show success modal
+            this.showSuccessModal = true;
+          } else {
+            throw new Error(response.data.message || 'Failed to send RFQ');
+          }
+        } catch (error) {
+          console.error('Error sending RFQ:', error);
+          
+          if (error.response && error.response.data && error.response.data.message) {
+            this.$toast.error('Failed to send RFQ: ' + error.response.data.message);
+          } else {
+            this.$toast.error('Failed to send RFQ to vendors. Please try again.');
+          }
+        } finally {
+          this.isSending = false;
+        }
+      },
+      closeSuccessModal() {
+        this.showSuccessModal = false;
+        this.$router.push(`/purchasing/rfqs/${this.rfqId}`);
+      }
+    }
+  }
+  </script>
+  
+  <style scoped>
+  .rfq-send-container {
     padding: 1rem;
-}
-
-.page-header {
+    background-color: white;
+    border-radius: 0.5rem;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  }
+  
+  .page-header {
     display: flex;
     justify-content: space-between;
-    align-items: flex-start;
-    margin-bottom: 1.5rem;
-}
-
-.header-left {
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-}
-
-.back-link {
-    display: inline-flex;
     align-items: center;
-    gap: 0.5rem;
-    color: var(--gray-600);
-    text-decoration: none;
-    font-size: 0.875rem;
-}
-
-.back-link:hover {
-    color: var(--primary-color);
-}
-
-.header-left h1 {
+    margin-bottom: 1.5rem;
+  }
+  
+  .page-header h1 {
     margin: 0;
     font-size: 1.5rem;
-    color: var(--gray-800);
-}
-
-.loading-container,
-.error-container {
+  }
+  
+  .header-actions {
+    display: flex;
+    gap: 0.5rem;
+  }
+  
+  .loading-indicator {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding: 3rem 0;
+    color: var(--gray-500);
+    font-size: 0.875rem;
+  }
+  
+  .loading-indicator i {
+    margin-right: 0.5rem;
+    animation: spin 1s linear infinite;
+  }
+  
+  .error-state {
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    padding: 4rem 2rem;
-    background-color: white;
-    border-radius: 0.5rem;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    padding: 3rem 0;
     text-align: center;
-}
-
-.loading-spinner {
-    font-size: 2rem;
-    color: var(--primary-color);
-    margin-bottom: 1rem;
-}
-
-.error-icon {
+  }
+  
+  .error-icon {
     font-size: 3rem;
-    color: var(--danger-color);
+    color: #ef4444;
     margin-bottom: 1rem;
-}
-
-.send-content {
-    max-width: 900px;
-    margin: 0 auto;
+  }
+  
+  .error-state h3 {
+    font-size: 1.25rem;
+    margin-bottom: 0.5rem;
+  }
+  
+  .error-state p {
+    color: var(--gray-500);
+    margin-bottom: 1.5rem;
+  }
+  
+  .rfq-send-content {
     display: flex;
     flex-direction: column;
     gap: 1.5rem;
-}
-
-.detail-card,
-.form-card {
-    background-color: white;
+  }
+  
+  .detail-card {
+    border: 1px solid var(--gray-200);
     border-radius: 0.5rem;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
     overflow: hidden;
-}
-
-.card-header {
+  }
+  
+  .card-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
     padding: 1rem 1.5rem;
     background-color: var(--gray-50);
     border-bottom: 1px solid var(--gray-200);
-}
-
-.card-title {
+  }
+  
+  .card-title {
     margin: 0;
-    font-size: 1.25rem;
+    font-size: 1.125rem;
+    font-weight: 600;
     color: var(--gray-800);
-}
-
-.card-body {
-    padding: 1.5rem;
-}
-
-.info-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-    gap: 1.5rem;
-}
-
-.info-item {
-    display: flex;
-    flex-direction: column;
-    gap: 0.25rem;
-}
-
-.info-label {
-    font-size: 0.875rem;
-    color: var(--gray-500);
-}
-
-.info-value {
-    font-size: 1rem;
-    color: var(--gray-800);
+  }
+  
+  .status-badge {
+    display: inline-block;
+    padding: 0.25rem 0.5rem;
+    border-radius: 0.25rem;
+    font-size: 0.75rem;
     font-weight: 500;
-}
-
-.search-filter {
+    text-transform: capitalize;
+  }
+  
+  .status-draft {
+    background-color: var(--gray-100);
+    color: var(--gray-700);
+  }
+  
+  .card-body {
+    padding: 1.5rem;
+  }
+  
+  .detail-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1.5rem;
     margin-bottom: 1.5rem;
-}
-
-.search-box {
+  }
+  
+  .detail-row:last-child {
+    margin-bottom: 0;
+  }
+  
+  .detail-group {
+    flex: 1;
+    min-width: 200px;
+  }
+  
+  .detail-group.full-width {
+    flex-basis: 100%;
+  }
+  
+  .detail-group label {
+    display: block;
+    font-size: 0.75rem;
+    color: var(--gray-500);
+    margin-bottom: 0.25rem;
+  }
+  
+  .detail-value {
+    font-size: 0.875rem;
+    color: var(--gray-800);
+  }
+  
+  .item-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+  
+  .item-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.375rem 0.75rem;
+    background-color: var(--gray-100);
+    border-radius: 0.25rem;
+    font-size: 0.75rem;
+  }
+  
+  .item-code {
+    font-weight: 500;
+    color: var(--gray-800);
+  }
+  
+  .item-quantity {
+    color: var(--gray-600);
+  }
+  
+  .vendor-actions {
+    display: flex;
+    gap: 0.5rem;
+  }
+  
+  .search-filter {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+  }
+  
+  .search-box {
     position: relative;
-    max-width: 400px;
-}
-
-.search-icon {
+    flex: 1;
+    min-width: 250px;
+  }
+  
+  .search-icon {
     position: absolute;
     left: 0.75rem;
     top: 50%;
     transform: translateY(-50%);
     color: var(--gray-500);
-}
-
-.search-box input {
+  }
+  
+  .search-box input {
     width: 100%;
     padding: 0.625rem 2.25rem;
     border: 1px solid var(--gray-200);
     border-radius: 0.375rem;
     font-size: 0.875rem;
-}
-
-.clear-search {
+    transition: border-color 0.2s, box-shadow 0.2s;
+  }
+  
+  .search-box input:focus {
+    outline: none;
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+  }
+  
+  .clear-search {
     position: absolute;
     right: 0.75rem;
     top: 50%;
@@ -590,183 +622,345 @@ export default {
     border: none;
     color: var(--gray-500);
     cursor: pointer;
-}
-
-.vendors-list {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-    gap: 1rem;
-}
-
-.vendor-item {
     display: flex;
-    align-items: flex-start;
-    gap: 1rem;
-    padding: 1rem;
-    border: 1px solid var(--gray-200);
-    border-radius: 0.5rem;
-    transition: all 0.2s;
-    cursor: pointer;
-}
-
-.vendor-item:hover {
-    border-color: var(--primary-color);
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
-}
-
-.vendor-item.selected {
-    background-color: var(--primary-bg);
-    border-color: var(--primary-color);
-}
-
-.vendor-checkbox {
-    padding-top: 0.25rem;
-}
-
-.vendor-info {
-    flex: 1;
-}
-
-.vendor-name {
-    margin: 0 0 0.5rem 0;
-    font-size: 1rem;
-    color: var(--gray-800);
-}
-
-.vendor-details {
+    align-items: center;
+    justify-content: center;
+    padding: 0.25rem;
+    border-radius: 9999px;
+  }
+  
+  .clear-search:hover {
+    background-color: var(--gray-100);
+    color: var(--gray-700);
+  }
+  
+  .filter-group {
     display: flex;
     flex-direction: column;
     gap: 0.25rem;
+  }
+  
+  .filter-group label {
     font-size: 0.75rem;
-    color: var(--gray-600);
-}
-
-.vendor-contact i,
-.vendor-email i,
-.vendor-phone i {
-    width: 1rem;
-    margin-right: 0.25rem;
-}
-
-.search-empty-state {
-    text-align: center;
-    padding: 2rem 0;
     color: var(--gray-500);
-}
-
-.empty-state {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    padding: 2rem;
-    text-align: center;
-}
-
-.empty-icon {
-    font-size: 2.5rem;
-    color: var(--gray-300);
-    margin-bottom: 1rem;
-}
-
-.empty-state h3 {
-    font-size: 1.125rem;
-    color: var(--gray-700);
-    margin-bottom: 0.5rem;
-}
-
-.empty-state p {
-    color: var(--gray-500);
-    max-width: 24rem;
-    margin-bottom: 1rem;
-}
-
-.form-group {
-    margin-bottom: 1.5rem;
-}
-
-.form-group:last-child {
-    margin-bottom: 0;
-}
-
-.form-group label {
-    display: block;
-    font-size: 0.875rem;
     font-weight: 500;
-    color: var(--gray-700);
-    margin-bottom: 0.5rem;
-}
-
-.form-group select,
-.form-group textarea {
-    width: 100%;
+  }
+  
+  .filter-group select {
     padding: 0.625rem;
     border: 1px solid var(--gray-200);
     border-radius: 0.375rem;
     font-size: 0.875rem;
-    transition: border-color 0.2s, box-shadow 0.2s;
-}
-
-.form-group select:focus,
-.form-group textarea:focus {
-    outline: none;
+    min-width: 200px;
+  }
+  
+  .empty-vendors {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 3rem 0;
+    text-align: center;
+  }
+  
+  .empty-icon {
+    font-size: 2.5rem;
+    color: var(--gray-300);
+    margin-bottom: 1rem;
+  }
+  
+  .empty-vendors h3 {
+    font-size: 1.125rem;
+    margin-bottom: 0.5rem;
+  }
+  
+  .empty-vendors p {
+    color: var(--gray-500);
+  }
+  
+  .vendors-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 1rem;
+  }
+  
+  .vendor-card {
+    border: 1px solid var(--gray-200);
+    border-radius: 0.375rem;
+    overflow: hidden;
+    transition: all 0.2s;
+    cursor: pointer;
+  }
+  
+  .vendor-card:hover {
     border-color: var(--primary-color);
-    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
-}
-
-.form-actions {
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+  }
+  
+  .vendor-selected {
+    border-color: var(--primary-color);
+    background-color: rgba(37, 99, 235, 0.05);
+  }
+  
+  .vendor-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    padding: 1rem;
+    background-color: var(--gray-50);
+    border-bottom: 1px solid var(--gray-200);
+  }
+  
+  .vendor-name {
+    font-weight: 500;
+    color: var(--gray-800);
+    margin-bottom: 0.25rem;
+  }
+  
+  .vendor-code {
+    font-size: 0.75rem;
+    color: var(--gray-500);
+  }
+  
+  .vendor-checkbox input {
+    width: 1.25rem;
+    height: 1.25rem;
+    cursor: pointer;
+  }
+  
+  .vendor-details {
+    padding: 1rem;
+  }
+  
+  .vendor-contact {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    margin-bottom: 0.75rem;
+  }
+  
+  .contact-person,
+  .contact-email,
+  .contact-phone {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.75rem;
+    color: var(--gray-600);
+  }
+  
+  .contact-person i,
+  .contact-email i,
+  .contact-phone i {
+    width: 1rem;
+    color: var(--gray-500);
+  }
+  
+  .vendor-category {
+    display: flex;
+    justify-content: flex-end;
+  }
+  
+  .category-badge {
+    display: inline-block;
+    padding: 0.25rem 0.5rem;
+    background-color: var(--gray-100);
+    border-radius: 9999px;
+    font-size: 0.75rem;
+    color: var(--gray-700);
+  }
+  
+  .form-actions {
     display: flex;
     justify-content: flex-end;
     gap: 1rem;
-    margin-top: 0.5rem;
-}
-
-.btn {
-    padding: 0.625rem 1.25rem;
+    margin-top: 1rem;
+  }
+  
+  .btn {
+    padding: 0.625rem 1rem;
+    border-radius: 0.375rem;
     font-size: 0.875rem;
     font-weight: 500;
-    border-radius: 0.375rem;
     cursor: pointer;
+    transition: all 0.2s;
     display: inline-flex;
     align-items: center;
-    justify-content: center;
     gap: 0.5rem;
-    border: none;
-    transition: background-color 0.2s, color 0.2s;
-}
-
-.btn-sm {
+    text-decoration: none;
+  }
+  
+  .btn-sm {
     padding: 0.375rem 0.75rem;
     font-size: 0.75rem;
-}
-
-.btn-primary {
+  }
+  
+  .btn-primary {
     background-color: var(--primary-color);
     color: white;
-}
-
-.btn-primary:hover:not(:disabled) {
+    border: none;
+  }
+  
+  .btn-primary:hover:not(:disabled) {
     background-color: var(--primary-dark);
-}
-
-.btn-primary:disabled {
+  }
+  
+  .btn-primary:disabled {
     opacity: 0.7;
     cursor: not-allowed;
-}
-
-.btn-secondary {
-    background-color: var(--gray-200);
+  }
+  
+  .btn-secondary {
+    background-color: white;
     color: var(--gray-700);
-}
-
-.btn-secondary:hover {
-    background-color: var(--gray-300);
-}
-
-@media (max-width: 768px) {
-    .info-grid,
-    .vendors-list {
-        grid-template-columns: 1fr;
+    border: 1px solid var(--gray-300);
+  }
+  
+  .btn-secondary:hover {
+    background-color: var(--gray-50);
+  }
+  
+  .btn-outline {
+    background-color: white;
+    color: var(--gray-700);
+    border: 1px solid var(--gray-300);
+  }
+  
+  .btn-outline:hover {
+    background-color: var(--gray-50);
+  }
+  
+  .btn-outline-primary {
+    background-color: white;
+    color: var(--primary-color);
+    border: 1px solid var(--primary-color);
+  }
+  
+  .btn-outline-primary:hover {
+    background-color: rgba(37, 99, 235, 0.05);
+  }
+  
+  .btn-outline-secondary {
+    background-color: white;
+    color: var(--gray-700);
+    border: 1px solid var(--gray-300);
+  }
+  
+  .btn-outline-secondary:hover {
+    background-color: var(--gray-50);
+  }
+  
+  /* Modal Styles */
+  .modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 50;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+  }
+  
+  .modal-backdrop {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgba(0, 0, 0, 0.5);
+    z-index: 50;
+  }
+  
+  .modal-content {
+    background-color: white;
+    border-radius: 0.5rem;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    width: 100%;
+    z-index: 60;
+    overflow: hidden;
+  }
+  
+  .modal-sm {
+    max-width: 400px;
+  }
+  
+  .modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1rem 1.5rem;
+    border-bottom: 1px solid #e2e8f0;
+  }
+  
+  .modal-header h2 {
+    font-size: 1.25rem;
+    font-weight: 600;
+    margin: 0;
+    color: #1e293b;
+  }
+  
+  .close-btn {
+    background: none;
+    border: none;
+    color: #64748b;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.25rem;
+    border-radius: 0.25rem;
+  }
+  
+  .close-btn:hover {
+    background-color: #f1f5f9;
+    color: #0f172a;
+  }
+  
+  .modal-body {
+    padding: 1.5rem;
+    text-align: center;
+  }
+  
+  .success-icon {
+    font-size: 3rem;
+    color: #10b981;
+    margin-bottom: 1rem;
+  }
+  
+  @keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+  }
+  
+  @media (max-width: 768px) {
+    .page-header {
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 1rem;
     }
-}
-</style>
+    
+    .header-actions {
+      width: 100%;
+    }
+    
+    .detail-row {
+      flex-direction: column;
+      gap: 1rem;
+    }
+    
+    .card-header {
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 0.5rem;
+    }
+    
+    .search-filter {
+      flex-direction: column;
+    }
+    
+    .vendors-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+  </style>

@@ -81,7 +81,9 @@ class SalesOrder extends Model
      */
     public function salesInvoices(): HasMany
     {
-        return $this->hasMany(SalesInvoice::class, 'so_id');
+        // Removed invalid relationship due to missing 'so_id' in SalesInvoice
+        // If needed, this can be re-implemented using a different approach
+        return $this->hasMany(SalesInvoice::class, 'do_id', 'so_id');
     }
     
     /**

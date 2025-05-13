@@ -1,591 +1,653 @@
 <!-- src/views/purchasing/PurchaseRequisitionList.vue -->
 <template>
-    <div class="pr-list-container">
-        <div class="page-header">
-            <h1>Purchase Requisitions</h1>
-            <button @click="openCreateForm" class="btn btn-primary">
-                <i class="fas fa-plus"></i> Create Requisition
-            </button>
-        </div>
-
-        <div class="filter-section">
-            <SearchFilter
-                v-model:value="searchQuery"
-                placeholder="Search requisitions..."
-                @search="fetchPurchaseRequisitions"
-                @clear="clearSearch"
-            >
-                <template v-slot:filters>
-                    <div class="filter-group">
-                        <label for="status-filter">Status</label>
-                        <select
-                            id="status-filter"
-                            v-model="filters.status"
-                            @change="fetchPurchaseRequisitions"
-                        >
-                            <option value="">All Status</option>
-                            <option value="draft">Draft</option>
-                            <option value="pending">Pending Approval</option>
-                            <option value="approved">Approved</option>
-                            <option value="rejected">Rejected</option>
-                            <option value="canceled">Canceled</option>
-                        </select>
-                    </div>
-                    <div class="filter-group">
-                        <label for="date-from">Date From</label>
-                        <input
-                            type="date"
-                            id="date-from"
-                            v-model="filters.date_from"
-                            @change="fetchPurchaseRequisitions"
-                        />
-                    </div>
-                    <div class="filter-group">
-                        <label for="date-to">Date To</label>
-                        <input
-                            type="date"
-                            id="date-to"
-                            v-model="filters.date_to"
-                            @change="fetchPurchaseRequisitions"
-                        />
-                    </div>
-                </template>
-            </SearchFilter>
-        </div>
-
-        <div class="data-container">
-            <DataTable
-                :columns="columns"
-                :items="purchaseRequisitions"
-                :is-loading="isLoading"
-                :key-field="'pr_id'"
-                :initial-sort-key="'pr_date'"
-                :initial-sort-order="'desc'"
-                :empty-title="'No Purchase Requisitions Found'"
-                :empty-message="'Try adjusting your search or filters, or create a new purchase requisition.'"
-                :empty-icon="'fas fa-file-alt'"
-                @sort="handleSort"
-            >
-                <template v-slot:status="{ value }">
-                    <span :class="['status-badge', getStatusClass(value)]">
-                        {{ getStatusLabel(value) }}
-                    </span>
-                </template>
-
-                <template v-slot:pr_date="{ value }">
-                    {{ formatDate(value) }}
-                </template>
-
-                <template v-slot:requester="{ item }">
-                    {{ item.requester ? item.requester.name : "N/A" }}
-                </template>
-
-                <template v-slot:actions="{ item }">
-                    <div class="action-buttons">
-                        <button
-                            @click="viewPR(item)"
-                            class="action-btn view-btn"
-                            title="View Details"
-                        >
-                            <i class="fas fa-eye"></i>
-                        </button>
-                        <button
-                            v-if="
-                                item.status === 'draft' ||
-                                item.status === 'pending'
-                            "
-                            @click="editPR(item)"
-                            class="action-btn edit-btn"
-                            title="Edit"
-                        >
-                            <i class="fas fa-edit"></i>
-                        </button>
-                        <button
-                            v-if="item.status === 'pending'"
-                            @click="approvePR(item)"
-                            class="action-btn approve-btn"
-                            title="Approve/Reject"
-                        >
-                            <i class="fas fa-check-circle"></i>
-                        </button>
-                        <button
-                            v-if="item.status === 'approved'"
-                            @click="convertToRFQ(item)"
-                            class="action-btn convert-btn"
-                            title="Convert to RFQ"
-                        >
-                            <i class="fas fa-exchange-alt"></i>
-                        </button>
-                        <button
-                            v-if="item.status === 'draft'"
-                            @click="confirmDelete(item)"
-                            class="action-btn delete-btn"
-                            title="Delete"
-                        >
-                            <i class="fas fa-trash"></i>
-                        </button>
-                    </div>
-                </template>
-            </DataTable>
-
-            <div v-if="totalPages > 1" class="pagination-wrapper">
-                <PaginationComponent
-                    :current-page="currentPage"
-                    :total-pages="totalPages"
-                    :from="paginationFrom"
-                    :to="paginationTo"
-                    :total="totalItems"
-                    @page-changed="changePage"
-                />
+    <div class="purchase-requisition-list">
+      <div class="page-header">
+        <h1>Purchase Requisitions</h1>
+        <router-link to="/purchasing/requisitions/create" class="btn btn-primary">
+          <i class="fas fa-plus"></i> Create New PR
+        </router-link>
+      </div>
+  
+      <div class="card filters-card">
+        <div class="card-body">
+          <div class="row">
+            <div class="col-md-3 form-group">
+              <label for="status">Status</label>
+              <select v-model="filters.status" id="status" class="form-control" @change="fetchPurchaseRequisitions()">
+                <option value="">All Statuses</option>
+                <option value="draft">Draft</option>
+                <option value="pending">Pending</option>
+                <option value="approved">Approved</option>
+                <option value="rejected">Rejected</option>
+                <option value="canceled">Canceled</option>
+              </select>
             </div>
+            <div class="col-md-3 form-group">
+              <label for="search">Search</label>
+              <div class="input-group">
+                <input
+                  type="text"
+                  v-model="filters.search"
+                  id="search"
+                  class="form-control"
+                  placeholder="PR Number or Notes"
+                  @keyup.enter="fetchPurchaseRequisitions()"
+                />
+                <div class="input-group-append">
+                  <button class="btn btn-outline-secondary" type="button" @click="fetchPurchaseRequisitions()">
+                    <i class="fas fa-search"></i>
+                  </button>
+                </div>
+              </div>
+            </div>
+            <div class="col-md-3 form-group">
+              <label for="dateFrom">Date From</label>
+              <input
+                type="date"
+                v-model="filters.dateFrom"
+                id="dateFrom"
+                class="form-control"
+                @change="fetchPurchaseRequisitions()"
+              />
+            </div>
+            <div class="col-md-3 form-group">
+              <label for="dateTo">Date To</label>
+              <input
+                type="date"
+                v-model="filters.dateTo"
+                id="dateTo"
+                class="form-control"
+                @change="fetchPurchaseRequisitions()"
+              />
+            </div>
+          </div>
         </div>
-
-        <!-- Confirmation Modal for Delete -->
-        <ConfirmationModal
-            v-if="showDeleteModal"
-            :title="'Delete Purchase Requisition'"
-            :message="
-                'Are you sure you want to delete purchase requisition <strong>' +
-                (selectedPR?.pr_number || '') +
-                '</strong>? This action cannot be undone.'
-            "
-            :confirm-button-text="'Delete'"
-            :confirm-button-class="'btn btn-danger'"
-            @confirm="deletePR"
-            @close="closeDeleteModal"
-        />
+      </div>
+  
+      <div v-if="loading" class="text-center my-4">
+        <div class="spinner-border text-primary" role="status">
+          <span class="sr-only">Loading...</span>
+        </div>
+      </div>
+  
+      <div v-else-if="purchaseRequisitions.length === 0" class="empty-state my-4">
+        <div class="empty-state-container">
+          <i class="fas fa-file-alt empty-state-icon"></i>
+          <h3>No Purchase Requisitions Found</h3>
+          <p>No purchase requisitions match your current filters. Try adjusting your filters or create a new requisition.</p>
+          <router-link to="/purchasing/requisitions/create" class="btn btn-primary">
+            <i class="fas fa-plus"></i> Create New PR
+          </router-link>
+        </div>
+      </div>
+  
+      <div v-else class="table-responsive">
+        <table class="table table-striped table-hover">
+          <thead>
+            <tr>
+              <th @click="sortBy('pr_number')" class="sortable-column">
+                PR Number
+                <i v-if="sortField === 'pr_number'" :class="[sortDirection === 'asc' ? 'fas fa-sort-up' : 'fas fa-sort-down']"></i>
+              </th>
+              <th @click="sortBy('pr_date')" class="sortable-column">
+                Date
+                <i v-if="sortField === 'pr_date'" :class="[sortDirection === 'asc' ? 'fas fa-sort-up' : 'fas fa-sort-down']"></i>
+              </th>
+              <th>Requester</th>
+              <th @click="sortBy('status')" class="sortable-column">
+                Status
+                <i v-if="sortField === 'status'" :class="[sortDirection === 'asc' ? 'fas fa-sort-up' : 'fas fa-sort-down']"></i>
+              </th>
+              <th>Items</th>
+              <th>Notes</th>
+              <th class="text-right">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="pr in purchaseRequisitions" :key="pr.pr_id">
+              <td>
+                <router-link :to="`/purchasing/requisitions/${pr.pr_id}`" class="pr-number-link">
+                  {{ pr.pr_number }}
+                </router-link>
+              </td>
+              <td>{{ formatDate(pr.pr_date) }}</td>
+              <td>{{ pr.requester ? pr.requester.name : 'N/A' }}</td>
+              <td>
+                <span :class="getStatusBadgeClass(pr.status)">{{ capitalizeStatus(pr.status) }}</span>
+              </td>
+              <td>{{ pr.lines ? pr.lines.length : 0 }}</td>
+              <td class="notes-cell">{{ truncateText(pr.notes, 50) }}</td>
+              <td class="text-right">
+                <div class="actions-container">
+                  <router-link :to="`/purchasing/requisitions/${pr.pr_id}`" class="btn btn-sm btn-info mr-1" title="View">
+                    <i class="fas fa-eye"></i>
+                  </router-link>
+                  
+                  <router-link 
+                    v-if="pr.status === 'draft'" 
+                    :to="`/purchasing/requisitions/${pr.pr_id}/edit`" 
+                    class="btn btn-sm btn-primary mr-1" 
+                    title="Edit"
+                  >
+                    <i class="fas fa-edit"></i>
+                  </router-link>
+                  
+                  <router-link 
+                    v-if="pr.status === 'pending'" 
+                    :to="`/purchasing/requisitions/${pr.pr_id}/approve`" 
+                    class="btn btn-sm btn-success mr-1" 
+                    title="Approve/Reject"
+                  >
+                    <i class="fas fa-check-circle"></i>
+                  </router-link>
+                  
+                  <router-link 
+                    v-if="pr.status === 'approved'" 
+                    :to="`/purchasing/requisitions/${pr.pr_id}/convert`" 
+                    class="btn btn-sm btn-warning mr-1" 
+                    title="Convert to RFQ"
+                  >
+                    <i class="fas fa-exchange-alt"></i>
+                  </router-link>
+                  
+                  <button 
+                    v-if="['draft', 'pending'].includes(pr.status)" 
+                    @click="confirmCancelPR(pr)" 
+                    class="btn btn-sm btn-danger" 
+                    title="Cancel"
+                  >
+                    <i class="fas fa-times"></i>
+                  </button>
+                </div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+  
+      <div class="pagination-container" v-if="purchaseRequisitions.length > 0">
+        <div class="pagination-info">
+          Showing {{ pagination.from }} to {{ pagination.to }} of {{ pagination.total }} entries
+        </div>
+        <div class="pagination-controls">
+          <button 
+            class="btn btn-sm btn-outline-secondary" 
+            :disabled="pagination.current_page === 1" 
+            @click="goToPage(pagination.current_page - 1)"
+          >
+            <i class="fas fa-chevron-left"></i>
+          </button>
+          
+          <template v-for="page in displayedPages" :key="page">
+            <button 
+              v-if="page !== '...'" 
+              class="btn btn-sm" 
+              :class="page === pagination.current_page ? 'btn-primary' : 'btn-outline-secondary'"
+              @click="goToPage(page)"
+            >
+              {{ page }}
+            </button>
+            <span v-else class="pagination-ellipsis">...</span>
+          </template>
+          
+          <button 
+            class="btn btn-sm btn-outline-secondary" 
+            :disabled="pagination.current_page === pagination.last_page" 
+            @click="goToPage(pagination.current_page + 1)"
+          >
+            <i class="fas fa-chevron-right"></i>
+          </button>
+        </div>
+      </div>
+  
+      <!-- Confirmation Modal -->
+      <div v-if="showCancelModal" class="modal-backdrop" @click="showCancelModal = false"></div>
+      <div v-if="showCancelModal" class="modal cancel-modal">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title">Cancel Purchase Requisition</h5>
+            <button type="button" class="close" @click="showCancelModal = false">
+              <span>&times;</span>
+            </button>
+          </div>
+          <div class="modal-body">
+            <p>Are you sure you want to cancel purchase requisition <strong>{{ selectedPR ? selectedPR.pr_number : '' }}</strong>?</p>
+            <p>This action cannot be undone.</p>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" @click="showCancelModal = false">Close</button>
+            <button type="button" class="btn btn-danger" @click="cancelPR">Confirm Cancel</button>
+          </div>
+        </div>
+      </div>
     </div>
-</template>
-
-<script>
-import { ref, reactive, computed, onMounted } from "vue";
-import { useRouter } from "vue-router";
-import PurchaseRequisitionService from "@/services/PurchaseRequisitionService";
-import DataTable from "@/components/common/DataTable.vue";
-import SearchFilter from "@/components/common/SearchFilter.vue";
-import PaginationComponent from "@/components/common/Pagination.vue";
-import ConfirmationModal from "@/components/common/ConfirmationModal.vue";
-
-export default {
-    name: "PurchaseRequisitionList",
-    components: {
-        DataTable,
-        SearchFilter,
-        PaginationComponent,
-        ConfirmationModal,
+  </template>
+  
+  <script>
+  import axios from 'axios';
+  
+  export default {
+    name: 'PurchaseRequisitionList',
+    data() {
+      return {
+        purchaseRequisitions: [],
+        loading: true,
+        filters: {
+          status: '',
+          search: '',
+          dateFrom: '',
+          dateTo: '',
+        },
+        sortField: 'pr_date',
+        sortDirection: 'desc',
+        pagination: {
+          current_page: 1,
+          from: 1,
+          to: 10,
+          total: 0,
+          per_page: 10,
+          last_page: 1
+        },
+        showCancelModal: false,
+        selectedPR: null
+      };
     },
-    setup() {
-        const router = useRouter();
-        const purchaseRequisitions = ref([]);
-        const isLoading = ref(true);
-        const currentPage = ref(1);
-        const totalPages = ref(1);
-        const totalItems = ref(0);
-        const itemsPerPage = ref(10);
-        const searchQuery = ref("");
-        const showDeleteModal = ref(false);
-        const selectedPR = ref(null);
-
-        const filters = reactive({
-            status: "",
-            date_from: "",
-            date_to: "",
-        });
-
-        const sortKey = ref("pr_date");
-        const sortOrder = ref("desc");
-
-        // Table columns definition
-        const columns = [
-            { key: "pr_number", label: "PR Number", sortable: true },
-            {
-                key: "pr_date",
-                label: "Date",
-                sortable: true,
-                template: "pr_date",
-            },
-            {
-                key: "requester",
-                label: "Requester",
-                sortable: false,
-                template: "requester",
-            },
-            {
-                key: "status",
-                label: "Status",
-                sortable: true,
-                template: "status",
-            },
-            { key: "notes", label: "Notes", sortable: false },
-        ];
-
-        // Computed pagination values
-        const paginationFrom = computed(() => {
-            return (currentPage.value - 1) * itemsPerPage.value + 1;
-        });
-
-        const paginationTo = computed(() => {
-            return Math.min(
-                currentPage.value * itemsPerPage.value,
-                totalItems.value
-            );
-        });
-
-        // Fetch purchase requisitions from API
-        const fetchPurchaseRequisitions = async () => {
-            isLoading.value = true;
-
-            try {
-                const params = {
-                    page: currentPage.value,
-                    per_page: itemsPerPage.value,
-                    search: searchQuery.value,
-                    status: filters.status,
-                    date_from: filters.date_from,
-                    date_to: filters.date_to,
-                    sort_field: sortKey.value,
-                    sort_direction: sortOrder.value,
-                };
-
-                const response =
-                    await PurchaseRequisitionService.getAllPurchaseRequisitions(
-                        params
-                    );
-
-                // Check if we have valid data
-                if (response.data && response.data.data) {
-                    purchaseRequisitions.value = response.data.data;
-
-                    if (response.data.meta) {
-                        totalItems.value = response.data.meta.total || 0;
-                        totalPages.value = response.data.meta.last_page || 1;
-                        currentPage.value =
-                            response.data.meta.current_page || 1;
-                    }
-                } else {
-                    purchaseRequisitions.value = [];
-                }
-            } catch (error) {
-                console.error("Error fetching purchase requisitions:", error);
-                purchaseRequisitions.value = [];
-            } finally {
-                isLoading.value = false;
-            }
-        };
-
-        const clearSearch = () => {
-            searchQuery.value = "";
-            fetchPurchaseRequisitions();
-        };
-
-        const handleSort = ({ key, order }) => {
-            sortKey.value = key;
-            sortOrder.value = order;
-            fetchPurchaseRequisitions();
-        };
-
-        const changePage = (page) => {
-            currentPage.value = page;
-            fetchPurchaseRequisitions();
-        };
-
-        const getStatusClass = (status) => {
-            switch (status) {
-                case "draft":
-                    return "status-draft";
-                case "pending":
-                    return "status-pending";
-                case "approved":
-                    return "status-approved";
-                case "rejected":
-                    return "status-rejected";
-                case "canceled":
-                    return "status-canceled";
-                default:
-                    return "status-draft";
-            }
-        };
-
-        const getStatusLabel = (status) => {
-            switch (status) {
-                case "draft":
-                    return "Draft";
-                case "pending":
-                    return "Pending Approval";
-                case "approved":
-                    return "Approved";
-                case "rejected":
-                    return "Rejected";
-                case "canceled":
-                    return "Canceled";
-                default:
-                    return status;
-            }
-        };
-
-        const formatDate = (dateString) => {
-            if (!dateString) return "N/A";
-            const date = new Date(dateString);
-            return date.toLocaleDateString("en-US", {
-                year: "numeric",
-                month: "short",
-                day: "2-digit",
-            });
-        };
-
-        // Navigation actions
-        const openCreateForm = () => {
-            router.push("/purchasing/requisitions/create");
-        };
-
-        const viewPR = (pr) => {
-            router.push(`/purchasing/requisitions/${pr.pr_id}`);
-        };
-
-        const editPR = (pr) => {
-            router.push(`/purchasing/requisitions/${pr.pr_id}/edit`);
-        };
-
-        const approvePR = (pr) => {
-            router.push(`/purchasing/requisitions/${pr.pr_id}/approve`);
-        };
-
-        const convertToRFQ = (pr) => {
-            router.push(`/purchasing/requisitions/${pr.pr_id}/convert`);
-        };
-
-        const confirmDelete = (pr) => {
-            selectedPR.value = pr;
-            showDeleteModal.value = true;
-        };
-
-        const closeDeleteModal = () => {
-            showDeleteModal.value = false;
-            selectedPR.value = null;
-        };
-
-        const deletePR = async () => {
-            if (!selectedPR.value) return;
-
-            try {
-                await PurchaseRequisitionService.deletePurchaseRequisition(
-                    selectedPR.value.pr_id
-                );
-                fetchPurchaseRequisitions();
-                closeDeleteModal();
-            } catch (error) {
-                if (error.response && error.response.status === 400) {
-                    // Show error message if PR cannot be deleted
-                    alert(
-                        error.response.data.message ||
-                            "This purchase requisition cannot be deleted in its current status."
-                    );
-                } else {
-                    console.error(
-                        "Error deleting purchase requisition:",
-                        error
-                    );
-                }
-                closeDeleteModal();
-            }
-        };
-
-        // Initialize
-        onMounted(() => {
-            fetchPurchaseRequisitions();
-        });
-
-        return {
-            purchaseRequisitions,
-            isLoading,
-            columns,
-            currentPage,
-            totalPages,
-            totalItems,
-            paginationFrom,
-            paginationTo,
-            searchQuery,
-            filters,
-            showDeleteModal,
-            selectedPR,
-            fetchPurchaseRequisitions,
-            clearSearch,
-            handleSort,
-            changePage,
-            getStatusClass,
-            getStatusLabel,
-            formatDate,
-            openCreateForm,
-            viewPR,
-            editPR,
-            approvePR,
-            convertToRFQ,
-            confirmDelete,
-            closeDeleteModal,
-            deletePR,
-        };
+    computed: {
+      displayedPages() {
+        const total = this.pagination.last_page;
+        const current = this.pagination.current_page;
+        const pages = [];
+        
+        if (total <= 7) {
+          // Show all pages if 7 or fewer
+          for (let i = 1; i <= total; i++) {
+            pages.push(i);
+          }
+        } else {
+          // Always include first page
+          pages.push(1);
+          
+          // Show ellipsis if current page is more than 3
+          if (current > 3) {
+            pages.push('...');
+          }
+          
+          // Add pages around current page
+          const startPage = Math.max(2, current - 1);
+          const endPage = Math.min(total - 1, current + 1);
+          
+          for (let i = startPage; i <= endPage; i++) {
+            pages.push(i);
+          }
+          
+          // Show ellipsis if current page is less than total - 2
+          if (current < total - 2) {
+            pages.push('...');
+          }
+          
+          // Always include last page
+          if (total > 1) {
+            pages.push(total);
+          }
+        }
+        
+        return pages;
+      }
     },
-};
-</script>
-
-<style scoped>
-.pr-list-container {
-    padding: 1rem;
-}
-
-.page-header {
+    created() {
+      this.fetchPurchaseRequisitions();
+    },
+    methods: {
+      async fetchPurchaseRequisitions() {
+        this.loading = true;
+        try {
+          // Build query parameters
+          const params = {
+            page: this.pagination.current_page,
+            per_page: this.pagination.per_page,
+            sort_field: this.sortField,
+            sort_direction: this.sortDirection
+          };
+  
+          // Add filters if they are set
+          if (this.filters.status) params.status = this.filters.status;
+          if (this.filters.search) params.search = this.filters.search;
+          if (this.filters.dateFrom) params.date_from = this.filters.dateFrom;
+          if (this.filters.dateTo) params.date_to = this.filters.dateTo;
+  
+          const response = await axios.get('/purchase-requisitions', { params });
+          
+          this.purchaseRequisitions = response.data.data.data; // Access the data array
+          
+          // Update pagination
+          this.pagination = {
+            current_page: response.data.data.current_page,
+            from: response.data.data.from,
+            to: response.data.data.to,
+            total: response.data.data.total,
+            per_page: response.data.data.per_page,
+            last_page: response.data.data.last_page
+          };
+        } catch (error) {
+          console.error('Error fetching purchase requisitions:', error);
+          // Show an error message to the user
+          this.$root.$emit('showAlert', {
+            type: 'danger',
+            message: 'Failed to load purchase requisitions. Please try again.'
+          });
+        } finally {
+          this.loading = false;
+        }
+      },
+      
+      sortBy(field) {
+        // If we click on the same field, reverse the sort direction
+        if (this.sortField === field) {
+          this.sortDirection = this.sortDirection === 'asc' ? 'desc' : 'asc';
+        } else {
+          this.sortField = field;
+          this.sortDirection = 'asc';
+        }
+        
+        // Reset to first page and fetch data
+        this.pagination.current_page = 1;
+        this.fetchPurchaseRequisitions();
+      },
+      
+      goToPage(page) {
+        if (page < 1 || page > this.pagination.last_page) return;
+        
+        this.pagination.current_page = page;
+        this.fetchPurchaseRequisitions();
+      },
+      
+      formatDate(dateString) {
+        if (!dateString) return 'N/A';
+        
+        const date = new Date(dateString);
+        return date.toLocaleDateString('id-ID', {
+          year: 'numeric',
+          month: 'short',
+          day: 'numeric'
+        });
+      },
+      
+      getStatusBadgeClass(status) {
+        const statusClasses = {
+          draft: 'badge badge-secondary',
+          pending: 'badge badge-warning',
+          approved: 'badge badge-success',
+          rejected: 'badge badge-danger',
+          canceled: 'badge badge-dark'
+        };
+        
+        return statusClasses[status] || 'badge badge-secondary';
+      },
+      
+      capitalizeStatus(status) {
+        if (!status) return '';
+        return status.charAt(0).toUpperCase() + status.slice(1);
+      },
+      
+      truncateText(text, maxLength) {
+        if (!text) return '';
+        if (text.length <= maxLength) return text;
+        
+        return text.substring(0, maxLength) + '...';
+      },
+      
+      confirmCancelPR(pr) {
+        this.selectedPR = pr;
+        this.showCancelModal = true;
+      },
+      
+      async cancelPR() {
+        if (!this.selectedPR) return;
+        
+        try {
+          await axios.patch(`/purchase-requisitions/${this.selectedPR.pr_id}/status`, {
+            status: 'canceled'
+          });
+          
+          // Hide the modal
+          this.showCancelModal = false;
+          
+          // Show success message
+          this.$root.$emit('showAlert', {
+            type: 'success',
+            message: `Purchase Requisition ${this.selectedPR.pr_number} has been canceled successfully.`
+          });
+          
+          // Refresh the data
+          this.fetchPurchaseRequisitions();
+        } catch (error) {
+          console.error('Error canceling purchase requisition:', error);
+          
+          // Show error message
+          this.$root.$emit('showAlert', {
+            type: 'danger',
+            message: 'Failed to cancel the purchase requisition. Please try again.'
+          });
+        }
+      }
+    }
+  };
+  </script>
+  
+  <style scoped>
+  .purchase-requisition-list {
+    margin-bottom: 2rem;
+  }
+  
+  .page-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
     margin-bottom: 1.5rem;
-}
-
-.page-header h1 {
-    margin: 0;
-    font-size: 1.5rem;
-    color: var(--gray-800);
-}
-
-.filter-section {
+  }
+  
+  .filters-card {
     margin-bottom: 1.5rem;
-}
-
-.data-container {
-    background-color: white;
-    border-radius: 0.5rem;
+    background-color: #f8f9fa;
+    border: none;
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  }
+  
+  .table-responsive {
+    margin-bottom: 1.5rem;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    border-radius: 0.25rem;
     overflow: hidden;
-}
-
-.pagination-wrapper {
-    padding: 0.5rem;
-    background-color: white;
-    border-top: 1px solid var(--gray-200);
-}
-
-.action-buttons {
+  }
+  
+  .table {
+    margin-bottom: 0;
+  }
+  
+  .table th {
+    background-color: #f8f9fa;
+    color: #495057;
+    font-weight: 600;
+  }
+  
+  .sortable-column {
+    cursor: pointer;
+  }
+  
+  .sortable-column i {
+    margin-left: 0.25rem;
+  }
+  
+  .notes-cell {
+    max-width: 200px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  
+  .pr-number-link {
+    color: var(--primary-color);
+    font-weight: 500;
+    text-decoration: none;
+  }
+  
+  .pr-number-link:hover {
+    text-decoration: underline;
+  }
+  
+  .badge {
+    font-size: 0.75rem;
+    font-weight: 500;
+    padding: 0.25rem 0.5rem;
+    border-radius: 0.25rem;
+    text-transform: capitalize;
+  }
+  
+  .actions-container {
     display: flex;
-    gap: 0.5rem;
     justify-content: flex-end;
-}
-
-.action-btn {
-    display: inline-flex;
+  }
+  
+  .pagination-container {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 1rem;
+  }
+  
+  .pagination-info {
+    color: #6c757d;
+    font-size: 0.875rem;
+  }
+  
+  .pagination-controls {
+    display: flex;
+    gap: 0.25rem;
+  }
+  
+  .pagination-ellipsis {
+    display: flex;
     align-items: center;
     justify-content: center;
     width: 2rem;
     height: 2rem;
+  }
+  
+  .empty-state {
+    padding: 3rem 0;
+    text-align: center;
+  }
+  
+  .empty-state-container {
+    display: inline-block;
+    max-width: 500px;
+    margin: 0 auto;
+  }
+  
+  .empty-state-icon {
+    font-size: 3rem;
+    color: #dee2e6;
+    margin-bottom: 1rem;
+  }
+  
+  .empty-state h3 {
+    font-size: 1.25rem;
+    color: #343a40;
+    margin-bottom: 0.5rem;
+  }
+  
+  .empty-state p {
+    color: #6c757d;
+    margin-bottom: 1.5rem;
+  }
+  
+  /* Modal Styles */
+  .modal-backdrop {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgba(0, 0, 0, 0.5);
+    z-index: 1000;
+  }
+  
+  .modal {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 1001;
+    display: block;
+    width: 100%;
+    max-width: 500px;
+  }
+  
+  .modal-content {
+    background-color: white;
     border-radius: 0.375rem;
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.15);
+  }
+  
+  .modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1rem;
+    border-bottom: 1px solid #dee2e6;
+  }
+  
+  .modal-title {
+    margin: 0;
+    font-size: 1.25rem;
+    font-weight: 600;
+  }
+  
+  .close {
+    background-color: transparent;
     border: none;
-    background: none;
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: #000;
+    opacity: 0.5;
     cursor: pointer;
-    transition: background-color 0.2s;
-}
-
-.view-btn {
-    color: var(--primary-color);
-}
-
-.view-btn:hover {
-    background-color: var(--primary-bg);
-}
-
-.edit-btn {
-    color: var(--warning-color);
-}
-
-.edit-btn:hover {
-    background-color: var(--warning-bg);
-}
-
-.approve-btn {
-    color: var(--success-color);
-}
-
-.approve-btn:hover {
-    background-color: var(--success-bg);
-}
-
-.convert-btn {
-    color: var(--info-color);
-}
-
-.convert-btn:hover {
-    background-color: var(--info-bg);
-}
-
-.delete-btn {
-    color: var(--danger-color);
-}
-
-.delete-btn:hover {
-    background-color: var(--danger-bg);
-}
-
-.status-badge {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    padding: 0.25rem 0.5rem;
-    border-radius: 0.25rem;
-    font-size: 0.75rem;
-    font-weight: 500;
-}
-
-.status-draft {
-    background-color: var(--gray-100);
-    color: var(--gray-700);
-}
-
-.status-pending {
-    background-color: #fef3c7;
-    color: #92400e;
-}
-
-.status-approved {
-    background-color: #dcfce7;
-    color: #166534;
-}
-
-.status-rejected {
-    background-color: #fee2e2;
-    color: #b91c1c;
-}
-
-.status-canceled {
-    background-color: #e2e8f0;
-    color: #475569;
-}
-
-.btn {
-    padding: 0.625rem 1.25rem;
-    font-size: 0.875rem;
-    font-weight: 500;
-    border-radius: 0.375rem;
-    cursor: pointer;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
+  }
+  
+  .close:hover {
+    opacity: 0.75;
+  }
+  
+  .modal-body {
+    padding: 1rem;
+  }
+  
+  .modal-footer {
+    display: flex;
+    justify-content: flex-end;
     gap: 0.5rem;
-    border: none;
-    transition: background-color 0.2s, color 0.2s;
-}
-
-.btn-primary {
-    background-color: var(--primary-color);
-    color: white;
-}
-
-.btn-primary:hover {
-    background-color: var(--primary-dark);
-}
-
-.btn-danger {
-    background-color: var(--danger-color);
-    color: white;
-}
-
-.btn-danger:hover {
-    background-color: #b91c1c;
-}
-</style>
+    padding: 1rem;
+    border-top: 1px solid #dee2e6;
+  }
+  
+  /* Responsive adjustments */
+  @media (max-width: 768px) {
+    .pagination-container {
+      flex-direction: column;
+      gap: 1rem;
+    }
+    
+    .pagination-info {
+      text-align: center;
+    }
+    
+    .pagination-controls {
+      justify-content: center;
+    }
+    
+    .actions-container {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.25rem;
+    }
+  }
+  </style>

@@ -287,6 +287,19 @@
                             <span v-if="!sidebarCollapsed">Requisitions</span>
                         </router-link>
 
+                        <!-- Menu PR Approval baru -->
+                        <router-link to="/purchasing/requisitions/approvals" class="menu-item" active-class="active">
+                        <i class="fas fa-check-circle"></i>
+                        <span v-if="!sidebarCollapsed">PR Approvals</span>
+                        </router-link>
+
+                        <!-- Menu PR to RFQ baru -->
+                        <router-link to="/purchasing/requisitions/to-rfq" class="menu-item" active-class="active">
+                        <i class="fas fa-exchange-alt"></i>
+                        <span v-if="!sidebarCollapsed">PR to RFQ</span>
+                        </router-link>
+
+
                         <router-link
                             to="/purchasing/rfqs"
                             class="menu-item"
@@ -294,6 +307,15 @@
                         >
                             <i class="fas fa-file-invoice-dollar"></i>
                             <span v-if="!sidebarCollapsed">RFQs</span>
+                        </router-link>
+
+                        <router-link
+                        to="/purchasing/rfqs/create"
+                        class="menu-item"
+                        active-class="active"
+                        >
+                        <i class="fas fa-plus-circle"></i>
+                        <span v-if="!sidebarCollapsed">Create RFQ</span>
                         </router-link>
 
                         <router-link

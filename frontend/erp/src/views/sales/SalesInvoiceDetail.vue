@@ -432,7 +432,7 @@
     },
     computed: {
       invoiceLines() {
-        return this.invoice.salesInvoiceLines || [];
+        return this.invoice.sales_invoice_lines || [];
       },
       isPaid() {
         return this.invoice.status === 'Paid';

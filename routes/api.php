@@ -283,6 +283,7 @@ Route::get('purchase-orders/reports/outstanding-items', [PurchaseOrderController
         Route::get('/', [SalesInvoiceController::class, 'index']);
         Route::post('/', [SalesInvoiceController::class, 'store']);
         Route::post('/from-order', [SalesInvoiceController::class, 'createFromOrder']);
+        Route::post('/from-deliveries', [SalesInvoiceController::class, 'createFromDeliveries']);
         Route::delete('/{id}', [SalesInvoiceController::class, 'destroy']);
         Route::get('/{id}/payment-info', [SalesInvoiceController::class, 'paymentInfo']);
         // Add these routes BEFORE the {id} routes to ensure proper route matching

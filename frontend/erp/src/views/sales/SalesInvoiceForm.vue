@@ -617,82 +617,96 @@ if (selectedCustomer) {
         }
       },
       
-      async loadDeliveries() {
-        if (!this.invoice.customer_id) return;
-        
-        this.loadingDeliveries = true;
-        try {
-        // Similarly, update this call:
-        const response = await axios.get('/invoices/getDeliveryLinesByItem', {
-          params: { 
-            customer_id: this.invoice.customer_id,
-            delivery_ids: this.selectedDeliveries
-          }
-        });
-          
-          this.deliveries = response.data.data || [];
-        } catch (error) {
-          console.error('Error loading deliveries:', error);
-          // Improved error handling to avoid reading undefined properties
-          if (error && error.response && error.response.data && error.response.data.message) {
-            this.$toast.error(error.response.data.message);
-          } else if (error && error.message) {
-            this.$toast.error(error.message);
-          } else {
-            this.$toast.error('Failed to load deliveries');
-          }
-        } finally {
-          this.loadingDeliveries = false;
-        }
-      },
+async loadDeliveries() {
+  if (!this.invoice.customer_id) return;
+
+  console.log('loadDeliveries called with customer_id:', this.invoice.customer_id);
+
+  this.loadingDeliveries = true;
+  this.deliveries = [];
+  this.selectedDeliveries = [];
+
+  try {
+    // Correct API endpoint to get deliveries for invoicing for the customer
+    const response = await axios.get('/invoices/getDeliveriesForInvoicing', {
+      params: {
+        customer_id: this.invoice.customer_id
+      }
+    });
+
+    console.log('loadDeliveries response:', response);
+
+    if (!response.data || !response.data.data) {
+      console.warn('loadDeliveries: response.data or response.data.data is missing', response);
+    }
+
+    this.deliveries = response.data.data || [];
+  } catch (error) {
+    console.error('Error loading deliveries:', error);
+    if (error && error.response && error.response.data && error.response.data.message) {
+      this.$toast.error(error.response.data.message);
+    } else if (error && error.message) {
+      this.$toast.error(error.message);
+    } else {
+      this.$toast.error('Failed to load deliveries');
+    }
+  } finally {
+    this.loadingDeliveries = false;
+  }
+},
       
-      async handleDeliverySelection() {
-        if (this.selectedDeliveries.length > 0) {
-          this.isLoadingItems = true;
-          
-          try {
-            // API endpoint to get delivery lines grouped by item
-            const response = await axios.get('/invoices/getDeliveryLinesByItem', {
-              params: { 
-                customer_id: this.invoice.customer_id,
-                delivery_ids: this.selectedDeliveries
-              }
-            });
-            
-            const items = response.data.data || [];
-            
-            // Clear existing lines and add new ones from the deliveries
-            this.invoice.lines = items.map(item => ({
-              item_id: item.item_id,
-              description: item.item_name,
-              quantity: item.total_quantity,
-              unit_price: item.unit_price,
-              discount: 0,
-              tax: 0,
-              uom_id: item.uom_id,
-              do_line_id: item.delivery_lines[0].do_line_id, // Reference to first delivery line
-              subtotal: 0, // Will be calculated
-              total: 0 // Will be calculated
-            }));
-            
-            // Calculate totals for each line
-            this.invoice.lines.forEach((line, index) => {
-              this.calculateLineTotals(index);
-            });
-            
-            this.calculateTotals();
-          } catch (error) {
-            console.error('Error loading delivery items:', error);
-            this.$toast.error('Failed to load delivery items');
-          } finally {
-            this.isLoadingItems = false;
-          }
-        } else {
-          // Clear lines if no deliveries selected
-          this.invoice.lines = [];
-          this.calculateTotals();
+async handleDeliverySelection() {
+  if (this.selectedDeliveries.length > 0) {
+    this.isLoadingItems = true;
+    
+    try {
+      // API endpoint to get delivery lines grouped by item
+      const response = await axios.get('/invoices/getDeliveryLinesByItem', {
+        params: { 
+          customer_id: this.invoice.customer_id,
+          delivery_ids: this.selectedDeliveries
         }
-      },
+      });
+      
+      // Defensive check and logging for debugging
+      if (!response.data || !response.data.data) {
+        console.warn('handleDeliverySelection: response.data or response.data.data is missing', response);
+      }
+      
+      const items = response.data.data || [];
+      
+      // Clear existing lines and add new ones from the deliveries
+      this.invoice.lines = items.map(item => ({
+        item_id: item.item_id,
+        description: item.item_name,
+        quantity: item.total_quantity,
+        unit_price: item.unit_price,
+        discount: 0,
+        tax: 0,
+        uom_id: item.uom_id,
+        do_line_id: (item.delivery_lines && item.delivery_lines.length > 0) ? item.delivery_lines[0].do_line_id : null, // Reference to first delivery line safely
+        subtotal: 0, // Will be calculated
+        total: 0 // Will be calculated
+      }));
+      
+      // Calculate totals for each line
+      this.invoice.lines.forEach((line, index) => {
+        this.calculateLineTotals(index);
+      });
+      
+      this.calculateTotals();
+    } catch (error) {
+      console.error('Error loading delivery items:', error);
+      this.$toast.error('Failed to load delivery items');
+    } finally {
+      this.isLoadingItems = false;
+    }
+  } else {
+    // Clear lines if no deliveries selected
+    this.invoice.lines = [];
+    this.calculateTotals();
+  }
+},
       
       toggleDeliveryMode() {
         if (this.createFromDelivery) {
@@ -811,16 +825,16 @@ if (selectedCustomer) {
           const invoiceId = response.data.data.invoice_id;
           this.$router.push(`/sales/invoices/${invoiceId}`);
         } catch (error) {
-          console.error('Error saving invoice:', error);
-          
-          if (error.response && error.response.data.errors) {
+          console.log('Caught error object:', error);
+          if (error && error.response && error.response.data && error.response.data.errors) {
             this.errors = error.response.data.errors;
             this.$toast.error('Please correct the errors in the form');
-          } else if (error.response && error.response.data.message) {
+          } else if (error && error.response && error.response.data && error.response.data.message) {
             this.$toast.error(error.response.data.message);
           } else {
             this.$toast.error('Failed to save invoice. Please try again.');
           }
+          console.error('Error saving invoice:', error);
         } finally {
           this.saving = false;
         }

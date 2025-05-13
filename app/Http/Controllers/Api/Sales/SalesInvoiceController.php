@@ -7,6 +7,7 @@ use App\Models\Sales\SalesInvoice;
 use App\Models\Sales\SalesInvoiceLine;
 use App\Models\Sales\SalesOrder;
 use App\Models\Sales\SOLine;
+use App\Models\Item;
 use App\Models\Sales\Delivery;
 use App\Models\Sales\DeliveryLine;
 use App\Models\Accounting\CustomerReceivable;
@@ -957,9 +958,9 @@ class SalesInvoiceController extends Controller
         }
 
         // Get deliveries that are delivered but not yet invoiced
-        $deliveries = Delivery::with(['customer', 'deliveryLines.item', 'deliveryLines.salesOrderLine'])
+$deliveries = Delivery::with(['customer', 'deliveryLines.item', 'deliveryLines.salesOrderLine'])
             ->where('customer_id', $request->customer_id)
-            ->where('status', 'Delivered')
+            ->whereIn('status', ['In Transit', 'Completed'])
             ->orderBy('delivery_date', 'desc')
             ->get();
             
@@ -985,11 +986,11 @@ class SalesInvoiceController extends Controller
         }
 
         // Get all delivery lines from specified deliveries
-        $deliveryLines = DeliveryLine::with(['item', 'salesOrderLine', 'delivery'])
+$deliveryLines = DeliveryLine::with(['item', 'salesOrderLine', 'delivery'])
             ->whereHas('delivery', function($query) use ($request) {
                 $query->where('customer_id', $request->customer_id)
                       ->whereIn('delivery_id', $request->delivery_ids)
-                      ->where('status', 'Delivered');
+                      ->whereIn('status', ['In Transit', 'Completed']);
             })
             ->get();
             

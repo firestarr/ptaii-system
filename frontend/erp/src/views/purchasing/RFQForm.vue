@@ -1,802 +1,866 @@
 <!-- src/views/purchasing/RFQForm.vue -->
 <template>
     <div class="rfq-form-container">
-        <div class="page-header">
-            <div class="header-left">
-                <router-link
-                    :to="
-                        isEditMode
-                            ? `/purchasing/rfqs/${id}`
-                            : '/purchasing/rfqs'
-                    "
-                    class="back-link"
+      <div class="page-header">
+        <h1>{{ isEditing ? 'Edit Request for Quotation' : 'Create Request for Quotation' }}</h1>
+        <div class="header-actions">
+          <button @click="$router.go(-1)" class="btn btn-outline">
+            <i class="fas fa-arrow-left"></i> Back
+          </button>
+        </div>
+      </div>
+  
+      <div v-if="loading" class="loading-indicator">
+        <i class="fas fa-spinner fa-spin"></i> Loading...
+      </div>
+  
+      <form v-else @submit.prevent="saveRFQ" class="rfq-form">
+        <div class="form-section">
+          <h2 class="section-title">RFQ Information</h2>
+          
+          <div class="form-row">
+            <div class="form-group">
+              <label for="rfq_date">RFQ Date <span class="required">*</span></label>
+              <input 
+                type="date" 
+                id="rfq_date" 
+                v-model="rfq.rfq_date" 
+                required
+                class="form-control"
+              />
+            </div>
+            
+            <div class="form-group">
+              <label for="validity_date">Validity Date</label>
+              <input 
+                type="date" 
+                id="validity_date" 
+                v-model="rfq.validity_date" 
+                class="form-control"
+              />
+            </div>
+          </div>
+          
+          <div class="form-group" v-if="isEditing">
+            <label for="rfq_number">RFQ Number</label>
+            <input 
+              type="text" 
+              id="rfq_number" 
+              v-model="rfq.rfq_number" 
+              class="form-control"
+              disabled
+            />
+          </div>
+          
+          <div class="form-group" v-if="isEditing">
+            <label for="status">Status</label>
+            <input 
+              type="text" 
+              id="status" 
+              v-model="rfq.status" 
+              class="form-control"
+              disabled
+            />
+          </div>
+        </div>
+  
+        <div class="form-section">
+          <div class="section-header">
+            <h2 class="section-title">RFQ Lines</h2>
+            <button type="button" @click="addLine" class="btn btn-outline-primary">
+              <i class="fas fa-plus"></i> Add Item
+            </button>
+          </div>
+          
+          <div v-if="rfq.lines.length === 0" class="empty-lines">
+            <p>No items added yet. Click "Add Item" to start adding items to this RFQ.</p>
+          </div>
+          
+          <div v-else class="rfq-lines-table-container">
+            <table class="rfq-lines-table">
+              <thead>
+                <tr>
+                  <th>Item</th>
+                  <th>Quantity</th>
+                  <th>UOM</th>
+                  <th>Required Date</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="(line, index) in rfq.lines" :key="index">
+                  <td>
+                    <div class="item-selection">
+                      <select 
+                        v-model="line.item_id" 
+                        class="form-control"
+                        required
+                      >
+                        <option value="" disabled>Select Item</option>
+                        <option 
+                          v-for="item in items" 
+                          :key="item.item_id" 
+                          :value="item.item_id"
+                        >
+                          {{ item.item_code }} - {{ item.name }}
+                        </option>
+                      </select>
+                      <small v-if="line.item" class="item-description">
+                        {{ line.item.description }}
+                      </small>
+                    </div>
+                  </td>
+                  <td>
+                    <input 
+                      type="number" 
+                      v-model.number="line.quantity" 
+                      class="form-control" 
+                      min="0.01" 
+                      step="0.01"
+                      required
+                    />
+                  </td>
+                  <td>
+                    <select 
+                      v-model="line.uom_id" 
+                      class="form-control"
+                      required
+                    >
+                      <option value="" disabled>Select UOM</option>
+                      <option 
+                        v-for="uom in uoms" 
+                        :key="uom.uom_id" 
+                        :value="uom.uom_id"
+                      >
+                        {{ uom.name }} ({{ uom.symbol }})
+                      </option>
+                    </select>
+                  </td>
+                  <td>
+                    <input 
+                      type="date" 
+                      v-model="line.required_date" 
+                      class="form-control"
+                    />
+                  </td>
+                  <td>
+                    <button 
+                      type="button" 
+                      @click="removeLine(index)" 
+                      class="btn-icon btn-danger"
+                    >
+                      <i class="fas fa-trash"></i>
+                    </button>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+  
+        <div class="form-section">
+          <h2 class="section-title">Notes</h2>
+          <div class="form-group">
+            <textarea 
+              v-model="rfq.notes" 
+              class="form-control" 
+              rows="3" 
+              placeholder="Enter any additional notes or requirements..."
+            ></textarea>
+          </div>
+        </div>
+  
+        <div class="form-actions">
+          <button type="button" @click="$router.go(-1)" class="btn btn-secondary">
+            Cancel
+          </button>
+          <button type="submit" class="btn btn-primary" :disabled="isSaving">
+            <i v-if="isSaving" class="fas fa-spinner fa-spin"></i>
+            {{ isSaving ? 'Saving...' : (isEditing ? 'Update RFQ' : 'Create RFQ') }}
+          </button>
+        </div>
+      </form>
+  
+      <!-- Item Selection Modal -->
+      <div v-if="showItemModal" class="modal">
+        <div class="modal-backdrop" @click="closeItemModal"></div>
+        <div class="modal-content">
+          <div class="modal-header">
+            <h2>Select Item</h2>
+            <button class="close-btn" @click="closeItemModal">
+              <i class="fas fa-times"></i>
+            </button>
+          </div>
+          <div class="modal-body">
+            <div class="search-box">
+              <i class="fas fa-search search-icon"></i>
+              <input 
+                type="text" 
+                v-model="itemSearch" 
+                placeholder="Search items..." 
+                class="form-control"
+              />
+            </div>
+            
+            <div class="items-list">
+              <div v-if="filteredItems.length === 0" class="empty-items">
+                <p>No items found matching your search criteria.</p>
+              </div>
+              
+              <div v-else class="items-grid">
+                <div 
+                  v-for="item in filteredItems" 
+                  :key="item.item_id" 
+                  class="item-card"
+                  @click="selectItem(item)"
                 >
-                    <i class="fas fa-arrow-left"></i>
-                    {{ isEditMode ? "Back to RFQ Details" : "Back to RFQs" }}
-                </router-link>
-                <h1>
-                    {{
-                        isEditMode
-                            ? "Edit Request for Quotation"
-                            : "Create Request for Quotation"
-                    }}
-                </h1>
+                  <div class="item-code">{{ item.item_code }}</div>
+                  <div class="item-name">{{ item.name }}</div>
+                  <div class="item-description">{{ item.description }}</div>
+                </div>
+              </div>
             </div>
+          </div>
         </div>
-
-        <div v-if="isLoading" class="loading-container">
-            <div class="loading-spinner">
-                <i class="fas fa-spinner fa-spin"></i>
-            </div>
-            <p>Loading data...</p>
-        </div>
-
-        <div v-else class="form-wrapper">
-            <form @submit.prevent="submitForm" class="rfq-form">
-                <!-- RFQ Information Card -->
-                <div class="form-card">
-                    <div class="card-header">
-                        <h2 class="card-title">RFQ Information</h2>
-                    </div>
-                    <div class="card-body">
-                        <div class="form-row">
-                            <div class="form-group">
-                                <label for="rfq_date">RFQ Date*</label>
-                                <input
-                                    type="date"
-                                    id="rfq_date"
-                                    v-model="formData.rfq_date"
-                                    required
-                                    :class="{ 'is-invalid': errors.rfq_date }"
-                                />
-                                <div
-                                    v-if="errors.rfq_date"
-                                    class="error-message"
-                                >
-                                    {{ errors.rfq_date }}
-                                </div>
-                            </div>
-
-                            <div class="form-group">
-                                <label for="validity_date">Valid Until*</label>
-                                <input
-                                    type="date"
-                                    id="validity_date"
-                                    v-model="formData.validity_date"
-                                    required
-                                    :class="{
-                                        'is-invalid': errors.validity_date,
-                                    }"
-                                />
-                                <div
-                                    v-if="errors.validity_date"
-                                    class="error-message"
-                                >
-                                    {{ errors.validity_date }}
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- RFQ Items Card -->
-                <div class="form-card">
-                    <div class="card-header">
-                        <h2 class="card-title">Requested Items</h2>
-                        <button
-                            type="button"
-                            class="btn btn-sm btn-primary"
-                            @click="addLine"
-                        >
-                            <i class="fas fa-plus"></i> Add Item
-                        </button>
-                    </div>
-                    <div class="card-body">
-                        <div
-                            v-if="formData.lines.length === 0"
-                            class="empty-state"
-                        >
-                            <div class="empty-icon">
-                                <i class="fas fa-cart-plus"></i>
-                            </div>
-                            <h3>No Items Added</h3>
-                            <p>
-                                Please add items to this RFQ using the "Add
-                                Item" button.
-                            </p>
-                        </div>
-
-                        <div v-else class="line-items-container">
-                            <div
-                                v-for="(line, index) in formData.lines"
-                                :key="index"
-                                class="line-item"
-                            >
-                                <div class="line-header">
-                                    <h3 class="line-title">
-                                        Item #{{ index + 1 }}
-                                    </h3>
-                                    <button
-                                        type="button"
-                                        class="btn-icon btn-danger"
-                                        @click="removeLine(index)"
-                                    >
-                                        <i class="fas fa-times"></i>
-                                    </button>
-                                </div>
-
-                                <div class="form-row">
-                                    <div class="form-group form-group-lg">
-                                        <label :for="`item_id_${index}`"
-                                            >Item*</label
-                                        >
-                                        <select
-                                            :id="`item_id_${index}`"
-                                            v-model="line.item_id"
-                                            required
-                                            :class="{
-                                                'is-invalid': getLineError(
-                                                    index,
-                                                    'item_id'
-                                                ),
-                                            }"
-                                        >
-                                            <option value="">
-                                                Select Item
-                                            </option>
-                                            <option
-                                                v-for="item in items"
-                                                :key="item.item_id"
-                                                :value="item.item_id"
-                                            >
-                                                {{ item.item_code }} -
-                                                {{ item.name }}
-                                            </option>
-                                        </select>
-                                        <div
-                                            v-if="
-                                                getLineError(index, 'item_id')
-                                            "
-                                            class="error-message"
-                                        >
-                                            {{ getLineError(index, "item_id") }}
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <div class="form-row">
-                                    <div class="form-group">
-                                        <label :for="`quantity_${index}`"
-                                            >Quantity*</label
-                                        >
-                                        <input
-                                            type="number"
-                                            :id="`quantity_${index}`"
-                                            v-model.number="line.quantity"
-                                            required
-                                            min="1"
-                                            step="any"
-                                            :class="{
-                                                'is-invalid': getLineError(
-                                                    index,
-                                                    'quantity'
-                                                ),
-                                            }"
-                                        />
-                                        <div
-                                            v-if="
-                                                getLineError(index, 'quantity')
-                                            "
-                                            class="error-message"
-                                        >
-                                            {{
-                                                getLineError(index, "quantity")
-                                            }}
-                                        </div>
-                                    </div>
-
-                                    <div class="form-group">
-                                        <label :for="`uom_id_${index}`"
-                                            >Unit of Measure*</label
-                                        >
-                                        <select
-                                            :id="`uom_id_${index}`"
-                                            v-model="line.uom_id"
-                                            required
-                                            :class="{
-                                                'is-invalid': getLineError(
-                                                    index,
-                                                    'uom_id'
-                                                ),
-                                            }"
-                                        >
-                                            <option value="">Select UOM</option>
-                                            <option
-                                                v-for="uom in uoms"
-                                                :key="uom.uom_id"
-                                                :value="uom.uom_id"
-                                            >
-                                                {{ uom.name }}
-                                            </option>
-                                        </select>
-                                        <div
-                                            v-if="getLineError(index, 'uom_id')"
-                                            class="error-message"
-                                        >
-                                            {{ getLineError(index, "uom_id") }}
-                                        </div>
-                                    </div>
-
-                                    <div class="form-group">
-                                        <label :for="`required_date_${index}`"
-                                            >Required Date</label
-                                        >
-                                        <input
-                                            type="date"
-                                            :id="`required_date_${index}`"
-                                            v-model="line.required_date"
-                                            :class="{
-                                                'is-invalid': getLineError(
-                                                    index,
-                                                    'required_date'
-                                                ),
-                                            }"
-                                        />
-                                        <div
-                                            v-if="
-                                                getLineError(
-                                                    index,
-                                                    'required_date'
-                                                )
-                                            "
-                                            class="error-message"
-                                        >
-                                            {{
-                                                getLineError(
-                                                    index,
-                                                    "required_date"
-                                                )
-                                            }}
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="form-actions">
-                    <button
-                        type="button"
-                        class="btn btn-secondary"
-                        @click="cancel"
-                    >
-                        Cancel
-                    </button>
-                    <button
-                        type="submit"
-                        class="btn btn-primary"
-                        :disabled="isSubmitting"
-                    >
-                        <i
-                            v-if="isSubmitting"
-                            class="fas fa-spinner fa-spin"
-                        ></i>
-                        {{
-                            isSubmitting
-                                ? "Saving..."
-                                : isEditMode
-                                ? "Update RFQ"
-                                : "Create RFQ"
-                        }}
-                    </button>
-                </div>
-            </form>
-        </div>
+      </div>
     </div>
-</template>
-
-<script>
-import { ref, reactive, computed, onMounted } from "vue";
-import { useRouter } from "vue-router";
-import axios from "axios";
-
-export default {
-    name: "RFQForm",
+  </template>
+  
+  <script>
+  import axios from 'axios';
+  
+  export default {
+    name: 'RFQForm',
     props: {
-        id: {
-            type: [Number, String],
-            default: null,
+      id: {
+        type: [Number, String],
+        required: false
+      }
+    },
+    data() {
+      return {
+        rfq: {
+          rfq_date: new Date().toISOString().substr(0, 10),
+          validity_date: '',
+          lines: [],
+          notes: ''
         },
+        items: [],
+        uoms: [],
+        loading: true,
+        isSaving: false,
+        showItemModal: false,
+        itemSearch: '',
+        currentLineIndex: null
+      }
     },
-    setup(props) {
-        const router = useRouter();
-        const isLoading = ref(true);
-        const isSubmitting = ref(false);
-        const items = ref([]);
-        const uoms = ref([]);
-        const errors = ref({});
-        const lineErrors = ref([]);
-
-        // Form data
-        const formData = reactive({
-            rfq_date: new Date().toISOString().substr(0, 10),
-            validity_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
-                .toISOString()
-                .substr(0, 10), // Default: 30 days from now
-            lines: [],
+    computed: {
+      isEditing() {
+        return !!this.id;
+      },
+      filteredItems() {
+        if (!this.itemSearch) return this.items;
+        
+        const search = this.itemSearch.toLowerCase();
+        return this.items.filter(item => 
+          item.item_code.toLowerCase().includes(search) || 
+          item.name.toLowerCase().includes(search) ||
+          (item.description && item.description.toLowerCase().includes(search))
+        );
+      }
+    },
+    async mounted() {
+      try {
+        // Load initial data
+        await Promise.all([
+          this.loadItems(),
+          this.loadUOMs()
+        ]);
+        
+        if (this.isEditing) {
+          await this.loadRFQ();
+        }
+      } catch (error) {
+        console.error('Error initializing form:', error);
+        this.$toast.error('Failed to initialize form. Please try again.');
+      } finally {
+        this.loading = false;
+      }
+    },
+    methods: {
+      async loadItems() {
+        try {
+          const response = await axios.get('/items', {
+            params: { is_purchasable: true }
+          });
+          
+          if (response.data.data) {
+            this.items = response.data.data;
+          }
+        } catch (error) {
+          console.error('Error loading items:', error);
+          throw error;
+        }
+      },
+      async loadUOMs() {
+        try {
+          const response = await axios.get('/uoms');
+          
+          if (response.data.data) {
+            this.uoms = response.data.data;
+          }
+        } catch (error) {
+          console.error('Error loading UOMs:', error);
+          throw error;
+        }
+      },
+      async loadRFQ() {
+        try {
+          const response = await axios.get(`/request-for-quotations/${this.id}`);
+          
+          if (response.data.status === 'success' && response.data.data) {
+            const rfqData = response.data.data;
+            
+            this.rfq = {
+              rfq_id: rfqData.rfq_id,
+              rfq_number: rfqData.rfq_number,
+              rfq_date: this.formatDateForInput(rfqData.rfq_date),
+              validity_date: this.formatDateForInput(rfqData.validity_date),
+              status: rfqData.status,
+              notes: rfqData.notes || '',
+              lines: rfqData.lines.map(line => ({
+                line_id: line.line_id,
+                item_id: line.item_id,
+                quantity: line.quantity,
+                uom_id: line.uom_id,
+                required_date: this.formatDateForInput(line.required_date),
+                item: line.item
+              }))
+            };
+          } else {
+            throw new Error(response.data.message || 'Failed to load RFQ data');
+          }
+        } catch (error) {
+          console.error('Error loading RFQ:', error);
+          this.$toast.error('Failed to load RFQ data. Please try again.');
+          this.$router.push('/purchasing/rfqs');
+        }
+      },
+      formatDateForInput(dateString) {
+        if (!dateString) return '';
+        
+        const date = new Date(dateString);
+        return date.toISOString().substr(0, 10);
+      },
+      addLine() {
+        this.rfq.lines.push({
+          item_id: '',
+          quantity: 1,
+          uom_id: '',
+          required_date: '',
+          item: null
         });
-
-        // Computed
-        const isEditMode = computed(() => !!props.id);
-
-        // Load data
-        const loadFormData = async () => {
-            isLoading.value = true;
-
-            try {
-                // Fetch items and UOMs in parallel
-                const [itemsResponse, uomsResponse] = await Promise.all([
-                    axios.get("/items"),
-                    axios.get("/unit-of-measures"),
-                ]);
-
-                items.value = itemsResponse.data.data || [];
-                uoms.value = uomsResponse.data.data || [];
-
-                // If edit mode, fetch RFQ data
-                if (isEditMode.value) {
-                    const rfqResponse = await axios.get(
-                        `/api/request-for-quotations/${props.id}`
-                    );
-                    const rfqData = rfqResponse.data.data;
-
-                    // Populate form data
-                    formData.rfq_date = rfqData.rfq_date;
-                    formData.validity_date = rfqData.validity_date;
-
-                    // Map lines
-                    formData.lines = rfqData.lines.map((line) => ({
-                        item_id: line.item_id,
-                        quantity: line.quantity,
-                        uom_id: line.uom_id,
-                        required_date: line.required_date || null,
-                    }));
-                }
-            } catch (error) {
-                console.error("Error loading form data:", error);
-                alert("Failed to load form data. Please try again.");
-            } finally {
-                isLoading.value = false;
-            }
-        };
-
-        // Helpers for form lines
-        const addLine = () => {
-            formData.lines.push({
-                item_id: "",
-                quantity: 1,
-                uom_id: "",
-                required_date: null,
-            });
-
-            // Add an empty object for line errors
-            lineErrors.value.push({});
-        };
-
-        const removeLine = (index) => {
-            formData.lines.splice(index, 1);
-            lineErrors.value.splice(index, 1);
-        };
-
-        const getLineError = (lineIndex, field) => {
-            return (
-                lineErrors.value[lineIndex] &&
-                lineErrors.value[lineIndex][field]
+      },
+      removeLine(index) {
+        this.rfq.lines.splice(index, 1);
+      },
+      openItemModal(index) {
+        this.currentLineIndex = index;
+        this.showItemModal = true;
+      },
+      closeItemModal() {
+        this.showItemModal = false;
+        this.itemSearch = '';
+        this.currentLineIndex = null;
+      },
+      selectItem(item) {
+        if (this.currentLineIndex !== null) {
+          this.rfq.lines[this.currentLineIndex].item_id = item.item_id;
+          this.rfq.lines[this.currentLineIndex].item = item;
+          
+          // If the item has a default UOM, select it
+          if (item.uom_id) {
+            this.rfq.lines[this.currentLineIndex].uom_id = item.uom_id;
+          }
+        }
+        
+        this.closeItemModal();
+      },
+      async saveRFQ() {
+        // Validate form
+        if (!this.validateForm()) return;
+        
+        this.isSaving = true;
+        
+        try {
+          // Prepare data for API
+          const data = {
+            rfq_date: this.rfq.rfq_date,
+            validity_date: this.rfq.validity_date,
+            notes: this.rfq.notes,
+            lines: this.rfq.lines.map(line => ({
+              item_id: line.item_id,
+              quantity: line.quantity,
+              uom_id: line.uom_id,
+              required_date: line.required_date
+            }))
+          };
+          
+          let response;
+          
+          if (this.isEditing) {
+            response = await axios.put(`/request-for-quotations/${this.id}`, data);
+          } else {
+            response = await axios.post('/request-for-quotations', data);
+          }
+          
+          if (response.data.status === 'success') {
+            this.$toast.success(
+              this.isEditing 
+                ? 'Request For Quotation updated successfully' 
+                : 'Request For Quotation created successfully'
             );
-        };
-
-        // Form submission
-        const submitForm = async () => {
-            // Reset errors
-            errors.value = {};
-            lineErrors.value = Array(formData.lines.length).fill({});
-
-            // Validation
-            let isValid = true;
-
-            if (!formData.rfq_date) {
-                errors.value.rfq_date = "RFQ date is required";
-                isValid = false;
-            }
-
-            if (!formData.validity_date) {
-                errors.value.validity_date = "Validity date is required";
-                isValid = false;
-            }
-
-            if (formData.lines.length === 0) {
-                errors.value.lines = "At least one item is required";
-                isValid = false;
-            }
-
-            // Validate each line
-            formData.lines.forEach((line, index) => {
-                const lineError = {};
-
-                if (!line.item_id) {
-                    lineError.item_id = "Item is required";
-                    isValid = false;
-                }
-
-                if (!line.quantity || line.quantity <= 0) {
-                    lineError.quantity = "Valid quantity is required";
-                    isValid = false;
-                }
-
-                if (!line.uom_id) {
-                    lineError.uom_id = "Unit of measure is required";
-                    isValid = false;
-                }
-
-                lineErrors.value[index] = lineError;
-            });
-
-            if (!isValid) return;
-
-            // Submit form
-            isSubmitting.value = true;
-
-            try {
-                if (isEditMode.value) {
-                    await axios.put(
-                        `/request-for-quotations/${props.id}`,
-                        formData
-                    );
-                    router.push(`/purchasing/rfqs/${props.id}`);
-                } else {
-                    const response = await axios.post(
-                        "/request-for-quotations",
-                        formData
-                    );
-                    router.push(
-                        `/purchasing/rfqs/${response.data.data.rfq_id}`
-                    );
-                }
-            } catch (error) {
-                console.error("Error saving RFQ:", error);
-
-                // Handle validation errors
-                if (
-                    error.response &&
-                    error.response.data &&
-                    error.response.data.errors
-                ) {
-                    const serverErrors = error.response.data.errors;
-
-                    // Map server errors to form fields
-                    Object.entries(serverErrors).forEach(([key, messages]) => {
-                        // Check if error belongs to a line item
-                        const lineMatch = key.match(/^lines\.(\d+)\.(.+)$/);
-
-                        if (lineMatch) {
-                            const [, lineIndex, field] = lineMatch;
-                            if (!lineErrors.value[lineIndex]) {
-                                lineErrors.value[lineIndex] = {};
-                            }
-                            lineErrors.value[lineIndex][field] = messages[0];
-                        } else {
-                            errors.value[key] = messages[0];
-                        }
-                    });
-                } else {
-                    alert("Failed to save RFQ. Please try again.");
-                }
-            } finally {
-                isSubmitting.value = false;
-            }
-        };
-
-        const cancel = () => {
-            if (isEditMode.value) {
-                router.push(`/purchasing/rfqs/${props.id}`);
+            
+            // Navigate to the detail page or list page
+            if (this.isEditing) {
+              this.$router.go(-1);
             } else {
-                router.push("/purchasing/rfqs");
+              this.$router.push(`/purchasing/rfqs/${response.data.data.rfq_id}`);
             }
-        };
-
-        // Initialize
-        onMounted(() => {
-            loadFormData();
-        });
-
-        return {
-            isLoading,
-            isSubmitting,
-            isEditMode,
-            items,
-            uoms,
-            formData,
-            errors,
-            lineErrors,
-            addLine,
-            removeLine,
-            getLineError,
-            submitForm,
-            cancel,
-        };
-    },
-};
-</script>
-
-<style scoped>
-.rfq-form-container {
+          } else {
+            throw new Error(response.data.message || 'Failed to save RFQ');
+          }
+        } catch (error) {
+          console.error('Error saving RFQ:', error);
+          
+          if (error.response && error.response.data && error.response.data.message) {
+            this.$toast.error('Failed to save RFQ: ' + error.response.data.message);
+          } else {
+            this.$toast.error('Failed to save RFQ. Please try again.');
+          }
+        } finally {
+          this.isSaving = false;
+        }
+      },
+      validateForm() {
+        // Check if RFQ date is provided
+        if (!this.rfq.rfq_date) {
+          this.$toast.error('RFQ Date is required');
+          return false;
+        }
+        
+        // Check if at least one line is added
+        if (this.rfq.lines.length === 0) {
+          this.$toast.error('Please add at least one item');
+          return false;
+        }
+        
+        // Check if all lines have required fields
+        for (let i = 0; i < this.rfq.lines.length; i++) {
+          const line = this.rfq.lines[i];
+          
+          if (!line.item_id) {
+            this.$toast.error(`Please select an item for line ${i + 1}`);
+            return false;
+          }
+          
+          if (!line.quantity || line.quantity <= 0) {
+            this.$toast.error(`Please enter a valid quantity for line ${i + 1}`);
+            return false;
+          }
+          
+          if (!line.uom_id) {
+            this.$toast.error(`Please select a unit of measure for line ${i + 1}`);
+            return false;
+          }
+        }
+        
+        return true;
+      }
+    }
+  }
+  </script>
+  
+  <style scoped>
+  .rfq-form-container {
     padding: 1rem;
-}
-
-.page-header {
+    background-color: white;
+    border-radius: 0.5rem;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  }
+  
+  .page-header {
     display: flex;
     justify-content: space-between;
-    align-items: flex-start;
-    margin-bottom: 1.5rem;
-}
-
-.header-left {
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-}
-
-.back-link {
-    display: inline-flex;
     align-items: center;
-    gap: 0.5rem;
-    color: var(--gray-600);
-    text-decoration: none;
-    font-size: 0.875rem;
-}
-
-.back-link:hover {
-    color: var(--primary-color);
-}
-
-.header-left h1 {
+    margin-bottom: 1.5rem;
+  }
+  
+  .page-header h1 {
     margin: 0;
     font-size: 1.5rem;
-    color: var(--gray-800);
-}
-
-.loading-container {
+  }
+  
+  .header-actions {
+    display: flex;
+    gap: 0.5rem;
+  }
+  
+  .loading-indicator {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding: 3rem 0;
+    color: var(--gray-500);
+    font-size: 0.875rem;
+  }
+  
+  .loading-indicator i {
+    margin-right: 0.5rem;
+    animation: spin 1s linear infinite;
+  }
+  
+  .rfq-form {
     display: flex;
     flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    padding: 4rem 2rem;
-    background-color: white;
+    gap: 1.5rem;
+  }
+  
+  .form-section {
+    border: 1px solid var(--gray-200);
     border-radius: 0.5rem;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-}
-
-.loading-spinner {
-    font-size: 2rem;
-    color: var(--primary-color);
-    margin-bottom: 1rem;
-}
-
-.form-wrapper {
-    max-width: 1000px;
-    margin: 0 auto;
-}
-
-.form-card {
-    background-color: white;
-    border-radius: 0.5rem;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-    overflow: hidden;
-    margin-bottom: 1.5rem;
-}
-
-.card-header {
+    padding: 1.5rem;
+  }
+  
+  .section-title {
+    font-size: 1.125rem;
+    margin: 0 0 1rem 0;
+    color: var(--gray-800);
+  }
+  
+  .section-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 1rem 1.5rem;
-    background-color: var(--gray-50);
-    border-bottom: 1px solid var(--gray-200);
-}
-
-.card-title {
-    margin: 0;
-    font-size: 1.25rem;
-    color: var(--gray-800);
-}
-
-.card-body {
-    padding: 1.5rem;
-}
-
-.form-row {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-    gap: 1.25rem;
-    margin-bottom: 1.25rem;
-}
-
-.form-row:last-child {
-    margin-bottom: 0;
-}
-
-.form-group {
+    margin-bottom: 1rem;
+  }
+  
+  .form-row {
+    display: flex;
+    gap: 1rem;
+    margin-bottom: 1rem;
+  }
+  
+  .form-group {
     display: flex;
     flex-direction: column;
-}
-
-.form-group-lg {
-    grid-column: 1 / -1;
-}
-
-label {
+    gap: 0.375rem;
+    margin-bottom: 1rem;
+    flex: 1;
+  }
+  
+  .form-group:last-child {
+    margin-bottom: 0;
+  }
+  
+  label {
     font-size: 0.875rem;
     font-weight: 500;
     color: var(--gray-700);
-    margin-bottom: 0.5rem;
-}
-
-input,
-select {
+  }
+  
+  .required {
+    color: #dc2626;
+  }
+  
+  .form-control {
     padding: 0.625rem;
     border: 1px solid var(--gray-200);
     border-radius: 0.375rem;
     font-size: 0.875rem;
     transition: border-color 0.2s, box-shadow 0.2s;
-}
-
-input:focus,
-select:focus {
+  }
+  
+  .form-control:focus {
     outline: none;
     border-color: var(--primary-color);
     box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
-}
-
-.is-invalid {
-    border-color: var(--danger-color);
-}
-
-.is-invalid:focus {
-    box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.1);
-}
-
-.error-message {
-    font-size: 0.75rem;
-    color: var(--danger-color);
-    margin-top: 0.375rem;
-}
-
-.line-items-container {
+  }
+  
+  .form-control:disabled {
+    background-color: var(--gray-100);
+    cursor: not-allowed;
+  }
+  
+  .empty-lines {
+    padding: 2rem 0;
+    text-align: center;
+    color: var(--gray-500);
+    background-color: var(--gray-50);
+    border-radius: 0.375rem;
+    border: 1px dashed var(--gray-300);
+  }
+  
+  .rfq-lines-table-container {
+    overflow-x: auto;
+  }
+  
+  .rfq-lines-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.875rem;
+  }
+  
+  .rfq-lines-table th {
+    text-align: left;
+    padding: 0.75rem 1rem;
+    border-bottom: 1px solid var(--gray-200);
+    background-color: var(--gray-50);
+    font-weight: 500;
+    color: var(--gray-600);
+  }
+  
+  .rfq-lines-table td {
+    padding: 0.75rem 1rem;
+    border-bottom: 1px solid var(--gray-100);
+    color: var(--gray-800);
+    vertical-align: middle;
+  }
+  
+  .item-selection {
     display: flex;
     flex-direction: column;
-    gap: 1.5rem;
-}
-
-.line-item {
-    border: 1px solid var(--gray-200);
-    border-radius: 0.5rem;
-    padding: 1.25rem;
-}
-
-.line-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 1rem;
-}
-
-.line-title {
-    font-size: 1rem;
-    font-weight: 600;
-    color: var(--gray-800);
-    margin: 0;
-}
-
-.btn-icon {
+    gap: 0.25rem;
+  }
+  
+  .item-description {
+    font-size: 0.75rem;
+    color: var(--gray-500);
+  }
+  
+  .btn {
+    padding: 0.625rem 1rem;
+    border-radius: 0.375rem;
+    font-size: 0.875rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
     display: inline-flex;
     align-items: center;
+    gap: 0.5rem;
+  }
+  
+  .btn-primary {
+    background-color: var(--primary-color);
+    color: white;
+    border: none;
+  }
+  
+  .btn-primary:hover {
+    background-color: var(--primary-dark);
+  }
+  
+  .btn-primary:disabled {
+    opacity: 0.7;
+    cursor: not-allowed;
+  }
+  
+  .btn-secondary {
+    background-color: white;
+    color: var(--gray-700);
+    border: 1px solid var(--gray-300);
+  }
+  
+  .btn-secondary:hover {
+    background-color: var(--gray-50);
+  }
+  
+  .btn-outline {
+    background-color: white;
+    color: var(--gray-700);
+    border: 1px solid var(--gray-300);
+  }
+  
+  .btn-outline:hover {
+    background-color: var(--gray-50);
+  }
+  
+  .btn-outline-primary {
+    background-color: white;
+    color: var(--primary-color);
+    border: 1px solid var(--primary-color);
+  }
+  
+  .btn-outline-primary:hover {
+    background-color: rgba(37, 99, 235, 0.05);
+  }
+  
+  .btn-icon {
+    display: inline-flex;
     justify-content: center;
+    align-items: center;
     width: 2rem;
     height: 2rem;
     border-radius: 0.375rem;
     border: none;
     cursor: pointer;
-    transition: background-color 0.2s;
-}
-
-.btn-danger {
-    color: var(--danger-color);
-    background-color: transparent;
-}
-
-.btn-danger:hover {
-    background-color: var(--danger-bg);
-}
-
-.empty-state {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    padding: 2rem;
-    text-align: center;
-}
-
-.empty-icon {
-    font-size: 2.5rem;
-    color: var(--gray-300);
-    margin-bottom: 1rem;
-}
-
-.empty-state h3 {
-    font-size: 1.125rem;
-    color: var(--gray-700);
-    margin-bottom: 0.5rem;
-}
-
-.empty-state p {
-    color: var(--gray-500);
-    max-width: 24rem;
-}
-
-.form-actions {
+    transition: all 0.2s;
+  }
+  
+  .btn-danger {
+    color: white;
+    background-color: #ef4444;
+  }
+  
+  .btn-danger:hover {
+    background-color: #dc2626;
+  }
+  
+  .form-actions {
     display: flex;
     justify-content: flex-end;
     gap: 1rem;
-    margin-top: 1.5rem;
-}
-
-.btn {
-    padding: 0.625rem 1.25rem;
-    font-size: 0.875rem;
-    font-weight: 500;
-    border-radius: 0.375rem;
+    margin-top: 1rem;
+  }
+  
+  /* Modal Styles */
+  .modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 50;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+  }
+  
+  .modal-backdrop {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgba(0, 0, 0, 0.5);
+    z-index: 50;
+  }
+  
+  .modal-content {
+    background-color: white;
+    border-radius: 0.5rem;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    width: 100%;
+    max-width: 600px;
+    max-height: 80vh;
+    z-index: 60;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  
+  .modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1rem 1.5rem;
+    border-bottom: 1px solid #e2e8f0;
+  }
+  
+  .modal-header h2 {
+    font-size: 1.25rem;
+    font-weight: 600;
+    margin: 0;
+    color: #1e293b;
+  }
+  
+  .close-btn {
+    background: none;
+    border: none;
+    color: #64748b;
     cursor: pointer;
-    display: inline-flex;
+    display: flex;
     align-items: center;
     justify-content: center;
-    gap: 0.5rem;
-    border: none;
-    transition: background-color 0.2s, color 0.2s;
-}
-
-.btn-sm {
-    padding: 0.375rem 0.75rem;
-    font-size: 0.75rem;
-}
-
-.btn-primary {
-    background-color: var(--primary-color);
-    color: white;
-}
-
-.btn-primary:hover:not(:disabled) {
-    background-color: var(--primary-dark);
-}
-
-.btn-primary:disabled {
-    opacity: 0.7;
-    cursor: not-allowed;
-}
-
-.btn-secondary {
-    background-color: var(--gray-200);
+    padding: 0.25rem;
+    border-radius: 0.25rem;
+  }
+  
+  .close-btn:hover {
+    background-color: #f1f5f9;
+    color: #0f172a;
+  }
+  
+  .modal-body {
+    padding: 1.5rem;
+    overflow-y: auto;
+    flex: 1;
+  }
+  
+  .search-box {
+    position: relative;
+    margin-bottom: 1rem;
+  }
+  
+  .search-icon {
+    position: absolute;
+    left: 0.75rem;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--gray-500);
+  }
+  
+  .search-box input {
+    width: 100%;
+    padding: 0.625rem 2.25rem;
+  }
+  
+  .items-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+    gap: 1rem;
+    margin-top: 1rem;
+  }
+  
+  .item-card {
+    border: 1px solid var(--gray-200);
+    border-radius: 0.375rem;
+    padding: 1rem;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  
+  .item-card:hover {
+    border-color: var(--primary-color);
+    background-color: rgba(37, 99, 235, 0.05);
+  }
+  
+  .item-code {
+    font-weight: 600;
+    color: var(--gray-800);
+    margin-bottom: 0.25rem;
+  }
+  
+  .item-name {
+    font-size: 0.875rem;
     color: var(--gray-700);
-}
-
-.btn-secondary:hover {
-    background-color: var(--gray-300);
-}
-
-@media (max-width: 768px) {
+    margin-bottom: 0.25rem;
+  }
+  
+  .item-description {
+    font-size: 0.75rem;
+    color: var(--gray-500);
+  }
+  
+  .empty-items {
+    text-align: center;
+    padding: 2rem 0;
+    color: var(--gray-500);
+  }
+  
+  @media (max-width: 768px) {
     .form-row {
-        grid-template-columns: 1fr;
+      flex-direction: column;
     }
-}
-</style>
+  }
+  </style>

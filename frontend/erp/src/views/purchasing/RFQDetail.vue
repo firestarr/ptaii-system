@@ -1,848 +1,1039 @@
 <!-- src/views/purchasing/RFQDetail.vue -->
 <template>
     <div class="rfq-detail-container">
-        <div class="page-header">
-            <div class="header-left">
-                <router-link to="/purchasing/rfqs" class="back-link">
-                    <i class="fas fa-arrow-left"></i> Back to RFQs
+      <div class="page-header">
+        <h1>Request for Quotation Details</h1>
+        <div class="header-actions">
+          <router-link :to="`/purchasing/rfqs`" class="btn btn-outline">
+            <i class="fas fa-arrow-left"></i> Back to List
+          </router-link>
+  
+          <div class="action-dropdown" v-if="rfq">
+            <button class="btn btn-outline-primary" @click="toggleActionMenu">
+              <i class="fas fa-ellipsis-v"></i> Actions
+            </button>
+            <div class="dropdown-menu" v-if="showActionMenu">
+              <router-link 
+                v-if="rfq.status === 'draft'" 
+                :to="`/purchasing/rfqs/${rfqId}/edit`" 
+                class="dropdown-item"
+              >
+                <i class="fas fa-edit"></i> Edit RFQ
+              </router-link>
+              
+              <router-link 
+                v-if="rfq.status === 'draft'" 
+                :to="`/purchasing/rfqs/${rfqId}/send`" 
+                class="dropdown-item"
+              >
+                <i class="fas fa-paper-plane"></i> Send to Vendors
+              </router-link>
+              
+              <router-link 
+                v-if="rfq.status === 'sent' && hasQuotations" 
+                :to="`/purchasing/rfqs/${rfqId}/compare`" 
+                class="dropdown-item"
+              >
+                <i class="fas fa-balance-scale"></i> Compare Quotations
+              </router-link>
+              
+              <a 
+                v-if="rfq.status === 'draft'" 
+                href="#" 
+                @click.prevent="updateStatus('sent')" 
+                class="dropdown-item"
+              >
+                <i class="fas fa-check-circle"></i> Mark as Sent
+              </a>
+              
+              <a 
+                v-if="rfq.status === 'sent'" 
+                href="#" 
+                @click.prevent="updateStatus('closed')" 
+                class="dropdown-item"
+              >
+                <i class="fas fa-lock"></i> Close RFQ
+              </a>
+              
+              <a 
+                v-if="['draft', 'sent'].includes(rfq.status)" 
+                href="#" 
+                @click.prevent="updateStatus('canceled')" 
+                class="dropdown-item"
+              >
+                <i class="fas fa-ban"></i> Cancel RFQ
+              </a>
+              
+              <a 
+                v-if="rfq.status === 'draft'" 
+                href="#" 
+                @click.prevent="confirmDelete" 
+                class="dropdown-item text-danger"
+              >
+                <i class="fas fa-trash"></i> Delete RFQ
+              </a>
+            </div>
+          </div>
+        </div>
+      </div>
+  
+      <div v-if="loading" class="loading-indicator">
+        <i class="fas fa-spinner fa-spin"></i> Loading RFQ details...
+      </div>
+  
+      <div v-else-if="!rfq" class="error-state">
+        <div class="error-icon">
+          <i class="fas fa-exclamation-circle"></i>
+        </div>
+        <h3>Request for Quotation Not Found</h3>
+        <p>The RFQ you are looking for does not exist or has been deleted.</p>
+        <router-link to="/purchasing/rfqs" class="btn btn-primary">
+          Go Back to RFQ List
+        </router-link>
+      </div>
+  
+      <div v-else class="rfq-details">
+        <div class="detail-card">
+          <div class="card-header">
+            <h2 class="card-title">RFQ Information</h2>
+            <div class="status-badge" :class="getStatusClass(rfq.status)">
+              {{ capitalizeFirstLetter(rfq.status) }}
+            </div>
+          </div>
+  
+          <div class="card-body">
+            <div class="detail-row">
+              <div class="detail-group">
+                <label>RFQ Number</label>
+                <div class="detail-value">{{ rfq.rfq_number }}</div>
+              </div>
+              
+              <div class="detail-group">
+                <label>RFQ Date</label>
+                <div class="detail-value">{{ formatDate(rfq.rfq_date) }}</div>
+              </div>
+            </div>
+            
+            <div class="detail-row">
+              <div class="detail-group">
+                <label>Validity Date</label>
+                <div class="detail-value">{{ formatDate(rfq.validity_date) || 'N/A' }}</div>
+              </div>
+              
+              <div class="detail-group">
+                <label>Created At</label>
+                <div class="detail-value">{{ formatDateTime(rfq.created_at) }}</div>
+              </div>
+            </div>
+            
+            <div class="detail-row" v-if="rfq.notes">
+              <div class="detail-group full-width">
+                <label>Notes</label>
+                <div class="detail-value">{{ rfq.notes }}</div>
+              </div>
+            </div>
+          </div>
+        </div>
+        
+        <div class="detail-card">
+          <div class="card-header">
+            <h2 class="card-title">RFQ Lines</h2>
+            <div class="items-count">{{ rfq.lines.length }} Items</div>
+          </div>
+          
+          <div class="card-body">
+            <div class="table-responsive">
+              <table class="detail-table">
+                <thead>
+                  <tr>
+                    <th>#</th>
+                    <th>Item</th>
+                    <th>Description</th>
+                    <th>Quantity</th>
+                    <th>UOM</th>
+                    <th>Required Date</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="(line, index) in rfq.lines" :key="line.line_id">
+                    <td>{{ index + 1 }}</td>
+                    <td>
+                      <div class="item-code">{{ line.item.item_code }}</div>
+                      <div class="item-name">{{ line.item.name }}</div>
+                    </td>
+                    <td>{{ line.item.description || 'N/A' }}</td>
+                    <td>{{ formatNumber(line.quantity) }}</td>
+                    <td>{{ line.unit_of_measure.symbol }}</td>
+                    <td>{{ formatDate(line.required_date) || 'N/A' }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+        
+        <div class="detail-card">
+          <div class="card-header">
+            <h2 class="card-title">Vendor Quotations</h2>
+            <div class="quotations-count">
+              {{ rfq.vendor_quotations ? rfq.vendor_quotations.length : 0 }} Quotations
+            </div>
+          </div>
+          
+          <div class="card-body">
+            <div v-if="!hasQuotations" class="empty-quotations">
+              <div class="empty-icon">
+                <i class="fas fa-file-invoice-dollar"></i>
+              </div>
+              <h3>No Quotations Yet</h3>
+              <p v-if="rfq.status === 'draft'">
+                Send this RFQ to vendors to receive quotations.
+              </p>
+              <p v-else-if="rfq.status === 'sent'">
+                Waiting for vendors to submit their quotations.
+              </p>
+              <p v-else>
+                No quotations were received for this RFQ.
+              </p>
+              
+              <div class="empty-actions" v-if="rfq.status === 'draft'">
+                <router-link :to="`/purchasing/rfqs/${rfqId}/send`" class="btn btn-primary">
+                  <i class="fas fa-paper-plane"></i> Send to Vendors
                 </router-link>
-                <h1>{{ rfq?.rfq_number || "RFQ Details" }}</h1>
+              </div>
             </div>
-            <div class="header-actions">
-                <button
-                    v-if="rfq && rfq.status === 'draft'"
-                    @click="editRFQ"
-                    class="btn btn-primary"
-                >
-                    <i class="fas fa-edit"></i> Edit
-                </button>
-                <button
-                    v-if="rfq && rfq.status === 'draft'"
-                    @click="sendRFQ"
-                    class="btn btn-info"
-                >
-                    <i class="fas fa-paper-plane"></i> Send to Vendors
-                </button>
-                <button
-                    v-if="rfq && rfq.status === 'sent'"
-                    @click="compareQuotations"
-                    class="btn btn-accent"
-                >
-                    <i class="fas fa-balance-scale"></i> Compare Quotations
-                </button>
-                <button
-                    v-if="
-                        rfq &&
-                        rfq.status !== 'canceled' &&
-                        rfq.status !== 'closed'
-                    "
-                    @click="showStatusModal = true"
-                    class="btn btn-secondary"
-                >
-                    <i class="fas fa-cog"></i> Change Status
-                </button>
-            </div>
-        </div>
-
-        <div v-if="isLoading" class="loading-container">
-            <div class="loading-spinner">
-                <i class="fas fa-spinner fa-spin"></i>
-            </div>
-            <p>Loading RFQ data...</p>
-        </div>
-
-        <div v-else-if="!rfq" class="error-container">
-            <div class="error-icon">
-                <i class="fas fa-exclamation-triangle"></i>
-            </div>
-            <h2>RFQ Not Found</h2>
-            <p>
-                The requested RFQ could not be found or may have been deleted.
-            </p>
-            <router-link to="/purchasing/rfqs" class="btn btn-primary">
-                Return to RFQs List
-            </router-link>
-        </div>
-
-        <div v-else class="rfq-detail-content">
-            <!-- RFQ Information Card -->
-            <div class="detail-card">
-                <div class="card-header">
-                    <h2 class="card-title">RFQ Information</h2>
-                    <span :class="['status-badge', getStatusClass(rfq.status)]">
-                        {{
-                            rfq.status.charAt(0).toUpperCase() +
-                            rfq.status.slice(1)
-                        }}
-                    </span>
-                </div>
-                <div class="card-body">
-                    <div class="info-grid">
-                        <div class="info-item">
-                            <span class="info-label">RFQ Number</span>
-                            <span class="info-value">{{ rfq.rfq_number }}</span>
-                        </div>
-                        <div class="info-item">
-                            <span class="info-label">Date</span>
-                            <span class="info-value">{{
-                                formatDate(rfq.rfq_date)
-                            }}</span>
-                        </div>
-                        <div class="info-item">
-                            <span class="info-label">Valid Until</span>
-                            <span class="info-value">{{
-                                formatDate(rfq.validity_date)
-                            }}</span>
-                        </div>
+            
+            <div v-else class="quotations-list">
+              <div 
+                v-for="quotation in rfq.vendor_quotations" 
+                :key="quotation.quotation_id" 
+                class="quotation-card"
+              >
+                <div class="quotation-header">
+                  <div class="vendor-info">
+                    <div class="vendor-name">{{ quotation.vendor.name }}</div>
+                    <div class="quotation-date">
+                      Quote Date: {{ formatDate(quotation.quotation_date) }}
                     </div>
+                  </div>
+                  
+                  <div class="quotation-validity">
+                    Valid until: {{ formatDate(quotation.validity_date) || 'Not specified' }}
+                  </div>
                 </div>
-            </div>
-
-            <!-- RFQ Items Card -->
-            <div class="detail-card">
-                <div class="card-header">
-                    <h2 class="card-title">Requested Items</h2>
-                </div>
-                <div class="card-body">
-                    <table class="items-table">
-                        <thead>
-                            <tr>
-                                <th>Item</th>
-                                <th>Description</th>
-                                <th>Quantity</th>
-                                <th>UOM</th>
-                                <th>Required Date</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr v-for="line in rfq.lines" :key="line.line_id">
-                                <td>
-                                    {{ line.item.item_code }} -
-                                    {{ line.item.name }}
-                                </td>
-                                <td>{{ line.item.description || "N/A" }}</td>
-                                <td>{{ line.quantity }}</td>
-                                <td>{{ line.unitOfMeasure?.name || "N/A" }}</td>
-                                <td>{{ formatDate(line.required_date) }}</td>
-                            </tr>
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-
-            <!-- Vendor Quotations Card -->
-            <div class="detail-card">
-                <div class="card-header">
-                    <h2 class="card-title">Vendor Quotations</h2>
-                    <div v-if="rfq.status === 'sent'" class="card-actions">
-                        <button
-                            @click="showAddQuotationModal = true"
-                            class="btn btn-sm btn-primary"
-                        >
-                            <i class="fas fa-plus"></i> Add Quotation
-                        </button>
+                
+                <div class="quotation-body">
+                  <div class="quotation-items">
+                    <div class="quotation-item-count">
+                      {{ quotation.lines.length }} Items Quoted
                     </div>
-                </div>
-                <div class="card-body">
-                    <div
-                        v-if="
-                            rfq.vendorQuotations &&
-                            rfq.vendorQuotations.length > 0
-                        "
+                    
+                    <router-link 
+                      :to="`/purchasing/vendor-quotations/${quotation.quotation_id}`" 
+                      class="btn btn-outline-primary btn-sm"
                     >
-                        <table class="quotations-table">
-                            <thead>
-                                <tr>
-                                    <th>Vendor</th>
-                                    <th>Quotation Date</th>
-                                    <th>Valid Until</th>
-                                    <th>Status</th>
-                                    <th>Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <tr
-                                    v-for="quotation in rfq.vendorQuotations"
-                                    :key="quotation.quotation_id"
-                                >
-                                    <td>{{ quotation.vendor.name }}</td>
-                                    <td>
-                                        {{
-                                            formatDate(quotation.quotation_date)
-                                        }}
-                                    </td>
-                                    <td>
-                                        {{
-                                            formatDate(quotation.validity_date)
-                                        }}
-                                    </td>
-                                    <td>
-                                        <span
-                                            :class="[
-                                                'status-badge',
-                                                getQuotationStatusClass(
-                                                    quotation.status
-                                                ),
-                                            ]"
-                                        >
-                                            {{
-                                                quotation.status
-                                                    .charAt(0)
-                                                    .toUpperCase() +
-                                                quotation.status.slice(1)
-                                            }}
-                                        </span>
-                                    </td>
-                                    <td>
-                                        <div class="action-buttons">
-                                            <button
-                                                @click="
-                                                    viewQuotation(quotation)
-                                                "
-                                                class="action-btn view-btn"
-                                                title="View Quotation"
-                                            >
-                                                <i class="fas fa-eye"></i>
-                                            </button>
-                                            <button
-                                                v-if="
-                                                    quotation.status ===
-                                                    'received'
-                                                "
-                                                @click="
-                                                    acceptQuotation(quotation)
-                                                "
-                                                class="action-btn accept-btn"
-                                                title="Accept Quotation"
-                                            >
-                                                <i class="fas fa-check"></i>
-                                            </button>
-                                            <button
-                                                v-if="
-                                                    quotation.status ===
-                                                    'received'
-                                                "
-                                                @click="
-                                                    rejectQuotation(quotation)
-                                                "
-                                                class="action-btn reject-btn"
-                                                title="Reject Quotation"
-                                            >
-                                                <i class="fas fa-times"></i>
-                                            </button>
-                                            <button
-                                                v-if="
-                                                    quotation.status ===
-                                                    'accepted'
-                                                "
-                                                @click="createPO(quotation)"
-                                                class="action-btn po-btn"
-                                                title="Create Purchase Order"
-                                            >
-                                                <i
-                                                    class="fas fa-file-invoice"
-                                                ></i>
-                                            </button>
-                                        </div>
-                                    </td>
-                                </tr>
-                            </tbody>
-                        </table>
+                      View Quotation
+                    </router-link>
+                  </div>
+                  
+                  <div class="quotation-status">
+                    <div class="status-badge" :class="getQuotationStatusClass(quotation.status)">
+                      {{ capitalizeFirstLetter(quotation.status) }}
                     </div>
-                    <div v-else class="empty-state">
-                        <div class="empty-icon">
-                            <i class="fas fa-file-invoice-dollar"></i>
-                        </div>
-                        <h3>No Quotations Yet</h3>
-                        <p v-if="rfq.status === 'draft'">
-                            Please send this RFQ to vendors first to receive
-                            quotations.
-                        </p>
-                        <p v-else-if="rfq.status === 'sent'">
-                            No vendor quotations have been received yet for this
-                            RFQ.
-                        </p>
-                        <p v-else>
-                            No vendor quotations were received for this RFQ.
-                        </p>
-                    </div>
+                  </div>
                 </div>
+              </div>
+              
+              <div class="quotations-actions" v-if="hasQuotations && rfq.status === 'sent'">
+                <router-link :to="`/purchasing/rfqs/${rfqId}/compare`" class="btn btn-primary">
+                  <i class="fas fa-balance-scale"></i> Compare Quotations
+                </router-link>
+              </div>
             </div>
+          </div>
         </div>
-
-        <!-- Status Change Modal -->
-        <ConfirmationModal
-            v-if="showStatusModal"
-            :title="'Change RFQ Status'"
-            :message="'Please select the new status for this RFQ:'"
-            :confirm-button-text="'Update Status'"
-            :confirm-button-class="'btn btn-primary'"
-            @confirm="updateStatus"
-            @close="showStatusModal = false"
-        >
-            <div class="status-select-container">
-                <select v-model="newStatus" class="status-select">
-                    <option v-if="rfq?.status === 'draft'" value="sent">
-                        Send
-                    </option>
-                    <option v-if="rfq?.status === 'sent'" value="closed">
-                        Close
-                    </option>
-                    <option v-if="rfq?.status !== 'canceled'" value="canceled">
-                        Cancel
-                    </option>
-                </select>
+      </div>
+  
+      <!-- Confirmation Modal for Status Update -->
+      <div v-if="showStatusModal" class="modal">
+        <div class="modal-backdrop" @click="showStatusModal = false"></div>
+        <div class="modal-content modal-sm">
+          <div class="modal-header">
+            <h2>Update Status</h2>
+            <button class="close-btn" @click="showStatusModal = false">
+              <i class="fas fa-times"></i>
+            </button>
+          </div>
+          <div class="modal-body">
+            <p>Are you sure you want to change the status of this RFQ to <strong>{{ capitalizeFirstLetter(newStatus) }}</strong>?</p>
+            
+            <div class="form-actions">
+              <button type="button" class="btn btn-secondary" @click="showStatusModal = false">
+                Cancel
+              </button>
+              <button
+                type="button"
+                class="btn btn-primary"
+                @click="confirmUpdateStatus"
+              >
+                Update Status
+              </button>
             </div>
-        </ConfirmationModal>
+          </div>
+        </div>
+      </div>
+  
+      <!-- Confirmation Modal for Delete -->
+      <div v-if="showDeleteModal" class="modal">
+        <div class="modal-backdrop" @click="showDeleteModal = false"></div>
+        <div class="modal-content modal-sm">
+          <div class="modal-header">
+            <h2>Confirm Delete</h2>
+            <button class="close-btn" @click="showDeleteModal = false">
+              <i class="fas fa-times"></i>
+            </button>
+          </div>
+          <div class="modal-body">
+            <p>Are you sure you want to delete RFQ <strong>{{ rfq?.rfq_number }}</strong>?</p>
+            <p class="text-danger">This action cannot be undone.</p>
+            
+            <div class="form-actions">
+              <button type="button" class="btn btn-secondary" @click="showDeleteModal = false">
+                Cancel
+              </button>
+              <button
+                type="button"
+                class="btn btn-danger"
+                @click="deleteRfq"
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
-</template>
-
-<script>
-import { ref, onMounted } from "vue";
-import { useRouter } from "vue-router";
-import ConfirmationModal from "@/components/common/ConfirmationModal.vue";
-import axios from "axios";
-
-export default {
-    name: "RFQDetail",
-    components: {
-        ConfirmationModal,
-    },
+  </template>
+  
+  <script>
+  import axios from 'axios';
+  
+  export default {
+    name: 'RFQDetail',
     props: {
-        id: {
-            type: [Number, String],
-            required: true,
-        },
+      rfqId: {
+        type: [Number, String],
+        required: true
+      }
     },
-    setup(props) {
-        const router = useRouter();
-        const rfq = ref(null);
-        const isLoading = ref(true);
-        const showStatusModal = ref(false);
-        const showAddQuotationModal = ref(false);
-        const newStatus = ref("");
-
-        // Fetch RFQ details
-        const fetchRFQDetails = async () => {
-            isLoading.value = true;
-            try {
-                const response = await axios.get(
-                    `/request-for-quotations/${props.id}`
-                );
-                if (response.data && response.data.data) {
-                    rfq.value = response.data.data;
-                }
-            } catch (error) {
-                console.error("Error fetching RFQ details:", error);
-                rfq.value = null;
-            } finally {
-                isLoading.value = false;
-            }
-        };
-
-        // Format date strings
-        const formatDate = (dateString) => {
-            if (!dateString) return "N/A";
-            const date = new Date(dateString);
-            return date.toLocaleDateString();
-        };
-
-        // Get CSS class for status badge
-        const getStatusClass = (status) => {
-            switch (status) {
-                case "draft":
-                    return "status-draft";
-                case "sent":
-                    return "status-sent";
-                case "closed":
-                    return "status-closed";
-                case "canceled":
-                    return "status-canceled";
-                default:
-                    return "status-draft";
-            }
-        };
-
-        // Get CSS class for quotation status badge
-        const getQuotationStatusClass = (status) => {
-            switch (status) {
-                case "received":
-                    return "status-received";
-                case "accepted":
-                    return "status-accepted";
-                case "rejected":
-                    return "status-rejected";
-                default:
-                    return "status-received";
-            }
-        };
-
-        // Navigation actions
-        const editRFQ = () => {
-            router.push(`/purchasing/rfqs/${props.id}/edit`);
-        };
-
-        const sendRFQ = () => {
-            router.push(`/purchasing/rfqs/${props.id}/send`);
-        };
-
-        const compareQuotations = () => {
-            router.push(`/purchasing/rfqs/${props.id}/compare`);
-        };
-
-        // Update RFQ status
-        const updateStatus = async () => {
-            try {
-                await axios.patch(
-                    `/request-for-quotations/${props.id}/status`,
-                    {
-                        status: newStatus.value,
-                    }
-                );
-                showStatusModal.value = false;
-                fetchRFQDetails();
-            } catch (error) {
-                console.error("Error updating RFQ status:", error);
-                alert("Failed to update status. Please try again.");
-            }
-        };
-
-        // Quotation actions
-        const viewQuotation = (quotation) => {
-            router.push(`/purchasing/quotations/${quotation.quotation_id}`);
-        };
-
-        const acceptQuotation = async (quotation) => {
-            try {
-                await axios.patch(
-                    `/vendor-quotations/${quotation.quotation_id}/status`,
-                    {
-                        status: "accepted",
-                    }
-                );
-                fetchRFQDetails();
-            } catch (error) {
-                console.error("Error accepting quotation:", error);
-                alert("Failed to accept quotation. Please try again.");
-            }
-        };
-
-        const rejectQuotation = async (quotation) => {
-            try {
-                await axios.patch(
-                    `/vendor-quotations/${quotation.quotation_id}/status`,
-                    {
-                        status: "rejected",
-                    }
-                );
-                fetchRFQDetails();
-            } catch (error) {
-                console.error("Error rejecting quotation:", error);
-                alert("Failed to reject quotation. Please try again.");
-            }
-        };
-
-        const createPO = (quotation) => {
-            router.push(
-                `/purchasing/orders/create-from-quotation/${quotation.quotation_id}`
-            );
-        };
-
-        // Initialize data
-        onMounted(() => {
-            fetchRFQDetails();
+    data() {
+      return {
+        rfq: null,
+        loading: true,
+        showActionMenu: false,
+        showStatusModal: false,
+        showDeleteModal: false,
+        newStatus: '',
+        isUpdating: false
+      }
+    },
+    computed: {
+      hasQuotations() {
+        return this.rfq && this.rfq.vendor_quotations && this.rfq.vendor_quotations.length > 0;
+      }
+    },
+    mounted() {
+      this.loadRFQ();
+      
+      // Close action menu when clicking outside
+      document.addEventListener('click', this.handleOutsideClick);
+    },
+    beforeUnmount() {
+      document.removeEventListener('click', this.handleOutsideClick);
+    },
+    methods: {
+      async loadRFQ() {
+        this.loading = true;
+        
+        try {
+          const response = await axios.get(`/request-for-quotations/${this.rfqId}`);
+          
+          if (response.data.status === 'success' && response.data.data) {
+            this.rfq = response.data.data;
+          } else {
+            this.rfq = null;
+            throw new Error(response.data.message || 'Failed to load RFQ');
+          }
+        } catch (error) {
+          console.error('Error loading RFQ:', error);
+          this.rfq = null;
+          
+          if (error.response && error.response.status === 404) {
+            this.$toast.error('Request for Quotation not found');
+          } else {
+            this.$toast.error('Failed to load RFQ details. Please try again.');
+          }
+        } finally {
+          this.loading = false;
+        }
+      },
+      formatDate(dateString) {
+        if (!dateString) return null;
+        
+        const date = new Date(dateString);
+        return date.toLocaleDateString('id-ID', {
+          year: 'numeric',
+          month: 'long',
+          day: 'numeric'
         });
-
-        return {
-            rfq,
-            isLoading,
-            showStatusModal,
-            showAddQuotationModal,
-            newStatus,
-            formatDate,
-            getStatusClass,
-            getQuotationStatusClass,
-            editRFQ,
-            sendRFQ,
-            compareQuotations,
-            updateStatus,
-            viewQuotation,
-            acceptQuotation,
-            rejectQuotation,
-            createPO,
-        };
-    },
-};
-</script>
-
-<style scoped>
-.rfq-detail-container {
+      },
+      formatDateTime(dateString) {
+        if (!dateString) return null;
+        
+        const date = new Date(dateString);
+        return date.toLocaleDateString('id-ID', {
+          year: 'numeric',
+          month: 'long',
+          day: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit'
+        });
+      },
+      formatNumber(number) {
+        return new Intl.NumberFormat('id-ID').format(number);
+      },
+      getStatusClass(status) {
+        switch (status) {
+          case 'draft': return 'status-draft';
+          case 'sent': return 'status-sent';
+          case 'closed': return 'status-closed';
+          case 'canceled': return 'status-canceled';
+          default: return '';
+        }
+      },
+      getQuotationStatusClass(status) {
+        switch (status) {
+          case 'draft': return 'status-draft';
+          case 'submitted': return 'status-submitted';
+          case 'accepted': return 'status-accepted';
+          case 'rejected': return 'status-rejected';
+          default: return '';
+        }
+      },
+      capitalizeFirstLetter(string) {
+        if (!string) return '';
+        return string.charAt(0).toUpperCase() + string.slice(1);
+      },
+      toggleActionMenu() {
+        this.showActionMenu = !this.showActionMenu;
+      },
+      handleOutsideClick(event) {
+        const dropdown = this.$el.querySelector('.action-dropdown');
+        if (dropdown && !dropdown.contains(event.target)) {
+          this.showActionMenu = false;
+        }
+      },
+      updateStatus(status) {
+        this.newStatus = status;
+        this.showStatusModal = true;
+        this.showActionMenu = false;
+      },
+      async confirmUpdateStatus() {
+        if (!this.newStatus) return;
+        
+        this.isUpdating = true;
+        
+        try {
+          const response = await axios.patch(`/request-for-quotations/${this.rfqId}/status`, {
+            status: this.newStatus
+          });
+          
+          if (response.data.status === 'success') {
+            this.$toast.success(`RFQ status updated to ${this.capitalizeFirstLetter(this.newStatus)}`);
+            this.loadRFQ();
+          } else {
+            throw new Error(response.data.message || 'Failed to update status');
+          }
+        } catch (error) {
+          console.error('Error updating status:', error);
+          
+          if (error.response && error.response.data && error.response.data.message) {
+            this.$toast.error('Failed to update status: ' + error.response.data.message);
+          } else {
+            this.$toast.error('Failed to update RFQ status. Please try again.');
+          }
+        } finally {
+          this.showStatusModal = false;
+          this.newStatus = '';
+          this.isUpdating = false;
+        }
+      },
+      confirmDelete() {
+        this.showDeleteModal = true;
+        this.showActionMenu = false;
+      },
+      async deleteRfq() {
+        try {
+          const response = await axios.delete(`/request-for-quotations/${this.rfqId}`);
+          
+          if (response.data.status === 'success') {
+            this.$toast.success('RFQ deleted successfully');
+            this.$router.push('/purchasing/rfqs');
+          } else {
+            throw new Error(response.data.message || 'Failed to delete RFQ');
+          }
+        } catch (error) {
+          console.error('Error deleting RFQ:', error);
+          
+          if (error.response && error.response.data && error.response.data.message) {
+            this.$toast.error('Failed to delete RFQ: ' + error.response.data.message);
+          } else {
+            this.$toast.error('Failed to delete RFQ. Please try again.');
+          }
+        } finally {
+          this.showDeleteModal = false;
+        }
+      }
+    }
+  }
+  </script>
+  
+  <style scoped>
+  .rfq-detail-container {
     padding: 1rem;
-}
-
-.page-header {
+    background-color: white;
+    border-radius: 0.5rem;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  }
+  
+  .page-header {
     display: flex;
     justify-content: space-between;
-    align-items: flex-start;
-    margin-bottom: 1.5rem;
-}
-
-.header-left {
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-}
-
-.back-link {
-    display: inline-flex;
     align-items: center;
-    gap: 0.5rem;
-    color: var(--gray-600);
-    text-decoration: none;
-    font-size: 0.875rem;
-}
-
-.back-link:hover {
-    color: var(--primary-color);
-}
-
-.header-left h1 {
+    margin-bottom: 1.5rem;
+  }
+  
+  .page-header h1 {
     margin: 0;
     font-size: 1.5rem;
-    color: var(--gray-800);
-}
-
-.header-actions {
+  }
+  
+  .header-actions {
     display: flex;
-    gap: 0.75rem;
-}
-
-.loading-container {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    padding: 4rem 2rem;
+    gap: 0.5rem;
+  }
+  
+  .action-dropdown {
+    position: relative;
+  }
+  
+  .dropdown-menu {
+    position: absolute;
+    top: 100%;
+    right: 0;
+    margin-top: 0.5rem;
     background-color: white;
-    border-radius: 0.5rem;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-}
-
-.loading-spinner {
-    font-size: 2rem;
-    color: var(--primary-color);
-    margin-bottom: 1rem;
-}
-
-.error-container {
+    border-radius: 0.375rem;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    min-width: 12rem;
+    z-index: 10;
+    overflow: hidden;
+  }
+  
+  .dropdown-item {
     display: flex;
-    flex-direction: column;
     align-items: center;
-    justify-content: center;
-    padding: 4rem 2rem;
-    background-color: white;
-    border-radius: 0.5rem;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    gap: 0.5rem;
+    padding: 0.625rem 1rem;
+    color: var(--gray-700);
+    font-size: 0.875rem;
+    text-decoration: none;
+    transition: background-color 0.2s;
+  }
+  
+  .dropdown-item:hover {
+    background-color: var(--gray-50);
+  }
+  
+  .dropdown-item i {
+    width: 1rem;
     text-align: center;
-}
-
-.error-icon {
+  }
+  
+  .text-danger {
+    color: #dc2626;
+  }
+  
+  .loading-indicator {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding: 3rem 0;
+    color: var(--gray-500);
+    font-size: 0.875rem;
+  }
+  
+  .loading-indicator i {
+    margin-right: 0.5rem;
+    animation: spin 1s linear infinite;
+  }
+  
+  .error-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 3rem 0;
+    text-align: center;
+  }
+  
+  .error-icon {
     font-size: 3rem;
-    color: var(--danger-color);
+    color: #ef4444;
     margin-bottom: 1rem;
-}
-
-.rfq-detail-content {
+  }
+  
+  .error-state h3 {
+    font-size: 1.25rem;
+    margin-bottom: 0.5rem;
+  }
+  
+  .error-state p {
+    color: var(--gray-500);
+    margin-bottom: 1.5rem;
+  }
+  
+  .rfq-details {
     display: flex;
     flex-direction: column;
     gap: 1.5rem;
-}
-
-.detail-card {
-    background-color: white;
+  }
+  
+  .detail-card {
+    border: 1px solid var(--gray-200);
     border-radius: 0.5rem;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
     overflow: hidden;
-}
-
-.card-header {
+  }
+  
+  .card-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
     padding: 1rem 1.5rem;
     background-color: var(--gray-50);
     border-bottom: 1px solid var(--gray-200);
-}
-
-.card-title {
+  }
+  
+  .card-title {
     margin: 0;
-    font-size: 1.25rem;
+    font-size: 1.125rem;
+    font-weight: 600;
     color: var(--gray-800);
-}
-
-.card-body {
-    padding: 1.5rem;
-}
-
-.card-actions {
-    display: flex;
-    gap: 0.5rem;
-}
-
-.info-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
-    gap: 1.5rem;
-}
-
-.info-item {
-    display: flex;
-    flex-direction: column;
-    gap: 0.25rem;
-}
-
-.info-label {
-    font-size: 0.875rem;
-    color: var(--gray-500);
-}
-
-.info-value {
-    font-size: 1rem;
-    color: var(--gray-800);
-    font-weight: 500;
-}
-
-.items-table,
-.quotations-table {
-    width: 100%;
-    border-collapse: collapse;
-}
-
-.items-table th,
-.quotations-table th {
-    text-align: left;
-    padding: 0.75rem 1rem;
-    background-color: var(--gray-50);
-    font-weight: 500;
-    font-size: 0.875rem;
-    color: var(--gray-700);
-    border-bottom: 1px solid var(--gray-200);
-}
-
-.items-table td,
-.quotations-table td {
-    padding: 0.75rem 1rem;
-    border-bottom: 1px solid var(--gray-100);
-    font-size: 0.875rem;
-}
-
-.items-table tr:last-child td,
-.quotations-table tr:last-child td {
-    border-bottom: none;
-}
-
-.status-badge {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
+  }
+  
+  .status-badge {
+    display: inline-block;
     padding: 0.25rem 0.5rem;
     border-radius: 0.25rem;
     font-size: 0.75rem;
     font-weight: 500;
-}
-
-.status-draft {
+    text-transform: capitalize;
+  }
+  
+  .status-draft {
     background-color: var(--gray-100);
     color: var(--gray-700);
-}
-
-.status-sent {
+  }
+  
+  .status-sent {
     background-color: #dbeafe;
     color: #1e40af;
-}
-
-.status-closed {
-    background-color: #d1fae5;
-    color: #065f46;
-}
-
-.status-canceled {
-    background-color: #fee2e2;
-    color: #b91c1c;
-}
-
-.status-received {
-    background-color: #e0f2fe;
-    color: #0369a1;
-}
-
-.status-accepted {
-    background-color: #d1fae5;
-    color: #065f46;
-}
-
-.status-rejected {
-    background-color: #fef3c7;
-    color: #92400e;
-}
-
-.action-buttons {
-    display: flex;
-    gap: 0.5rem;
-}
-
-.action-btn {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 2rem;
-    height: 2rem;
-    border-radius: 0.375rem;
-    border: none;
-    background: none;
-    cursor: pointer;
-    transition: background-color 0.2s;
-}
-
-.view-btn {
-    color: var(--primary-color);
-}
-
-.view-btn:hover {
-    background-color: var(--primary-bg);
-}
-
-.accept-btn {
-    color: #22c55e;
-}
-
-.accept-btn:hover {
+  }
+  
+  .status-closed {
     background-color: #dcfce7;
-}
-
-.reject-btn {
-    color: #ef4444;
-}
-
-.reject-btn:hover {
+    color: #166534;
+  }
+  
+  .status-canceled {
     background-color: #fee2e2;
-}
-
-.po-btn {
-    color: #6366f1;
-}
-
-.po-btn:hover {
-    background-color: #eef2ff;
-}
-
-.empty-state {
+    color: #991b1b;
+  }
+  
+  .status-submitted {
+    background-color: #dbeafe;
+    color: #1e40af;
+  }
+  
+  .status-accepted {
+    background-color: #dcfce7;
+    color: #166534;
+  }
+  
+  .status-rejected {
+    background-color: #fee2e2;
+    color: #991b1b;
+  }
+  
+  .card-body {
+    padding: 1.5rem;
+  }
+  
+  .detail-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1.5rem;
+    margin-bottom: 1.5rem;
+  }
+  
+  .detail-row:last-child {
+    margin-bottom: 0;
+  }
+  
+  .detail-group {
+    flex: 1;
+    min-width: 200px;
+  }
+  
+  .detail-group.full-width {
+    flex-basis: 100%;
+  }
+  
+  .detail-group label {
+    display: block;
+    font-size: 0.75rem;
+    color: var(--gray-500);
+    margin-bottom: 0.25rem;
+  }
+  
+  .detail-value {
+    font-size: 0.875rem;
+    color: var(--gray-800);
+  }
+  
+  .table-responsive {
+    overflow-x: auto;
+  }
+  
+  .detail-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.875rem;
+  }
+  
+  .detail-table th {
+    text-align: left;
+    padding: 0.75rem;
+    border-bottom: 1px solid var(--gray-200);
+    font-weight: 500;
+    color: var(--gray-600);
+  }
+  
+  .detail-table td {
+    padding: 0.75rem;
+    border-bottom: 1px solid var(--gray-100);
+    color: var(--gray-800);
+    vertical-align: middle;
+  }
+  
+  .detail-table tr:last-child td {
+    border-bottom: none;
+  }
+  
+  .item-code {
+    font-weight: 500;
+    margin-bottom: 0.25rem;
+  }
+  
+  .item-name {
+    font-size: 0.75rem;
+    color: var(--gray-500);
+  }
+  
+  .items-count,
+  .quotations-count {
+    font-size: 0.875rem;
+    color: var(--gray-500);
+    font-weight: 500;
+  }
+  
+  .empty-quotations {
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    padding: 2rem;
+    padding: 2rem 0;
     text-align: center;
-}
-
-.empty-icon {
+  }
+  
+  .empty-icon {
     font-size: 2.5rem;
     color: var(--gray-300);
     margin-bottom: 1rem;
-}
-
-.empty-state h3 {
+  }
+  
+  .empty-quotations h3 {
     font-size: 1.125rem;
-    color: var(--gray-700);
     margin-bottom: 0.5rem;
-}
-
-.empty-state p {
+  }
+  
+  .empty-quotations p {
     color: var(--gray-500);
     max-width: 24rem;
-}
-
-.btn {
-    padding: 0.625rem 1.25rem;
-    font-size: 0.875rem;
-    font-weight: 500;
-    border-radius: 0.375rem;
-    cursor: pointer;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.5rem;
-    border: none;
-    transition: background-color 0.2s, color 0.2s;
-}
-
-.btn-sm {
-    padding: 0.375rem 0.75rem;
-    font-size: 0.75rem;
-}
-
-.btn-primary {
-    background-color: var(--primary-color);
-    color: white;
-}
-
-.btn-primary:hover {
-    background-color: var(--primary-dark);
-}
-
-.btn-secondary {
-    background-color: var(--gray-200);
-    color: var(--gray-700);
-}
-
-.btn-secondary:hover {
-    background-color: var(--gray-300);
-}
-
-.btn-info {
-    background-color: #3b82f6;
-    color: white;
-}
-
-.btn-info:hover {
-    background-color: #2563eb;
-}
-
-.btn-accent {
-    background-color: #8b5cf6;
-    color: white;
-}
-
-.btn-accent:hover {
-    background-color: #7c3aed;
-}
-
-.status-select-container {
+    margin-bottom: 1.5rem;
+  }
+  
+  .empty-actions {
     margin-top: 1rem;
-}
-
-.status-select {
-    width: 100%;
-    padding: 0.625rem;
+  }
+  
+  .quotations-list {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+  }
+  
+  .quotation-card {
     border: 1px solid var(--gray-200);
     border-radius: 0.375rem;
+    overflow: hidden;
+  }
+  
+  .quotation-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1rem;
+    background-color: var(--gray-50);
+    border-bottom: 1px solid var(--gray-200);
+  }
+  
+  .vendor-name {
+    font-weight: 500;
+    color: var(--gray-800);
+    margin-bottom: 0.25rem;
+  }
+  
+  .quotation-date,
+  .quotation-validity {
+    font-size: 0.75rem;
+    color: var(--gray-500);
+  }
+  
+  .quotation-body {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1rem;
+  }
+  
+  .quotation-items {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+    align-items: center;
+  }
+  
+  .quotation-item-count {
     font-size: 0.875rem;
+    color: var(--gray-700);
+  }
+  
+  .btn {
+    padding: 0.625rem 1rem;
+    border-radius: 0.375rem;
+    font-size: 0.875rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    text-decoration: none;
+  }
+  
+  .btn-sm {
+    padding: 0.375rem 0.75rem;
+    font-size: 0.75rem;
+  }
+  
+  .btn-primary {
+    background-color: var(--primary-color);
+    color: white;
+    border: none;
+  }
+  
+  .btn-primary:hover {
+    background-color: var(--primary-dark);
+  }
+  
+  .btn-secondary {
     background-color: white;
-}
-
-@media (max-width: 768px) {
-    .header-actions {
-        flex-wrap: wrap;
-    }
-
-    .info-grid {
-        grid-template-columns: 1fr;
-    }
-
-    .items-table,
-    .quotations-table {
-        display: block;
-        overflow-x: auto;
-    }
+    color: var(--gray-700);
+    border: 1px solid var(--gray-300);
+  }
+  
+  .btn-secondary:hover {
+    background-color: var(--gray-50);
+  }
+  
+  .btn-danger {
+    background-color: #ef4444;
+    color: white;
+    border: none;
+  }
+  
+  .btn-danger:hover {
+    background-color: #dc2626;
+  }
+  
+  .btn-outline {
+    background-color: white;
+    color: var(--gray-700);
+    border: 1px solid var(--gray-300);
+  }
+  
+  .btn-outline:hover {
+    background-color: var(--gray-50);
+  }
+  
+  .btn-outline-primary {
+    background-color: white;
+    color: var(--primary-color);
+    border: 1px solid var(--primary-color);
+  }
+  
+  .btn-outline-primary:hover {
+    background-color: rgba(37, 99, 235, 0.05);
+  }
+  
+  .quotations-actions {
+    display: flex;
+    justify-content: center;
+    margin-top: 1.5rem;
+  }
+  
+  /* Modal Styles */
+  .modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 50;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+  }
+  
+  .modal-backdrop {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgba(0, 0, 0, 0.5);
+    z-index: 50;
+  }
+  
+  .modal-content {
+    background-color: white;
+    border-radius: 0.5rem;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    width: 100%;
+    z-index: 60;
+    overflow: hidden;
+  }
+  
+  .modal-sm {
+    max-width: 400px;
+  }
+  
+  .modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1rem 1.5rem;
+    border-bottom: 1px solid #e2e8f0;
+  }
+  
+  .modal-header h2 {
+    font-size: 1.25rem;
+    font-weight: 600;
+    margin: 0;
+    color: #1e293b;
+  }
+  
+  .close-btn {
+    background: none;
+    border: none;
+    color: #64748b;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.25rem;
+    border-radius: 0.25rem;
+  }
+  
+  .close-btn:hover {
+    background-color: #f1f5f9;
+    color: #0f172a;
+  }
+  
+  .modal-body {
+    padding: 1.5rem;
+  }
+  
+  .form-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 1rem;
+    margin-top: 1.5rem;
+  }
+  
+  @keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+  }
+  
+  @media (max-width: 768px) {
+  .page-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 1rem;
+  }
+  
+  .header-actions {
+    width: 100%;
+    justify-content: space-between;
+  }
+  
+  .detail-row {
+    flex-direction: column;
+    gap: 1rem;
+  }
+  
+  .card-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.5rem;
+  }
+  
+  .quotation-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.5rem;
+  }
+  
+  .quotation-body {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 1rem;
+  }
+  
+  .quotation-status {
+    align-self: flex-start;
+  }
 }
 </style>

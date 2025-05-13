@@ -64,6 +64,7 @@ import VendorCreate from "../views/purchasing/VendorCreate.vue";
 import VendorEdit from "../views/purchasing/VendorEdit.vue";
 
 //Puchase Requisition
+// Import components Purchase Requisition
 import PurchaseRequisitionList from "../views/purchasing/PurchaseRequisitionList.vue";
 import PurchaseRequisitionForm from "../views/purchasing/PurchaseRequisitionForm.vue";
 import PurchaseRequisitionDetail from "../views/purchasing/PurchaseRequisitionDetail.vue";
@@ -596,42 +597,54 @@ const routes = [
             },
             {
                 path: "/purchasing/requisitions",
-                name: "PurchaseRequisitions",
+                name: "PurchaseRequisitionList",
                 component: PurchaseRequisitionList,
-                meta: { requiresAuth: true },
+                meta: { requiresAuth: true }
             },
             {
                 path: "/purchasing/requisitions/create",
                 name: "CreatePurchaseRequisition",
                 component: PurchaseRequisitionForm,
-                meta: { requiresAuth: true },
+                meta: { requiresAuth: true }
             },
             {
                 path: "/purchasing/requisitions/:id",
                 name: "PurchaseRequisitionDetail",
                 component: PurchaseRequisitionDetail,
                 props: true,
-                meta: { requiresAuth: true },
+                meta: { requiresAuth: true }
             },
             {
                 path: "/purchasing/requisitions/:id/edit",
                 name: "EditPurchaseRequisition",
                 component: PurchaseRequisitionForm,
                 props: true,
-                meta: { requiresAuth: true },
+                meta: { requiresAuth: true }
             },
             {
                 path: "/purchasing/requisitions/:id/approve",
                 name: "ApprovePurchaseRequisition",
                 component: PurchaseRequisitionApproval,
                 props: true,
-                meta: { requiresAuth: true },
+                meta: { requiresAuth: true }
             },
             {
                 path: "/purchasing/requisitions/:id/convert",
                 name: "ConvertToRFQ",
                 component: ConvertToRFQ,
                 props: true,
+                meta: { requiresAuth: true }
+            },
+            {
+                path: "/purchasing/requisitions/approvals",
+                name: "PRApprovalList",
+                component: () => import("../views/purchasing/PRApprovalList.vue"),
+                meta: { requiresAuth: true },
+            },
+            {
+                path: "/purchasing/requisitions/to-rfq",
+                name: "PRToRFQList",
+                component: () => import("../views/purchasing/PRToRFQList.vue"),
                 meta: { requiresAuth: true },
             },
 
@@ -676,6 +689,7 @@ const routes = [
                 props: true,
                 meta: { requiresAuth: true },
             },
+            
 
             // Purchase Order routes
             // {
