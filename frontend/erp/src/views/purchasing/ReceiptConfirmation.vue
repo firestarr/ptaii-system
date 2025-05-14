@@ -1,581 +1,620 @@
 <!-- src/views/purchasing/ReceiptConfirmation.vue -->
 <template>
-    <div class="receipt-confirmation-container">
-        <div class="page-header">
-            <div class="header-left">
-                <router-link
-                    :to="`/purchasing/goods-receipts/${id}`"
-                    class="back-link"
-                >
-                    <i class="fas fa-arrow-left"></i> Back to Goods Receipt
-                </router-link>
-                <h1>Confirm Goods Receipt</h1>
-            </div>
-        </div>
-
-        <div v-if="isLoading" class="loading-container">
-            <div class="loading-spinner">
-                <i class="fas fa-spinner fa-spin"></i>
-            </div>
-            <p>Loading goods receipt data...</p>
-        </div>
-
-        <div v-else-if="!receipt" class="error-container">
-            <div class="error-icon">
-                <i class="fas fa-exclamation-triangle"></i>
-            </div>
-            <h2>Goods Receipt Not Found</h2>
-            <p>
-                The requested goods receipt could not be found or may have been
-                deleted.
-            </p>
-            <router-link
-                to="/purchasing/goods-receipts"
-                class="btn btn-primary"
-            >
-                Return to Goods Receipts List
+    <div class="receipt-confirmation">
+      <div class="card">
+        <div class="card-header">
+          <h2>Confirm Goods Receipt</h2>
+          <div class="actions">
+            <router-link :to="`/purchasing/goods-receipts/${receiptId}`" class="btn btn-secondary">
+              <i class="fas fa-arrow-left"></i> Back to Details
             </router-link>
+          </div>
         </div>
-
-        <div v-else-if="receipt.status !== 'pending'" class="error-container">
-            <div class="error-icon">
-                <i class="fas fa-exclamation-circle"></i>
-            </div>
-            <h2>Cannot Confirm This Receipt</h2>
-            <p>
-                This goods receipt is already in
-                {{ formatStatus(receipt.status) }} status and cannot be
-                confirmed.
-            </p>
-            <router-link
-                :to="`/purchasing/goods-receipts/${id}`"
-                class="btn btn-primary"
-            >
-                Return to Goods Receipt Details
+  
+        <div class="card-body">
+          <!-- Loading indicator -->
+          <div v-if="loading" class="loading-container">
+            <i class="fas fa-spinner fa-spin"></i> Loading receipt details...
+          </div>
+  
+          <!-- Error state -->
+          <div v-else-if="error" class="error-container">
+            <i class="fas fa-exclamation-circle"></i>
+            <h3>Error Loading Receipt</h3>
+            <p>{{ error }}</p>
+            <button @click="fetchReceipt" class="btn btn-primary">
+              <i class="fas fa-sync"></i> Try Again
+            </button>
+          </div>
+  
+          <!-- Not pending state -->
+          <div v-else-if="receipt && receipt.status !== 'pending'" class="not-pending">
+            <i class="fas fa-info-circle"></i>
+            <h3>Receipt Already Confirmed</h3>
+            <p>This goods receipt has already been confirmed and can't be confirmed again.</p>
+            <router-link :to="`/purchasing/goods-receipts/${receiptId}`" class="btn btn-primary">
+              View Details
             </router-link>
-        </div>
-
-        <div v-else class="confirmation-content">
-            <div class="detail-card">
-                <div class="card-header">
-                    <h2 class="card-title">Review and Confirm</h2>
+          </div>
+  
+          <!-- Confirmation view -->
+          <div v-else-if="receipt">
+            <div class="confirmation-header">
+              <div class="alert-info">
+                <i class="fas fa-info-circle"></i>
+                <div>
+                  <p><strong>Important:</strong> Confirming this receipt will:</p>
+                  <ul>
+                    <li>Increase inventory levels for the received items</li>
+                    <li>Update the status of related purchase orders</li>
+                    <li>Make the receipt permanent and non-editable</li>
+                  </ul>
+                  <p>Please review all information before confirming.</p>
                 </div>
-                <div class="card-body">
-                    <div class="confirmation-message">
-                        <i class="fas fa-info-circle message-icon"></i>
-                        <div class="message-content">
-                            <p class="message-title">
-                                You are about to confirm receipt
-                                <strong>{{ receipt.receipt_number }}</strong>
-                            </p>
-                            <p class="message-description">
-                                This action will update inventory stock levels
-                                and cannot be undone. Please review the details
-                                below carefully before confirming.
-                            </p>
-                        </div>
-                    </div>
-
-                    <div class="receipt-summary">
-                        <div class="summary-header">Receipt Details</div>
-                        <div class="summary-grid">
-                            <div class="summary-item">
-                                <span class="summary-label"
-                                    >Receipt Number:</span
-                                >
-                                <span class="summary-value">{{
-                                    receipt.receipt_number
-                                }}</span>
-                            </div>
-                            <div class="summary-item">
-                                <span class="summary-label">Receipt Date:</span>
-                                <span class="summary-value">{{
-                                    formatDate(receipt.receipt_date)
-                                }}</span>
-                            </div>
-                            <div class="summary-item">
-                                <span class="summary-label"
-                                    >Purchase Order:</span
-                                >
-                                <span class="summary-value">{{
-                                    receipt.purchaseOrder?.po_number || "N/A"
-                                }}</span>
-                            </div>
-                            <div class="summary-item">
-                                <span class="summary-label">Vendor:</span>
-                                <span class="summary-value">{{
-                                    receipt.vendor?.name || "N/A"
-                                }}</span>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="items-summary">
-                        <div class="summary-header">Items to be Received</div>
-                        <table class="summary-table">
-                            <thead>
-                                <tr>
-                                    <th>Item</th>
-                                    <th>Quantity</th>
-                                    <th>Unit</th>
-                                    <th>Warehouse</th>
-                                    <th>Location</th>
-                                    <th>Batch/Lot</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <tr
-                                    v-for="line in receipt.lines"
-                                    :key="line.line_id"
-                                >
-                                    <td class="item-cell">
-                                        <div class="item-name">
-                                            {{ line.item?.name || "N/A" }}
-                                        </div>
-                                        <div class="item-code">
-                                            {{ line.item?.item_code || "" }}
-                                        </div>
-                                    </td>
-                                    <td>{{ line.received_quantity }}</td>
-                                    <td>
-                                        {{
-                                            line.purchaseOrderLine
-                                                ?.unitOfMeasure?.name || "N/A"
-                                        }}
-                                    </td>
-                                    <td>{{ line.warehouse?.name || "N/A" }}</td>
-                                    <td>{{ line.location?.name || "N/A" }}</td>
-                                    <td>{{ line.batch_number || "N/A" }}</td>
-                                </tr>
-                            </tbody>
-                        </table>
-                    </div>
-
-                    <div class="form-group" v-if="errorMessage">
-                        <div class="error-message">{{ errorMessage }}</div>
-                    </div>
-
-                    <div class="confirmation-actions">
-                        <router-link
-                            :to="`/purchasing/goods-receipts/${id}`"
-                            class="btn btn-secondary"
-                        >
-                            Cancel
-                        </router-link>
-                        <button
-                            @click="confirmReceipt"
-                            class="btn btn-success"
-                            :disabled="isConfirming"
-                        >
-                            <i class="fas fa-check-circle"></i>
-                            {{
-                                isConfirming
-                                    ? "Confirming..."
-                                    : "Confirm Receipt"
-                            }}
-                        </button>
-                    </div>
-                </div>
+              </div>
             </div>
+  
+            <!-- Receipt summary -->
+            <div class="receipt-summary">
+              <div class="info-card">
+                <h3>Receipt Information</h3>
+                <div class="info-grid">
+                  <div class="info-item">
+                    <span class="label">Receipt Number:</span>
+                    <span class="value">{{ receipt.receipt_number }}</span>
+                  </div>
+                  <div class="info-item">
+                    <span class="label">Receipt Date:</span>
+                    <span class="value">{{ formatDate(receipt.receipt_date) }}</span>
+                  </div>
+                  <div class="info-item">
+                    <span class="label">Vendor:</span>
+                    <span class="value">{{ receipt.vendor.name }}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+  
+            <!-- Item summary -->
+            <div class="receipt-lines-section">
+              <h3>Receipt Items</h3>
+              
+              <div class="table-responsive">
+                <table class="items-table">
+                  <thead>
+                    <tr>
+                      <th>PO Number</th>
+                      <th>Item Code</th>
+                      <th>Item Name</th>
+                      <th>Received Qty</th>
+                      <th>Warehouse</th>
+                      <th>Batch Number</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="line in receiptLines" :key="line.line_id">
+                      <td>{{ line.po_number }}</td>
+                      <td>{{ line.item_code }}</td>
+                      <td>{{ line.item_name }}</td>
+                      <td>
+                        <span class="highlight">{{ line.received_quantity }}</span>
+                      </td>
+                      <td>{{ line.warehouse_name }}</td>
+                      <td>{{ line.batch_number || 'N/A' }}</td>
+                    </tr>
+                  </tbody>
+                  <tfoot>
+                    <tr>
+                      <td colspan="3" class="total-label">Total Items:</td>
+                      <td colspan="3" class="total-value">{{ receipt.lines ? receipt.lines.length : receiptLines.length }}</td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            </div>
+  
+            <!-- PO Summary -->
+            <div class="po-summary-section">
+              <h3>Related Purchase Orders</h3>
+              
+              <div class="po-status-summary">
+                <div v-for="po in poSummary" :key="po.po_id" class="po-status-item">
+                  <span class="po-number">{{ po.po_number }}</span>
+                  <div class="status-transition">
+                    <span :class="'status-badge ' + po.status">{{ po.status }}</span>
+                    <i class="fas fa-long-arrow-alt-right"></i>
+                    <span :class="'status-badge ' + getNewPOStatus(po)">{{ getNewPOStatus(po) }}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+  
+            <!-- Confirmation buttons -->
+            <div class="confirmation-actions">
+              <button type="button" class="btn btn-secondary" @click="cancel">
+                Cancel
+              </button>
+              <button 
+                type="button" 
+                class="btn btn-success" 
+                @click="confirmReceipt"
+                :disabled="confirming"
+              >
+                <i v-if="confirming" class="fas fa-spinner fa-spin"></i>
+                <span v-else><i class="fas fa-check-circle"></i> Confirm Receipt</span>
+              </button>
+            </div>
+          </div>
         </div>
+      </div>
     </div>
-</template>
-
-<script>
-import { ref, onMounted } from "vue";
-import { useRouter } from "vue-router";
-
-export default {
-    name: "ReceiptConfirmation",
+  </template>
+  
+  <script>
+  import axios from 'axios';
+  
+  export default {
+    name: 'ReceiptConfirmation',
     props: {
-        id: {
-            type: [Number, String],
-            required: true,
-        },
+      receiptId: {
+        type: [Number, String],
+        required: true
+      }
     },
-    setup(props) {
-        const router = useRouter();
-        const receipt = ref(null);
-        const isLoading = ref(true);
-        const isConfirming = ref(false);
-        const errorMessage = ref("");
-
-        // Fetch goods receipt details
-        const fetchReceipt = async () => {
-            isLoading.value = true;
-            errorMessage.value = "";
-
-            try {
-                const response = await fetch(
-                    `/api/goods-receipts/${props.id}`,
-                    {
-                        headers: {
-                            Authorization: `Bearer ${localStorage.getItem(
-                                "token"
-                            )}`,
-                            "Content-Type": "application/json",
-                        },
-                    }
-                );
-
-                const data = await response.json();
-
-                if (data && data.data) {
-                    receipt.value = data.data;
-                } else {
-                    receipt.value = null;
-                }
-            } catch (error) {
-                console.error("Error fetching goods receipt details:", error);
-                receipt.value = null;
-            } finally {
-                isLoading.value = false;
-            }
-        };
-
-        // Confirm goods receipt
-        const confirmReceipt = async () => {
-            if (!receipt.value || receipt.value.status !== "pending") {
-                return;
-            }
-
-            isConfirming.value = true;
-            errorMessage.value = "";
-
-            try {
-                const response = await fetch(
-                    `/api/goods-receipts/${props.id}/confirm`,
-                    {
-                        method: "POST",
-                        headers: {
-                            Authorization: `Bearer ${localStorage.getItem(
-                                "token"
-                            )}`,
-                            "Content-Type": "application/json",
-                        },
-                    }
-                );
-
-                const data = await response.json();
-
-                if (response.ok) {
-                    // Success - redirect to receipt detail page
-                    router.push(`/purchasing/goods-receipts/${props.id}`);
-                } else {
-                    // Error
-                    errorMessage.value =
-                        data.message || "Failed to confirm goods receipt";
-                }
-            } catch (error) {
-                console.error("Error confirming goods receipt:", error);
-                errorMessage.value =
-                    "An error occurred while confirming the goods receipt";
-            } finally {
-                isConfirming.value = false;
-            }
-        };
-
-        // Format date strings
-        const formatDate = (dateString) => {
-            if (!dateString) return "N/A";
-            const date = new Date(dateString);
-            return date.toLocaleDateString("en-US", {
-                year: "numeric",
-                month: "short",
-                day: "2-digit",
-            });
-        };
-
-        // Format status
-        const formatStatus = (status) => {
-            switch (status) {
-                case "pending":
-                    return "Pending";
-                case "confirmed":
-                    return "Confirmed";
-                case "canceled":
-                    return "Canceled";
-                default:
-                    return status;
-            }
-        };
-
-        // Initialize
-        onMounted(() => {
-            fetchReceipt();
+    data() {
+      return {
+        receipt: null,
+        receiptLines: [],
+        poSummary: [],
+        loading: true,
+        confirming: false,
+        error: null
+      };
+    },
+    created() {
+      this.fetchReceipt();
+    },
+    methods: {
+      fetchReceipt() {
+        this.loading = true;
+        this.error = null;
+        
+        axios.get(`/api/goods-receipts/${this.receiptId}`)
+          .then(response => {
+            const data = response.data.data;
+            this.receipt = data.receipt;
+            this.receiptLines = data.lines;
+            this.poSummary = data.po_summary;
+          })
+          .catch(error => {
+            console.error('Error fetching receipt details:', error);
+            this.error = error.response?.data?.message || 'Failed to load receipt details';
+          })
+          .finally(() => {
+            this.loading = false;
+          });
+      },
+      formatDate(dateString) {
+        if (!dateString) return 'N/A';
+        const date = new Date(dateString);
+        return date.toLocaleDateString('id-ID', { 
+          year: 'numeric', 
+          month: 'short', 
+          day: 'numeric' 
         });
-
-        return {
-            receipt,
-            isLoading,
-            isConfirming,
-            errorMessage,
-            formatDate,
-            formatStatus,
-            confirmReceipt,
-        };
-    },
-};
-</script>
-
-<style scoped>
-.receipt-confirmation-container {
-    padding: 1rem;
-}
-
-.page-header {
+      },
+      getNewPOStatus(po) {
+        // If already fully received, status won't change
+        if (po.status === 'received') {
+          return 'received';
+        }
+        
+        // Calculate what the new status will be after confirmation
+        const ordered = po.total_ordered;
+        const received = po.total_received;
+        
+        // Calculate how much will be received in this receipt for this PO
+        const currentlyReceiving = this.receiptLines
+          .filter(line => line.po_id === po.po_id)
+          .reduce((sum, line) => sum + line.received_quantity, 0);
+        
+        const totalReceived = received + currentlyReceiving;
+        
+        // Determine new status
+        if (totalReceived >= ordered) {
+          return 'received';
+        } else if (totalReceived > 0) {
+          return 'partial';
+        }
+        
+        return po.status;
+      },
+      confirmReceipt() {
+        this.confirming = true;
+        
+        axios.post(`/api/goods-receipts/${this.receiptId}/confirm`)
+          .then(() => {
+            this.$toast.success('Goods receipt confirmed successfully');
+            this.$router.push(`/purchasing/goods-receipts/${this.receiptId}`);
+          })
+          .catch(error => {
+            console.error('Error confirming receipt:', error);
+            this.$toast.error('Failed to confirm goods receipt: ' + (error.response?.data?.message || 'Unknown error'));
+          })
+          .finally(() => {
+            this.confirming = false;
+          });
+      },
+      cancel() {
+        this.$router.push(`/purchasing/goods-receipts/${this.receiptId}`);
+      }
+    }
+  };
+  </script>
+  
+  <style scoped>
+  .receipt-confirmation {
+    max-width: 100%;
+  }
+  
+  .card {
+    background-color: white;
+    border-radius: 0.5rem;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    margin-bottom: 2rem;
+  }
+  
+  .card-header {
+    padding: 1.5rem;
+    border-bottom: 1px solid var(--gray-200);
     display: flex;
     justify-content: space-between;
-    align-items: flex-start;
-    margin-bottom: 1.5rem;
-}
-
-.header-left {
+    align-items: center;
+  }
+  
+  .card-header h2 {
+    margin: 0;
+    font-size: 1.5rem;
+  }
+  
+  .actions {
     display: flex;
-    flex-direction: column;
     gap: 0.5rem;
-}
-
-.back-link {
+  }
+  
+  .btn {
     display: inline-flex;
     align-items: center;
     gap: 0.5rem;
-    color: var(--gray-600);
-    text-decoration: none;
+    padding: 0.5rem 1rem;
+    border-radius: 0.375rem;
+    font-weight: 500;
     font-size: 0.875rem;
-}
-
-.back-link:hover {
-    color: var(--primary-color);
-}
-
-.header-left h1 {
-    margin: 0;
-    font-size: 1.5rem;
-    color: var(--gray-800);
-}
-
-.loading-container,
-.error-container {
+    cursor: pointer;
+    transition: all 0.2s;
+    text-decoration: none;
+    border: 1px solid transparent;
+  }
+  
+  .btn-primary {
+    background-color: var(--primary-color);
+    color: white;
+    border-color: var(--primary-color);
+  }
+  
+  .btn-primary:hover:not(:disabled) {
+    background-color: var(--primary-dark);
+  }
+  
+  .btn-secondary {
+    background-color: var(--gray-200);
+    color: var(--gray-700);
+    border-color: var(--gray-300);
+  }
+  
+  .btn-secondary:hover:not(:disabled) {
+    background-color: var(--gray-300);
+  }
+  
+  .btn-success {
+    background-color: #059669;
+    color: white;
+    border-color: #059669;
+  }
+  
+  .btn-success:hover:not(:disabled) {
+    background-color: #047857;
+  }
+  
+  .btn:disabled {
+    opacity: 0.7;
+    cursor: not-allowed;
+  }
+  
+  .card-body {
+    padding: 1.5rem;
+  }
+  
+  .loading-container,
+  .error-container,
+  .not-pending {
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    padding: 4rem 2rem;
-    background-color: white;
-    border-radius: 0.5rem;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    padding: 3rem 0;
     text-align: center;
-}
-
-.loading-spinner {
+  }
+  
+  .loading-container i,
+  .error-container i,
+  .not-pending i {
     font-size: 2rem;
-    color: var(--primary-color);
     margin-bottom: 1rem;
-}
-
-.error-icon {
-    font-size: 3rem;
-    color: var(--danger-color);
-    margin-bottom: 1rem;
-}
-
-.confirmation-content {
-    max-width: 1000px;
-    margin: 0 auto;
-}
-
-.detail-card {
-    background-color: white;
-    border-radius: 0.5rem;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-    overflow: hidden;
-}
-
-.card-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 1rem 1.5rem;
-    background-color: var(--gray-50);
-    border-bottom: 1px solid var(--gray-200);
-}
-
-.card-title {
-    margin: 0;
-    font-size: 1.25rem;
-    color: var(--gray-800);
-}
-
-.card-body {
-    padding: 1.5rem;
-}
-
-.confirmation-message {
-    display: flex;
-    gap: 1rem;
-    padding: 1.25rem;
-    background-color: #f0f9ff;
-    border-radius: 0.5rem;
-    margin-bottom: 1.5rem;
-    border-left: 4px solid #0ea5e9;
-}
-
-.message-icon {
-    font-size: 1.5rem;
+    color: var(--gray-500);
+  }
+  
+  .error-container i {
+    color: #dc2626;
+  }
+  
+  .not-pending i {
     color: #0ea5e9;
-    flex-shrink: 0;
+  }
+  
+  .error-container h3,
+  .not-pending h3 {
+    margin-top: 0;
+    margin-bottom: 0.5rem;
+    font-size: 1.25rem;
+  }
+  
+  .error-container p,
+  .not-pending p {
+    margin-bottom: 1.5rem;
+  color: var(--gray-600);
+  max-width: 500px;
 }
 
-.message-content {
-    flex: 1;
+.confirmation-header {
+  margin-bottom: 2rem;
 }
 
-.message-title {
-    font-weight: 600;
-    font-size: 1rem;
-    color: #0c4a6e;
-    margin: 0 0 0.5rem 0;
+.alert-info {
+  display: flex;
+  gap: 1rem;
+  padding: 1rem;
+  background-color: #dbeafe;
+  border: 1px solid #93c5fd;
+  border-radius: 0.5rem;
+  color: #1e40af;
 }
 
-.message-description {
-    color: #0369a1;
-    margin: 0;
-    font-size: 0.875rem;
+.alert-info i {
+  font-size: 1.5rem;
 }
 
-.receipt-summary,
-.items-summary {
-    margin-bottom: 2rem;
+.alert-info p {
+  margin: 0 0 0.5rem 0;
 }
 
-.summary-header {
-    font-weight: 600;
-    color: var(--gray-700);
-    padding-bottom: 0.5rem;
-    margin-bottom: 1rem;
-    border-bottom: 1px solid var(--gray-200);
+.alert-info ul {
+  margin: 0 0 0.5rem 0;
+  padding-left: 1.5rem;
 }
 
-.summary-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-    gap: 1.5rem;
+.receipt-summary {
+  margin-bottom: 2rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.5rem;
 }
 
-.summary-item {
-    display: flex;
-    flex-direction: column;
-    gap: 0.25rem;
+.info-card {
+  padding: 1.5rem;
+  border: 1px solid var(--gray-200);
+  border-radius: 0.5rem;
+  background-color: var(--gray-50);
+  flex: 1;
+  min-width: 300px;
 }
 
-.summary-label {
-    font-size: 0.75rem;
-    color: var(--gray-500);
+.info-card h3 {
+  margin-top: 0;
+  margin-bottom: 1rem;
+  font-size: 1.125rem;
+  color: var(--gray-800);
 }
 
-.summary-value {
-    font-weight: 500;
-    color: var(--gray-800);
+.info-grid {
+  display: grid;
+  gap: 0.75rem;
 }
 
-.summary-table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 0.875rem;
+.info-item {
+  display: flex;
+  flex-direction: column;
 }
 
-.summary-table th {
-    text-align: left;
-    padding: 0.75rem;
-    background-color: var(--gray-50);
-    font-weight: 500;
-    color: var(--gray-700);
-    border-bottom: 1px solid var(--gray-200);
+.info-item .label {
+  font-size: 0.75rem;
+  color: var(--gray-500);
+  margin-bottom: 0.25rem;
 }
 
-.summary-table td {
-    padding: 0.75rem;
-    border-bottom: 1px solid var(--gray-100);
+.info-item .value {
+  font-size: 0.875rem;
+  color: var(--gray-800);
+  font-weight: 500;
 }
 
-.item-cell {
-    min-width: 200px;
+.receipt-lines-section {
+  margin-bottom: 2rem;
 }
 
-.item-name {
-    font-weight: 500;
+.receipt-lines-section h3 {
+  margin-top: 0;
+  margin-bottom: 1rem;
+  font-size: 1.125rem;
+  color: var(--gray-800);
 }
 
-.item-code {
-    font-size: 0.75rem;
-    color: var(--gray-500);
+.table-responsive {
+  overflow-x: auto;
+  margin-bottom: 1rem;
+}
+
+.items-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.items-table th {
+  background-color: var(--gray-50);
+  padding: 0.75rem 1rem;
+  text-align: left;
+  font-weight: 600;
+  color: var(--gray-700);
+  border-bottom: 1px solid var(--gray-200);
+  white-space: nowrap;
+}
+
+.items-table td {
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--gray-200);
+  color: var(--gray-800);
+}
+
+.items-table tfoot td {
+  border-top: 2px solid var(--gray-300);
+  font-weight: 600;
+}
+
+.total-label {
+  text-align: right;
+}
+
+.total-value {
+  font-weight: 700;
+}
+
+.highlight {
+  font-weight: 600;
+  color: var(--primary-color);
+}
+
+.po-summary-section {
+  margin-bottom: 2rem;
+}
+
+.po-summary-section h3 {
+  margin-top: 0;
+  margin-bottom: 1rem;
+  font-size: 1.125rem;
+  color: var(--gray-800);
+}
+
+.po-status-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.po-status-item {
+  flex: 1;
+  min-width: 250px;
+  padding: 1rem;
+  border: 1px solid var(--gray-200);
+  border-radius: 0.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.po-number {
+  font-weight: 600;
+  font-size: 0.875rem;
+  color: var(--gray-800);
+}
+
+.status-transition {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.status-transition i {
+  color: var(--gray-400);
+}
+
+.status-badge {
+  display: inline-block;
+  padding: 0.25rem 0.5rem;
+  border-radius: 0.25rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  text-transform: capitalize;
+}
+
+.status-badge.pending {
+  background-color: #fef3c7;
+  color: #92400e;
+}
+
+.status-badge.confirmed {
+  background-color: #d1fae5;
+  color: #065f46;
+}
+
+.status-badge.sent {
+  background-color: #dbeafe;
+  color: #1e40af;
+}
+
+.status-badge.partial {
+  background-color: #fef3c7;
+  color: #92400e;
+}
+
+.status-badge.received {
+  background-color: #d1fae5;
+  color: #065f46;
 }
 
 .confirmation-actions {
-    display: flex;
-    justify-content: flex-end;
-    gap: 1rem;
-    margin-top: 2rem;
-}
-
-.btn {
-    padding: 0.625rem 1.25rem;
-    font-size: 0.875rem;
-    font-weight: 500;
-    border-radius: 0.375rem;
-    cursor: pointer;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.5rem;
-    border: none;
-    transition: background-color 0.2s, color 0.2s;
-}
-
-.btn-primary {
-    background-color: var(--primary-color);
-    color: white;
-}
-
-.btn-primary:hover {
-    background-color: var(--primary-dark);
-}
-
-.btn-success {
-    background-color: var(--success-color);
-    color: white;
-}
-
-.btn-success:hover:not(:disabled) {
-    background-color: #059669;
-}
-
-.btn-success:disabled {
-    background-color: #86efac;
-    cursor: not-allowed;
-}
-
-.btn-secondary {
-    background-color: #e2e8f0;
-    color: #1e293b;
-}
-
-.btn-secondary:hover {
-    background-color: #cbd5e1;
-}
-
-.error-message {
-    color: var(--danger-color);
-    background-color: #fee2e2;
-    padding: 1rem;
-    border-radius: 0.375rem;
-    margin-top: 1rem;
+  display: flex;
+  justify-content: flex-end;
+  gap: 1rem;
+  margin-top: 2rem;
 }
 
 @media (max-width: 768px) {
-    .summary-grid {
-        grid-template-columns: 1fr;
-    }
+  .card-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 1rem;
+  }
+  
+  .actions {
+    width: 100%;
+  }
+  
+  .actions .btn {
+    flex: 1;
+    justify-content: center;
+  }
+  
+  .alert-info {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  
+  .confirmation-actions {
+    flex-direction: column;
+  }
+  
+  .confirmation-actions button {
+    width: 100%;
+  }
 }
 </style>

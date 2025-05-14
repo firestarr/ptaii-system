@@ -364,12 +364,30 @@
                         </router-link>
 
                         <router-link
-                            to="/purchasing/goods-receipts"
-                            class="menu-item"
-                            active-class="active"
+                        to="/purchasing/goods-receipts"
+                        class="menu-item"
+                        active-class="active"
                         >
-                            <i class="fas fa-truck-loading"></i>
-                            <span v-if="!sidebarCollapsed">Goods Receipts</span>
+                        <i class="fas fa-truck-loading"></i>
+                        <span v-if="!sidebarCollapsed">Goods Receipts</span>
+                        </router-link>
+
+                        <router-link
+                        to="/purchasing/goods-receipts/create"
+                        class="menu-item"
+                        active-class="active"
+                        >
+                        <i class="fas fa-plus-circle"></i>
+                        <span v-if="!sidebarCollapsed">Create Receipt</span>
+                        </router-link>
+
+                        <router-link
+                        to="/purchasing/goods-receipts/dashboard"
+                        class="menu-item"
+                        active-class="active"
+                        >
+                        <i class="fas fa-tachometer-alt"></i>
+                        <span v-if="!sidebarCollapsed">Receipts Dashboard</span>
                         </router-link>
 
                         <router-link
@@ -917,6 +935,18 @@ export default {
                     return "Stock Adjustments";
                 case "CycleCounting":
                     return "Cycle Counting";
+                case "GoodsReceiptList":
+                    return "Goods Receipts";
+                case "CreateGoodsReceipt":
+                    return "Create Goods Receipt";
+                case "EditGoodsReceipt":
+                    return "Edit Goods Receipt";
+                case "GoodsReceiptDetail":
+                    return "Goods Receipt Details";
+                case "ConfirmGoodsReceipt":
+                    return "Confirm Goods Receipt";
+                case "PendingReceiptsDashboard":
+                    return "Receipts Dashboard";
                 case "Customers":
                     return "Customers";
                 case "SalesQuotations":

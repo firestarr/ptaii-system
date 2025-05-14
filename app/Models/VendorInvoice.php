@@ -110,4 +110,27 @@ class VendorInvoice extends Model
             'tax_amount' => $this->base_currency_tax * $rate
         ];
     }
+    // Add this relationship to your VendorInvoice model
+    public function goodsReceipts()
+    {
+        return $this->belongsToMany(
+            GoodsReceipt::class, 
+            'invoice_receipt_relations', 
+            'invoice_id', 
+            'receipt_id'
+        );
+    }
+
+    // Update existing relationship to handle multiple POs
+    public function purchaseOrders()
+    {
+        return $this->hasManyThrough(
+            PurchaseOrder::class,
+            GoodsReceiptLine::class,
+            'invoice_line_id',
+            'po_id',
+            'invoice_id',
+            'po_id'
+        )->distinct();
+    }
 }

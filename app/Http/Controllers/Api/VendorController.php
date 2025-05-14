@@ -13,35 +13,8 @@ class VendorController extends Controller
 {
     public function index(Request $request)
     {
-        $query = Vendor::query();
-        
-        // Apply filters
-        if ($request->has('status')) {
-            $query->where('status', $request->status);
-        }
-        
-        if ($request->has('search')) {
-            $search = $request->search;
-            $query->where(function($q) use ($search) {
-                $q->where('name', 'like', "%{$search}%")
-                  ->orWhere('vendor_code', 'like', "%{$search}%")
-                  ->orWhere('contact_person', 'like', "%{$search}%");
-            });
-        }
-        
-        // Apply sorting
-        $sortField = $request->input('sort_field', 'name');
-        $sortDirection = $request->input('sort_direction', 'asc');
-        $query->orderBy($sortField, $sortDirection);
-        
-        // Pagination
-        $perPage = $request->input('per_page', 15);
-        $vendors = $query->paginate($perPage);
-        
-        return response()->json([
-            'status' => 'success',
-            'data' => $vendors
-        ]);
+        $vendors = Vendor::all();
+        return response()->json(['data' => $vendors], 200);
     }
 
     public function store(Request $request)

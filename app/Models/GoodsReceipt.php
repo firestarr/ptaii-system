@@ -72,4 +72,27 @@ class GoodsReceipt extends Model
     {
         return $this->lines()->count();
     }
+    
+    // Add to your GoodsReceipt model
+    public function vendorInvoices()
+    {
+        return $this->belongsToMany(
+            VendorInvoice::class, 
+            'invoice_receipt_relations', 
+            'receipt_id', 
+            'invoice_id'
+        );
+    }
+
+    // Add a method to check if the receipt is fully invoiced
+    public function isFullyInvoiced()
+    {
+        return $this->lines()->where('is_invoiced', false)->count() === 0;
+    }
+
+    // Add a method to get uninvoiced lines
+    public function getUninvoicedLines()
+    {
+        return $this->lines()->where('is_invoiced', false)->get();
+    }
 }

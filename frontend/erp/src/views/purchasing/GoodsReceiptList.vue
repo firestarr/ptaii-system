@@ -1,665 +1,807 @@
 <!-- src/views/purchasing/GoodsReceiptList.vue -->
 <template>
-    <div class="goods-receipt-list-container">
-        <div class="page-header">
-            <h1>Goods Receipts</h1>
-            <div class="header-actions">
-                <router-link
-                    to="/purchasing/goods-receipts/create"
-                    class="btn btn-primary"
-                >
-                    <i class="fas fa-plus"></i> Create Goods Receipt
-                </router-link>
-            </div>
+    <div class="goods-receipt-list">
+      <div class="card">
+        <div class="card-header">
+          <h2>Goods Receipts</h2>
+          <div class="actions">
+            <router-link to="/purchasing/goods-receipts/create" class="btn btn-primary">
+              <i class="fas fa-plus"></i> Create Receipt
+            </router-link>
+            <router-link to="/purchasing/goods-receipts/dashboard" class="btn btn-info ml-2">
+              <i class="fas fa-tachometer-alt"></i> Dashboard
+            </router-link>
+          </div>
         </div>
-
-        <div class="filter-section">
-            <SearchFilter
-                v-model:value="searchQuery"
+  
+        <div class="card-body">
+          <!-- Search and filters -->
+          <div class="filters-container">
+            <div class="search-box">
+              <input
+                type="text"
+                v-model="filters.search"
                 placeholder="Search receipt number..."
-                @search="fetchGoodsReceipts"
-                @clear="clearSearch"
-            >
-                <template v-slot:filters>
-                    <div class="filter-group">
-                        <label for="status-filter">Status</label>
-                        <select
-                            id="status-filter"
-                            v-model="filters.status"
-                            @change="fetchGoodsReceipts"
-                        >
-                            <option value="">All Status</option>
-                            <option value="pending">Pending</option>
-                            <option value="confirmed">Confirmed</option>
-                            <option value="canceled">Canceled</option>
-                        </select>
-                    </div>
-
-                    <div class="filter-group">
-                        <label for="vendor-filter">Vendor</label>
-                        <select
-                            id="vendor-filter"
-                            v-model="filters.vendor_id"
-                            @change="fetchGoodsReceipts"
-                        >
-                            <option value="">All Vendors</option>
-<option
-    v-for="vendor in filteredVendors"
-    :key="vendor.vendor_id"
-    :value="vendor.vendor_id"
->
-    {{ vendor.name }}
-</option>
-                        </select>
-                    </div>
-
-                    <div class="filter-group">
-                        <label for="po-filter">Purchase Order</label>
-                        <select
-                            id="po-filter"
-                            v-model="filters.po_id"
-                            @change="fetchGoodsReceipts"
-                        >
-                            <option value="">All POs</option>
-<option
-    v-for="po in filteredPurchaseOrders"
-    :key="po.po_id"
-    :value="po.po_id"
->
-    {{ po.po_number }}
-</option>
-                        </select>
-                    </div>
-
-                    <div class="filter-group">
-                        <label for="date-from">Date From</label>
-                        <input
-                            type="date"
-                            id="date-from"
-                            v-model="filters.date_from"
-                            @change="fetchGoodsReceipts"
-                        />
-                    </div>
-
-                    <div class="filter-group">
-                        <label for="date-to">Date To</label>
-                        <input
-                            type="date"
-                            id="date-to"
-                            v-model="filters.date_to"
-                            @change="fetchGoodsReceipts"
-                        />
-                    </div>
-                </template>
-            </SearchFilter>
-        </div>
-
-        <div class="data-container">
-            <DataTable
-                :columns="columns"
-                :items="goodsReceipts"
-                :is-loading="isLoading"
-                :key-field="'receipt_id'"
-                :initial-sort-key="'receipt_date'"
-                :initial-sort-order="'desc'"
-                :empty-title="'No Goods Receipts Found'"
-                :empty-message="'Try adjusting your search or filters, or create a new goods receipt.'"
-                :empty-icon="'fas fa-truck-loading'"
-                @sort="handleSort"
-            >
-                <template v-slot:receipt_date="{ value }">
-                    {{ formatDate(value) }}
-                </template>
-
-                <template v-slot:vendor_name="{ item }">
-                {{ item.vendor?.name || "N/A" }}
-                </template>
-
-                <template v-slot:po_number="{ item }">
-                        {{
-                            item.purchaseOrder?.po_number || "N/A"
-                        }}
-                </template>
-
-                <template v-slot:status="{ value }">
-                    <span :class="['status-badge', getStatusClass(value)]">
-                        {{ formatStatus(value) }}
-                    </span>
-                </template>
-
-                <template v-slot:actions="{ item }">
-                    <div class="action-buttons">
-                        <router-link
-                            :to="`/purchasing/goods-receipts/${item.receipt_id}`"
-                            class="action-btn view-btn"
-                            title="View Details"
-                        >
-                            <i class="fas fa-eye"></i>
-                        </router-link>
-                        <router-link
-                            v-if="item.status === 'pending'"
-                            :to="`/purchasing/goods-receipts/${item.receipt_id}/edit`"
-                            class="action-btn edit-btn"
-                            title="Edit Receipt"
-                        >
-                            <i class="fas fa-edit"></i>
-                        </router-link>
-                        <router-link
-                            v-if="item.status === 'pending'"
-                            :to="`/purchasing/goods-receipts/${item.receipt_id}/confirm`"
-                            class="action-btn confirm-btn"
-                            title="Confirm Receipt"
-                        >
-                            <i class="fas fa-check-circle"></i>
-                        </router-link>
-                        <button
-                            v-if="item.status === 'pending'"
-                            @click="confirmDelete(item)"
-                            class="action-btn delete-btn"
-                            title="Delete Receipt"
-                        >
-                            <i class="fas fa-trash"></i>
-                        </button>
-                    </div>
-                </template>
-            </DataTable>
-
-            <div v-if="totalPages > 1" class="pagination-wrapper">
-                <PaginationComponent
-                    :current-page="currentPage"
-                    :total-pages="totalPages"
-                    :from="paginationFrom"
-                    :to="paginationTo"
-                    :total="totalReceipts"
-                    @page-changed="changePage"
-                />
+                @input="applyFilters"
+              />
+              <i class="fas fa-search"></i>
             </div>
+  
+            <div class="filter-group">
+              <label>Status:</label>
+              <select v-model="filters.status" @change="applyFilters">
+                <option value="">All</option>
+                <option value="pending">Pending</option>
+                <option value="confirmed">Confirmed</option>
+              </select>
+            </div>
+  
+            <div class="filter-group">
+              <label>Vendor:</label>
+              <select v-model="filters.vendor_id" @change="applyFilters">
+                <option value="">All</option>
+<option v-for="vendor in filteredVendors" :key="vendor.vendor_id" :value="vendor.vendor_id">
+  {{ vendor.name }}
+</option>
+              </select>
+            </div>
+  
+            <div class="filter-group">
+              <label>Date From:</label>
+              <input type="date" v-model="filters.date_from" @change="applyFilters" />
+            </div>
+  
+            <div class="filter-group">
+              <label>Date To:</label>
+              <input type="date" v-model="filters.date_to" @change="applyFilters" />
+            </div>
+          </div>
+  
+          <!-- Loading indicator -->
+          <div v-if="loading" class="loading-container">
+            <i class="fas fa-spinner fa-spin"></i> Loading goods receipts...
+          </div>
+  
+          <!-- Empty state -->
+          <div v-else-if="receipts.length === 0" class="empty-state">
+            <i class="fas fa-inbox"></i>
+            <h3>No Goods Receipts Found</h3>
+            <p>Try adjusting your search or filters, or create a new receipt.</p>
+          </div>
+  
+          <!-- Receipts table -->
+          <div v-else class="table-responsive">
+            <table class="receipts-table">
+              <thead>
+                <tr>
+                  <th @click="sortBy('receipt_number')">
+                    Receipt # 
+                    <i v-if="sortColumn === 'receipt_number'" 
+                       :class="sortDirection === 'asc' ? 'fas fa-sort-up' : 'fas fa-sort-down'"></i>
+                  </th>
+                  <th @click="sortBy('receipt_date')">
+                    Date 
+                    <i v-if="sortColumn === 'receipt_date'" 
+                       :class="sortDirection === 'asc' ? 'fas fa-sort-up' : 'fas fa-sort-down'"></i>
+                  </th>
+                  <th @click="sortBy('vendor.name')">
+                    Vendor 
+                    <i v-if="sortColumn === 'vendor.name'" 
+                       :class="sortDirection === 'asc' ? 'fas fa-sort-up' : 'fas fa-sort-down'"></i>
+                  </th>
+                  <th>PO Numbers</th>
+                  <th @click="sortBy('status')">
+                    Status 
+                    <i v-if="sortColumn === 'status'" 
+                       :class="sortDirection === 'asc' ? 'fas fa-sort-up' : 'fas fa-sort-down'"></i>
+                  </th>
+                  <th>Total Items</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="receipt in receipts" :key="receipt.receipt_id">
+                  <td>{{ receipt.receipt_number }}</td>
+                  <td>{{ formatDate(receipt.receipt_date) }}</td>
+                  <td>{{ receipt.vendor ? receipt.vendor.name : 'N/A' }}</td>
+                  <td>{{ receipt.po_numbers }}</td>
+                  <td>
+                    <span :class="'status-badge ' + receipt.status">
+                      {{ receipt.status.charAt(0).toUpperCase() + receipt.status.slice(1) }}
+                    </span>
+                  </td>
+                  <td>{{ receipt.total_items || calculateTotalItems(receipt) }}</td>
+                  <td class="actions-cell">
+                    <router-link :to="`/purchasing/goods-receipts/${receipt.receipt_id}`" class="btn-icon" title="View Details">
+                      <i class="fas fa-eye"></i>
+                    </router-link>
+                    <router-link v-if="receipt.status === 'pending'" 
+                        :to="`/purchasing/goods-receipts/${receipt.receipt_id}/edit`" 
+                        class="btn-icon" title="Edit">
+                      <i class="fas fa-edit"></i>
+                    </router-link>
+                    <router-link v-if="receipt.status === 'pending'" 
+                        :to="`/purchasing/goods-receipts/${receipt.receipt_id}/confirm`" 
+                        class="btn-icon confirm" title="Confirm Receipt">
+                      <i class="fas fa-check-circle"></i>
+                    </router-link>
+                    <button v-if="receipt.status === 'pending'" 
+                        @click="confirmDelete(receipt)" 
+                        class="btn-icon delete" title="Delete">
+                      <i class="fas fa-trash"></i>
+                    </button>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+  
+          <!-- Pagination -->
+          <div class="pagination-container" v-if="totalPages > 1">
+            <button 
+              class="pagination-btn" 
+              :disabled="currentPage === 1" 
+              @click="changePage(currentPage - 1)"
+            >
+              <i class="fas fa-chevron-left"></i>
+            </button>
+            
+            <template v-for="page in displayedPages" :key="page">
+              <button 
+                v-if="page !== '...'" 
+                class="pagination-btn" 
+                :class="{ active: page === currentPage }"
+                @click="changePage(page)"
+              >
+                {{ page }}
+              </button>
+              <span v-else class="pagination-ellipsis">...</span>
+            </template>
+            
+            <button 
+              class="pagination-btn" 
+              :disabled="currentPage === totalPages" 
+              @click="changePage(currentPage + 1)"
+            >
+              <i class="fas fa-chevron-right"></i>
+            </button>
+          </div>
         </div>
-
-        <!-- Confirmation Modal for Delete -->
-        <ConfirmationModal
-            v-if="showDeleteModal"
-            :title="'Delete Goods Receipt'"
-            :message="
-                'Are you sure you want to delete goods receipt <strong>' +
-                (selectedReceipt?.receipt_number || '') +
-                '</strong>? This action cannot be undone.'
-            "
-            :confirm-button-text="'Delete'"
-            :confirm-button-class="'btn btn-danger'"
-            @confirm="deleteGoodsReceipt"
-            @close="closeDeleteModal"
-        />
+      </div>
+  
+      <!-- Delete Confirmation Modal -->
+      <div v-if="showDeleteModal" class="modal">
+        <div class="modal-backdrop" @click="showDeleteModal = false"></div>
+        <div class="modal-content modal-sm">
+          <div class="modal-header">
+            <h2>Confirm Delete</h2>
+            <button class="close-btn" @click="showDeleteModal = false">
+              <i class="fas fa-times"></i>
+            </button>
+          </div>
+          <div class="modal-body">
+            <p>Are you sure you want to delete receipt <strong>{{ receiptToDelete?.receipt_number }}</strong>?</p>
+            <p class="text-danger">This action cannot be undone.</p>
+            
+            <div class="form-actions">
+              <button type="button" class="btn btn-secondary" @click="showDeleteModal = false">
+                Cancel
+              </button>
+              <button
+                type="button"
+                class="btn btn-danger"
+                @click="deleteReceipt"
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
-</template>
-
-<script>
-import { ref, reactive, computed, onMounted } from "vue";
-import axios from "axios";
-import DataTable from "@/components/common/DataTable.vue";
-import SearchFilter from "@/components/common/SearchFilter.vue";
-import PaginationComponent from "@/components/common/Pagination.vue";
-import ConfirmationModal from "@/components/common/ConfirmationModal.vue";
-
-export default {
-    name: "GoodsReceiptList",
-    components: {
-        DataTable,
-        SearchFilter,
-        PaginationComponent,
-        ConfirmationModal,
+  </template>
+  
+  <script>
+  import axios from 'axios';
+  
+  export default {
+    name: 'GoodsReceiptList',
+data() {
+  return {
+    receipts: [],
+    vendors: [],
+    loading: true,
+    filters: {
+      search: '',
+      status: '',
+      vendor_id: '',
+      date_from: '',
+      date_to: ''
     },
-    setup() {
-        const goodsReceipts = ref([]);
-        const vendors = ref([]);
-        const purchaseOrders = ref([]);
-
-        const filteredVendors = computed(() => {
-            return vendors.value.filter(vendor => vendor && vendor.vendor_id);
-        });
-
-        const filteredPurchaseOrders = computed(() => {
-            return purchaseOrders.value.filter(po => po && po.po_id);
-        });
-        const isLoading = ref(true);
-        const currentPage = ref(1);
-        const totalPages = ref(1);
-        const totalReceipts = ref(0);
-        const itemsPerPage = ref(10);
-        const searchQuery = ref("");
-        const showDeleteModal = ref(false);
-        const selectedReceipt = ref(null);
-        
-        // Get the API base URL from axios configuration
-        const apiBaseUrl = axios.defaults.baseURL || "http://127.0.0.1:8020/api";
-
-        const filters = reactive({
-            status: "",
-            vendor_id: "",
-            po_id: "",
-            date_from: "",
-            date_to: "",
-        });
-
-        const sortKey = ref("receipt_date");
-        const sortOrder = ref("desc");
-
-        // Table columns definition
-        const columns = [
-            { key: "receipt_number", label: "Receipt #", sortable: true },
-            {
-                key: "receipt_date",
-                label: "Date",
-                sortable: true,
-                template: "receipt_date",
-            },
-            {
-                key: "vendor_name",
-                label: "Vendor",
-                sortable: false,
-                template: "vendor_name",
-            },
-            {
-                key: "po_number",
-                label: "PO #",
-                sortable: false,
-                template: "po_number",
-            },
-            {
-                key: "status",
-                label: "Status",
-                sortable: true,
-                template: "status",
-            },
-        ];
-
-        // Computed pagination values
-        const paginationFrom = computed(() => {
-            return (currentPage.value - 1) * itemsPerPage.value + 1;
-        });
-
-        const paginationTo = computed(() => {
-            return Math.min(
-                currentPage.value * itemsPerPage.value,
-                totalReceipts.value
-            );
-        });
-
-        // Fetch goods receipts from API
-const fetchGoodsReceipts = async () => {
-    try {
-        isLoading.value = true;
-
-        // Prepare params excluding empty string filters
-        const filterParams = {};
-        for (const key in filters) {
-            if (filters[key] !== "") {
-                filterParams[key] = filters[key];
-            }
-        }
-
-        const params = {
-            page: currentPage.value,
-            per_page: itemsPerPage.value,
-            search: searchQuery.value,
-            sort_field: sortKey.value,
-            sort_direction: sortOrder.value,
-            ...filterParams,
-        };
-
-        const response = await axios.get('/goods-receipts', { params });
-
-        const data = response.data;
-        console.log("Goods receipts data received:", data);
-
-        if (data && data.data) {
-            goodsReceipts.value = data.data;
-
-            if (data.meta) {
-                totalReceipts.value = data.meta.total || 0;
-                totalPages.value = data.meta.last_page || 1;
-                currentPage.value = data.meta.current_page || 1;
-            }
-        } else {
-            goodsReceipts.value = [];
-            totalReceipts.value = 0;
-            totalPages.value = 1;
-        }
-    } catch (error) {
-        if (error.response && error.response.status === 401) {
-            // Unauthorized, redirect to login handled by axios interceptor
-            console.error("Unauthorized access - redirecting to login.");
-        } else {
-            console.error("Error fetching goods receipts:", error);
-        }
-        goodsReceipts.value = [];
-    } finally {
-        isLoading.value = false;
+    pagination: {
+      total: 0,
+      per_page: 15,
+      current_page: 1,
+      last_page: 1
+    },
+    sortColumn: 'receipt_date',
+    sortDirection: 'desc',
+    showDeleteModal: false,
+    receiptToDelete: null
+  };
+},
+computed: {
+  currentPage() {
+    return this.pagination.current_page;
+  },
+  totalPages() {
+    return this.pagination.last_page;
+  },
+  displayedPages() {
+    const total = this.totalPages;
+    const current = this.currentPage;
+    const pages = [];
+    
+    if (total <= 7) {
+      // Show all pages if 7 or fewer
+      for (let i = 1; i <= total; i++) {
+        pages.push(i);
+      }
+    } else {
+      // Always include first page
+      pages.push(1);
+      
+      // Show ellipsis if current page is more than 3
+      if (current > 3) {
+        pages.push('...');
+      }
+      
+      // Add pages around current page
+      const startPage = Math.max(2, current - 1);
+      const endPage = Math.min(total - 1, current + 1);
+      
+      for (let i = startPage; i <= endPage; i++) {
+        pages.push(i);
+      }
+      
+      // Show ellipsis if current page is less than total - 2
+      if (current < total - 2) {
+        pages.push('...');
+      }
+      
+      // Always include last page if more than 1 page
+      if (total > 1) {
+        pages.push(total);
+      }
     }
-} 
-
-        // Fetch vendors for the filter dropdown
-        const fetchVendors = async () => {
-            try {
-                const response = await fetch(
-                    `${apiBaseUrl}/vendors?per_page=100`,
-                    {
-                        headers: {
-                            Authorization: `Bearer ${localStorage.getItem("token")}`,
-                            "Content-Type": "application/json",
-                        },
-                    }
-                );
-
-                const data = await response.json();
-
-                if (data && data.data) {
-                    vendors.value = data.data;
-                }
-            } catch (error) {
-                console.error("Error fetching vendors:", error);
-            }
-        };
-
-        // Fetch purchase orders for the filter dropdown
-        const fetchPurchaseOrders = async () => {
-            try {
-                const response = await fetch(
-                    `${apiBaseUrl}/purchase-orders?per_page=100`,
-                    {
-                        headers: {
-                            Authorization: `Bearer ${localStorage.getItem("token")}`,
-                            "Content-Type": "application/json",
-                        },
-                    }
-                );
-
-                const data = await response.json();
-
-                if (data && data.data) {
-                    purchaseOrders.value = data.data;
-                }
-            } catch (error) {
-                console.error("Error fetching purchase orders:", error);
-            }
-        };
-
-        const clearSearch = () => {
-            searchQuery.value = "";
-            fetchGoodsReceipts();
-        };
-
-        const handleSort = ({ key, order }) => {
-            sortKey.value = key;
-            sortOrder.value = order;
-            fetchGoodsReceipts();
-        };
-
-        const changePage = (page) => {
-            currentPage.value = page;
-            fetchGoodsReceipts();
-        };
-
-        const formatDate = (dateString) => {
-            if (!dateString) return "N/A";
-            const date = new Date(dateString);
-            return date.toLocaleDateString("en-US", {
-                year: "numeric",
-                month: "short",
-                day: "2-digit",
-            });
-        };
-
-        const formatStatus = (status) => {
-            switch (status) {
-                case "pending":
-                    return "Pending";
-                case "confirmed":
-                    return "Confirmed";
-                case "canceled":
-                    return "Canceled";
-                default:
-                    return status;
-            }
-        };
-
-        const getStatusClass = (status) => {
-            switch (status) {
-                case "pending":
-                    return "status-pending";
-                case "confirmed":
-                    return "status-completed";
-                case "canceled":
-                    return "status-canceled";
-                default:
-                    return "status-draft";
-            }
-        };
-
-        const confirmDelete = (receipt) => {
-            selectedReceipt.value = receipt;
-            showDeleteModal.value = true;
-        };
-
-        const closeDeleteModal = () => {
-            showDeleteModal.value = false;
-            selectedReceipt.value = null;
-        };
-
-        const deleteGoodsReceipt = async () => {
-            if (!selectedReceipt.value) return;
-
-            try {
-                const response = await fetch(
-                    `${apiBaseUrl}/goods-receipts/${selectedReceipt.value.receipt_id}`,
-                    {
-                        method: "DELETE",
-                        headers: {
-                            Authorization: `Bearer ${localStorage.getItem("token")}`,
-                            "Content-Type": "application/json",
-                        },
-                    }
-                );
-
-                if (response.ok) {
-                    fetchGoodsReceipts();
-                    closeDeleteModal();
-                } else {
-                    const errorData = await response.json();
-                    alert(errorData.message || "Failed to delete goods receipt.");
-                    closeDeleteModal();
-                }
-            } catch (error) {
-                console.error("Error deleting goods receipt:", error);
-                alert("An error occurred while deleting the goods receipt.");
-                closeDeleteModal();
-            }
-        };
-
-        // Initialize
-        onMounted(() => {
-            fetchGoodsReceipts();
-            fetchVendors();
-            fetchPurchaseOrders();
-        });
-
-        return {
-            goodsReceipts,
-            vendors,
-            purchaseOrders,
-            filteredVendors,
-            filteredPurchaseOrders,
-            isLoading,
-            columns,
-            currentPage,
-            totalPages,
-            totalReceipts,
-            paginationFrom,
-            paginationTo,
-            searchQuery,
-            filters,
-            showDeleteModal,
-            selectedReceipt,
-            fetchGoodsReceipts,
-            clearSearch,
-            handleSort,
-            changePage,
-            formatDate,
-            formatStatus,
-            getStatusClass,
-            confirmDelete,
-            closeDeleteModal,
-            deleteGoodsReceipt,
-        };
+    
+    return pages;
+  },
+  filteredVendors() {
+    return this.vendors.filter(vendor => vendor && vendor.vendor_id);
+  }
+},
+    created() {
+      this.fetchReceipts();
+      this.fetchVendors();
     },
-};
-</script>
-
-<style scoped>
-.goods-receipt-list-container {
-    padding: 1rem;
-}
-
-.page-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 1.5rem;
-}
-
-.page-header h1 {
-    margin: 0;
-    font-size: 1.5rem;
-    color: var(--gray-800);
-}
-
-.header-actions {
-    display: flex;
-    gap: 0.75rem;
-}
-
-.filter-section {
-    margin-bottom: 1.5rem;
-}
-
-.data-container {
+    methods: {
+      fetchReceipts() {
+        this.loading = true;
+        
+        // Build query params
+        const params = {
+          page: this.pagination.current_page,
+          per_page: this.pagination.per_page,
+          sort_field: this.sortColumn,
+          sort_direction: this.sortDirection
+        };
+        
+        // Add filters if they have values
+        if (this.filters.search) params.search = this.filters.search;
+        if (this.filters.status) params.status = this.filters.status;
+        if (this.filters.vendor_id) params.vendor_id = this.filters.vendor_id;
+        if (this.filters.date_from) params.date_from = this.filters.date_from;
+        if (this.filters.date_to) params.date_to = this.filters.date_to;
+        
+        axios.get('/goods-receipts', { params })
+          .then(response => {
+            const data = response.data.data;
+            this.receipts = data.data;
+            this.pagination = {
+              total: data.total,
+              per_page: data.per_page,
+              current_page: data.current_page,
+              last_page: data.last_page
+            };
+          })
+          .catch(error => {
+            console.error('Error fetching receipts:', error);
+            this.$toast.error('Failed to load goods receipts');
+          })
+          .finally(() => {
+            this.loading = false;
+          });
+      },
+fetchVendors() {
+  axios.get('/vendors')
+    .then(response => {
+      console.log('Vendors API response data:', response.data.data);
+      // Access the actual vendors array inside the response
+      const vendorsData = response.data.data;
+      if (Array.isArray(vendorsData)) {
+        this.vendors = vendorsData.filter(vendor => vendor && vendor.vendor_id);
+      } else {
+        this.vendors = [];
+        console.error('Vendors API response data.data is not an array');
+      }
+    })
+    .catch(error => {
+      console.error('Error fetching vendors:', error);
+    });
+},
+      formatDate(dateString) {
+        if (!dateString) return 'N/A';
+        const date = new Date(dateString);
+        return date.toLocaleDateString('id-ID', { 
+          year: 'numeric', 
+          month: 'short', 
+          day: 'numeric' 
+        });
+      },
+      calculateTotalItems(receipt) {
+        return receipt.lines ? receipt.lines.length : 0;
+      },
+      applyFilters() {
+        this.pagination.current_page = 1;
+        this.fetchReceipts();
+      },
+      sortBy(column) {
+        if (this.sortColumn === column) {
+          this.sortDirection = this.sortDirection === 'asc' ? 'desc' : 'asc';
+        } else {
+          this.sortColumn = column;
+          this.sortDirection = 'asc';
+        }
+        this.fetchReceipts();
+      },
+      changePage(page) {
+        if (page === this.pagination.current_page) return;
+        this.pagination.current_page = page;
+        this.fetchReceipts();
+      },
+      confirmDelete(receipt) {
+        this.receiptToDelete = receipt;
+        this.showDeleteModal = true;
+      },
+      deleteReceipt() {
+        if (!this.receiptToDelete) return;
+        
+        axios.delete(`/goods-receipts/${this.receiptToDelete.receipt_id}`)
+          .then(() => {
+            this.$toast.success('Goods receipt deleted successfully');
+            this.fetchReceipts();
+            this.showDeleteModal = false;
+            this.receiptToDelete = null;
+          })
+          .catch(error => {
+            console.error('Error deleting receipt:', error);
+            this.$toast.error('Failed to delete goods receipt: ' + (error.response?.data?.message || 'Unknown error'));
+          });
+      }
+    }
+  };
+  </script>
+  
+  <style scoped>
+  .goods-receipt-list {
+    max-width: 100%;
+  }
+  
+  .card {
     background-color: white;
     border-radius: 0.5rem;
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-    overflow: hidden;
-}
-
-.pagination-wrapper {
-    padding: 0.5rem;
-    background-color: white;
-    border-top: 1px solid var(--gray-200);
-}
-
-.action-buttons {
+    margin-bottom: 2rem;
+  }
+  
+  .card-header {
+    padding: 1.5rem;
+    border-bottom: 1px solid var(--gray-200);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  
+  .card-header h2 {
+    margin: 0;
+    font-size: 1.5rem;
+  }
+  
+  .actions {
     display: flex;
     gap: 0.5rem;
-    justify-content: flex-end;
-}
-
-.action-btn {
+  }
+  
+  .btn {
     display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 1rem;
+    border-radius: 0.375rem;
+    font-weight: 500;
+    font-size: 0.875rem;
+    cursor: pointer;
+    transition: all 0.2s;
+    text-decoration: none;
+  }
+  
+  .btn-primary {
+    background-color: var(--primary-color);
+    color: white;
+    border: 1px solid var(--primary-color);
+  }
+  
+  .btn-primary:hover {
+    background-color: var(--primary-dark);
+  }
+  
+  .btn-info {
+    background-color: #0ea5e9;
+    color: white;
+    border: 1px solid #0ea5e9;
+  }
+  
+  .btn-info:hover {
+    background-color: #0284c7;
+  }
+  
+  .btn-secondary {
+    background-color: var(--gray-200);
+    color: var(--gray-700);
+    border: 1px solid var(--gray-300);
+  }
+  
+  .btn-secondary:hover {
+    background-color: var(--gray-300);
+  }
+  
+  .btn-danger {
+    background-color: #ef4444;
+    color: white;
+    border: 1px solid #ef4444;
+  }
+  
+  .btn-danger:hover {
+    background-color: #dc2626;
+  }
+  
+  .card-body {
+    padding: 1.5rem;
+  }
+  
+  .filters-container {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+    align-items: flex-end;
+  }
+  
+  .search-box {
+    position: relative;
+    min-width: 250px;
+    flex-grow: 1;
+  }
+  
+  .search-box input {
+    width: 100%;
+    padding: 0.5rem 2rem 0.5rem 0.75rem;
+    border: 1px solid var(--gray-300);
+    border-radius: 0.375rem;
+    font-size: 0.875rem;
+  }
+  
+  .search-box i {
+    position: absolute;
+    right: 0.75rem;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--gray-500);
+  }
+  
+  .filter-group {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+  
+  .filter-group label {
+    font-size: 0.75rem;
+    color: var(--gray-600);
+    font-weight: 500;
+  }
+  
+  .filter-group select,
+  .filter-group input {
+    padding: 0.5rem;
+    border: 1px solid var(--gray-300);
+    border-radius: 0.375rem;
+    font-size: 0.875rem;
+    min-width: 150px;
+  }
+  
+  .loading-container {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding: 3rem 0;
+    font-size: 1rem;
+    color: var(--gray-500);
+  }
+  
+  .loading-container i {
+    margin-right: 0.5rem;
+  }
+  
+  .empty-state {
+    text-align: center;
+    padding: 3rem 0;
+    color: var(--gray-500);
+  }
+  
+  .empty-state i {
+    font-size: 3rem;
+    margin-bottom: 1rem;
+  }
+  
+  .empty-state h3 {
+    margin-bottom: 0.5rem;
+    font-size: 1.25rem;
+  }
+  
+  .table-responsive {
+    overflow-x: auto;
+    margin-bottom: 1rem;
+  }
+  
+  .receipts-table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+  
+  .receipts-table th {
+    background-color: var(--gray-50);
+    padding: 0.75rem 1rem;
+    text-align: left;
+    font-weight: 600;
+    color: var(--gray-700);
+    border-bottom: 1px solid var(--gray-200);
+    cursor: pointer;
+    user-select: none;
+    white-space: nowrap;
+  }
+  
+  .receipts-table th i {
+    margin-left: 0.25rem;
+  }
+  
+  .receipts-table td {
+    padding: 0.75rem 1rem;
+    border-bottom: 1px solid var(--gray-200);
+    color: var(--gray-800);
+  }
+  
+  .receipts-table tr:hover td {
+    background-color: var(--gray-50);
+  }
+  
+  .status-badge {
+    display: inline-block;
+    padding: 0.25rem 0.5rem;
+    border-radius: 0.25rem;
+    font-size: 0.75rem;
+    font-weight: 500;
+    text-transform: capitalize;
+  }
+  
+  .status-badge.pending {
+    background-color: #fef3c7;
+    color: #92400e;
+  }
+  
+  .status-badge.confirmed {
+    background-color: #d1fae5;
+    color: #065f46;
+  }
+  
+  .actions-cell {
+    display: flex;
+    gap: 0.5rem;
+    white-space: nowrap;
+  }
+  
+  .btn-icon {
+    display: flex;
     align-items: center;
     justify-content: center;
     width: 2rem;
     height: 2rem;
     border-radius: 0.375rem;
-    border: none;
-    background: none;
-    cursor: pointer;
-    transition: background-color 0.2s;
-}
-
-.view-btn {
-    color: var(--primary-color);
-}
-
-.view-btn:hover {
-    background-color: var(--primary-bg);
-}
-
-.edit-btn {
-    color: var(--warning-color);
-}
-
-.edit-btn:hover {
-    background-color: var(--warning-bg);
-}
-
-.confirm-btn {
-    color: var(--success-color);
-}
-
-.confirm-btn:hover {
-    background-color: var(--success-bg);
-}
-
-.delete-btn {
-    color: var(--danger-color);
-}
-
-.delete-btn:hover {
-    background-color: var(--danger-bg);
-}
-
-.status-badge {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    padding: 0.25rem 0.5rem;
-    border-radius: 0.25rem;
-    font-size: 0.75rem;
-    font-weight: 500;
-}
-
-.status-pending {
-    background-color: #fef3c7;
-    color: #92400e;
-}
-
-.status-completed {
+    color: var(--gray-700);
+    background-color: var(--gray-100);
+    border: 1px solid var(--gray-200);
+    text-decoration: none;
+    transition: all 0.2s;
+  }
+  
+  .btn-icon:hover {
+    background-color: var(--gray-200);
+  }
+  
+  .btn-icon.confirm {
+    color: #059669;
     background-color: #d1fae5;
-    color: #065f46;
-}
-
-.status-canceled {
+    border-color: #059669;
+  }
+  
+  .btn-icon.confirm:hover {
+    background-color: #a7f3d0;
+  }
+  
+  .btn-icon.delete {
+    color: #dc2626;
     background-color: #fee2e2;
-    color: #b91c1c;
-}
-
-.btn {
-    padding: 0.625rem 1.25rem;
-    font-size: 0.875rem;
-    font-weight: 500;
-    border-radius: 0.375rem;
-    cursor: pointer;
-    display: inline-flex;
-    align-items: center;
+    border-color: #dc2626;
+  }
+  
+  .btn-icon.delete:hover {
+    background-color: #fecaca;
+  }
+  
+  .pagination-container {
+    display: flex;
     justify-content: center;
-    gap: 0.5rem;
-    border: none;
-    transition: background-color 0.2s, color 0.2s;
-}
-
-.btn-primary {
+    align-items: center;
+    margin-top: 1.5rem;
+    gap: 0.25rem;
+  }
+  
+  .pagination-btn {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    width: 2rem;
+    height: 2rem;
+    border-radius: 0.375rem;
+    background: none;
+    border: 1px solid var(--gray-200);
+    color: var(--gray-500);
+    cursor: pointer;
+  }
+  
+  .pagination-btn:hover:not(:disabled) {
+    background-color: var(--gray-100);
+    color: var(--gray-800);
+  }
+  
+  .pagination-btn.active {
     background-color: var(--primary-color);
     color: white;
-}
-
-.btn-primary:hover {
-    background-color: var(--primary-dark);
-}
-
-.btn-danger {
-    background-color: var(--danger-color);
-    color: white;
-}
-
-.btn-danger:hover {
-    background-color: #b91c1c;
-}
-</style>
+    border-color: var(--primary-color);
+  }
+  
+  .pagination-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+  
+  .pagination-ellipsis {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    width: 2rem;
+    height: 2rem;
+    color: var(--gray-500);
+  }
+  
+  /* Modal styles */
+  .modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 50;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+  }
+  
+  .modal-backdrop {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgba(0, 0, 0, 0.5);
+    z-index: 50;
+  }
+  
+  .modal-content {
+    background-color: white;
+    border-radius: 0.5rem;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    width: 100%;
+    z-index: 60;
+    overflow: hidden;
+    max-width: 600px;
+  }
+  
+  .modal-sm {
+    max-width: 400px;
+  }
+  
+  .modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1rem 1.5rem;
+    border-bottom: 1px solid var(--gray-200);
+  }
+  
+  .modal-header h2 {
+    font-size: 1.25rem;
+    font-weight: 600;
+    margin: 0;
+  }
+  
+  .close-btn {
+    background: none;
+    border: none;
+    color: var(--gray-500);
+    cursor: pointer;
+    font-size: 1rem;
+  }
+  
+  .modal-body {
+    padding: 1.5rem;
+  }
+  
+  .text-danger {
+    color: #dc2626;
+  }
+  
+  .form-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 1rem;
+    margin-top: 1.5rem;
+  }
+  
+  @media (max-width: 768px) {
+    .filters-container {
+      flex-direction: column;
+      align-items: stretch;
+    }
+    
+    .search-box {
+      width: 100%;
+    }
+    
+    .card-header {
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 1rem;
+    }
+    
+    .actions {
+      width: 100%;
+    }
+    
+    .btn {
+      flex: 1;
+      justify-content: center;
+    }
+  }
+  </style>

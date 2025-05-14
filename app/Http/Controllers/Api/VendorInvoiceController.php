@@ -7,10 +7,13 @@ use App\Models\VendorInvoice;
 use App\Models\VendorInvoiceLine;
 use App\Models\PurchaseOrder;
 use App\Models\POLine;
+use App\Models\GoodsReceipt;
+use App\Models\GoodsReceiptLine;
+use App\Models\Vendor;
 use App\Models\Accounting\VendorPayable;
-use App\Models\Accounting\ExchangeRate;
 use App\Models\Accounting\JournalEntry;
 use App\Models\Accounting\JournalEntryLine;
+use App\Models\CurrencyRate;
 use App\Http\Requests\VendorInvoiceRequest;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -19,14 +22,14 @@ use Illuminate\Support\Facades\Validator;
 class VendorInvoiceController extends Controller
 {
     /**
-     * Menampilkan daftar faktur vendor dengan filter.
+     * Display a listing of vendor invoices with filters.
      *
      * @param  \Illuminate\Http\Request  $request
      * @return \Illuminate\Http\Response
      */
     public function index(Request $request)
     {
-        $query = VendorInvoice::with(['vendor', 'purchaseOrder']);
+        $query = VendorInvoice::with(['vendor', 'lines.item', 'goodsReceipts']);
         
         // Apply filters
         if ($request->has('status')) {
@@ -35,10 +38,6 @@ class VendorInvoiceController extends Controller
         
         if ($request->has('vendor_id')) {
             $query->where('vendor_id', $request->vendor_id);
-        }
-        
-        if ($request->has('po_id')) {
-            $query->where('po_id', $request->po_id);
         }
         
         if ($request->has('date_from')) {
@@ -55,8 +54,15 @@ class VendorInvoiceController extends Controller
         }
         
         // Filter by currency
-        if ($request->has('currency')) {
-            $query->where('currency', $request->currency);
+        if ($request->has('currency_code')) {
+            $query->where('currency_code', $request->currency_code);
+        }
+        
+        // Filter by receipt
+        if ($request->has('receipt_id')) {
+            $query->whereHas('goodsReceipts', function($q) use ($request) {
+                $q->where('receipt_id', $request->receipt_id);
+            });
         }
         
         // Apply sorting
@@ -75,36 +81,61 @@ class VendorInvoiceController extends Controller
     }
 
     /**
-     * Menyimpan faktur vendor baru.
+     * Store a newly created vendor invoice from multiple goods receipts.
      *
      * @param  \App\Http\Requests\VendorInvoiceRequest  $request
      * @return \Illuminate\Http\Response
      */
     public function store(VendorInvoiceRequest $request)
     {
-        // Check if Purchase Order exists and is in appropriate status
-        $po = PurchaseOrder::findOrFail($request->po_id);
-
-        // Jika due_date tidak disediakan, hitung otomatis dari payment_term vendor
-        $dueDate = $request->due_date;
-        if (!$dueDate) {
-            $paymentTerm = $po->vendor->payment_term ?? 30; // default 30 jika tidak diset
-            $dueDate = date('Y-m-d', strtotime($invoiceDate . ' + ' . $paymentTerm . ' days'));
-        }
-        if (!in_array($po->status, ['partial', 'received', 'completed'])) {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Faktur hanya dapat dibuat untuk PO yang telah menerima barang'
-            ], 400);
-        }
-        
         try {
             DB::beginTransaction();
             
-            // Set invoice currency (from request or from PO)
-            $currency = $request->currency ?? $po->currency ?? config('app.base_currency', 'USD');
-            $invoiceDate = $request->invoice_date;
+            // Validate receipt IDs
+            $receiptIds = $request->receipt_ids;
+            if (empty($receiptIds)) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'At least one goods receipt must be selected'
+                ], 400);
+            }
+            
+            // Get all receipts
+            $receipts = GoodsReceipt::with(['lines.purchaseOrderLine.purchaseOrder', 'lines.item', 'vendor'])
+                ->whereIn('receipt_id', $receiptIds)
+                ->get();
+                
+            if ($receipts->isEmpty()) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'No valid goods receipts found'
+                ], 404);
+            }
+            
+            // Validate all receipts are from the same vendor
+            $vendorId = $receipts->first()->vendor_id;
+            if ($receipts->pluck('vendor_id')->unique()->count() > 1) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'All goods receipts must be from the same vendor'
+                ], 400);
+            }
+            
+            // Get vendor
+            $vendor = $receipts->first()->vendor;
+            
+            // Prepare invoice lines
+            $invoiceLines = [];
+            $subtotal = 0;
+            $taxTotal = 0;
+            
+            // Track which PO currencies we're dealing with
+            $poCurrencies = [];
+            
+            // Set invoice currency (from request, vendor's preferred currency or default)
+            $currency = $request->currency_code ?? $vendor->preferred_currency ?? config('app.base_currency', 'USD');
             $baseCurrency = config('app.base_currency', 'USD');
+            $invoiceDate = $request->invoice_date ?? now()->format('Y-m-d');
             
             // Get exchange rate if currency is not base currency
             $exchangeRate = 1; // Default for base currency
@@ -113,128 +144,192 @@ class VendorInvoiceController extends Controller
                     $exchangeRate = $request->exchange_rate;
                 } else {
                     // Fetch from database
-                    $rateRecord = ExchangeRate::where('from_currency', $currency)
-                        ->where('to_currency', $baseCurrency)
-                        ->where('rate_date', '<=', $invoiceDate)
-                        ->orderBy('rate_date', 'desc')
-                        ->first();
-                    
+                    $rateRecord = CurrencyRate::getCurrentRate($currency, $baseCurrency, $invoiceDate);
                     if ($rateRecord) {
-                        $exchangeRate = $rateRecord->rate;
+                        $exchangeRate = $rateRecord;
                     } else {
                         return response()->json([
                             'status' => 'error',
-                            'message' => 'Kurs mata uang tidak ditemukan untuk ' . $currency . '. Mohon masukkan kurs mata uang secara manual.'
+                            'message' => 'Exchange rate not found for ' . $currency . '. Please enter the exchange rate manually.'
                         ], 422);
                     }
                 }
             }
             
-            // Calculate totals
-            $subtotal = 0;
-            $taxTotal = 0;
-            $invoiceLines = [];
-            
-            foreach ($request->lines as $line) {
-                $poLine = null;
-                if (isset($line['po_line_id'])) {
-                    $poLine = POLine::find($line['po_line_id']);
-                }
+            foreach ($receipts as $receipt) {
+                // Get uninvoiced lines
+                $uninvoicedLines = $receipt->lines()->where('is_invoiced', false)->get();
                 
-                $lineQuantity = $line['quantity'];
-                $lineUnitPrice = $line['unit_price'];
-                $lineTax = isset($line['tax']) ? $line['tax'] : 0;
-                
-                // Use PO line currency or invoice currency
-                $lineCurrency = $poLine && $poLine->currency ? $poLine->currency : $currency;
-                $lineExchangeRate = $exchangeRate;
-                
-                // If line currency differs from invoice currency, we need to convert
-                if ($lineCurrency !== $currency) {
-                    // Get exchange rate from line currency to base currency
-                    $lineToBaseRate = 1;
-                    if ($lineCurrency !== $baseCurrency) {
-                        $lineRateRecord = ExchangeRate::where('from_currency', $lineCurrency)
-                            ->where('to_currency', $baseCurrency)
-                            ->where('rate_date', '<=', $invoiceDate)
-                            ->orderBy('rate_date', 'desc')
-                            ->first();
+                foreach ($uninvoicedLines as $receiptLine) {
+                    // Get the PO line to get the original price
+                    $poLine = $receiptLine->purchaseOrderLine;
+                    if (!$poLine) {
+                        // Skip if no PO line (free text items, etc.)
+                        continue;
+                    }
+                    
+                    $po = $poLine->purchaseOrder;
+                    
+                    // Track PO currencies
+                    $poCurrencies[$po->currency_code] = true;
+                    
+                    // Get price from PO line
+                    $lineUnitPrice = $poLine->unit_price;
+                    $lineQuantity = $receiptLine->received_quantity;
+                    
+                    // Calculate tax proportionally
+                    $lineTaxRate = $poLine->quantity > 0 ? $poLine->tax / ($poLine->unit_price * $poLine->quantity) : 0;
+                    $lineTax = $lineUnitPrice * $lineQuantity * $lineTaxRate;
+                    
+                    // PO line currency conversion
+                    $poLineCurrency = $po->currency_code ?? $baseCurrency;
+                    $poExchangeRate = $po->exchange_rate ?: 1;
+                    
+                    // If PO line currency differs from invoice currency, we need to convert
+                    if ($poLineCurrency !== $currency) {
+                        // Convert via base currency
+                        if ($poLineCurrency !== $baseCurrency) {
+                            // First convert from PO currency to base currency
+                            $baseUnitPrice = $lineUnitPrice * $poExchangeRate;
+                            $baseTax = $lineTax * $poExchangeRate;
                             
-                        if ($lineRateRecord) {
-                            $lineToBaseRate = $lineRateRecord->rate;
+                            // Then convert from base currency to invoice currency
+                            if ($currency !== $baseCurrency) {
+                                $currencyRate = 1 / $exchangeRate; // inverse because we're going from base to invoice
+                                $lineUnitPrice = $baseUnitPrice * $currencyRate;
+                                $lineTax = $baseTax * $currencyRate;
+                            } else {
+                                $lineUnitPrice = $baseUnitPrice;
+                                $lineTax = $baseTax;
+                            }
                         } else {
-                            return response()->json([
-                                'status' => 'error',
-                                'message' => 'Kurs mata uang tidak ditemukan untuk ' . $lineCurrency . '. Mohon masukkan kurs mata uang secara manual.'
-                            ], 422);
+                            // PO is in base currency, convert directly to invoice currency
+                            $currencyRate = 1 / $exchangeRate; // inverse because we're going from base to invoice
+                            $lineUnitPrice = $lineUnitPrice * $currencyRate;
+                            $lineTax = $lineTax * $currencyRate;
                         }
                     }
                     
-                    // Convert line unit price to invoice currency via base currency
-                    $baseUnitPrice = $lineUnitPrice * $lineToBaseRate;
-                    $lineUnitPrice = $baseUnitPrice / $exchangeRate;
+                    $lineSubtotal = $lineUnitPrice * $lineQuantity;
+                    $lineTotal = $lineSubtotal + $lineTax;
+                    
+                    $subtotal += $lineSubtotal;
+                    $taxTotal += $lineTax;
+                    
+                    $invoiceLines[] = [
+                        'receipt_line_id' => $receiptLine->line_id,
+                        'po_line_id' => $poLine->line_id,
+                        'po_id' => $po->po_id,
+                        'item_id' => $receiptLine->item_id,
+                        'quantity' => $lineQuantity,
+                        'unit_price' => $lineUnitPrice,
+                        'subtotal' => $lineSubtotal,
+                        'tax' => $lineTax,
+                        'total' => $lineTotal,
+                        'currency_code' => $currency,
+                        'exchange_rate' => $exchangeRate,
+                        'base_currency_unit_price' => $lineUnitPrice * $exchangeRate,
+                        'base_currency_subtotal' => $lineSubtotal * $exchangeRate,
+                        'base_currency_tax' => $lineTax * $exchangeRate,
+                        'base_currency_total' => $lineTotal * $exchangeRate
+                    ];
                 }
-                
-                $lineSubtotal = $lineUnitPrice * $lineQuantity;
-                $lineTotal = $lineSubtotal + $lineTax;
-                
-                $subtotal += $lineSubtotal;
-                $taxTotal += $lineTax;
-                
-                $invoiceLines[] = [
-                    'po_line_id' => $line['po_line_id'] ?? null,
-                    'item_id' => $line['item_id'],
-                    'quantity' => $lineQuantity,
-                    'unit_price' => $lineUnitPrice,
-                    'subtotal' => $lineSubtotal,
-                    'tax' => $lineTax,
-                    'total' => $lineTotal,
-                    'currency' => $currency,
-                    'exchange_rate' => $exchangeRate,
-                    'base_unit_price' => $lineUnitPrice * $exchangeRate
-                ];
+            }
+            
+            if (empty($invoiceLines)) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'No uninvoiced receipt lines found in the selected receipts'
+                ], 400);
+            }
+            
+            // If using multiple currencies, warn the user
+            if (count($poCurrencies) > 1) {
+                \Log::warning("Invoice created from POs with multiple currencies: " . implode(", ", array_keys($poCurrencies)));
             }
             
             $totalAmount = $subtotal + $taxTotal;
             
             // Base currency amounts
-            $baseCurrencyTotalAmount = $totalAmount * $exchangeRate;
+            $baseCurrencyTotal = $totalAmount * $exchangeRate;
+            $baseCurrencyTax = $taxTotal * $exchangeRate;
+            
+            // Calculate due date based on vendor payment terms if not provided
+            $dueDate = $request->due_date;
+            if (!$dueDate) {
+                $paymentTerm = $vendor->payment_term ?? 30; // Default 30 days
+                $dueDate = date('Y-m-d', strtotime($invoiceDate . ' + ' . $paymentTerm . ' days'));
+            }
             
             // Create vendor invoice
             $vendorInvoice = VendorInvoice::create([
                 'invoice_number' => $request->invoice_number,
                 'invoice_date' => $invoiceDate,
-                'vendor_id' => $po->vendor_id,
-                'po_id' => $request->po_id,
+                'vendor_id' => $vendorId,
+                'po_id' => null, // No longer using single PO relationship
                 'total_amount' => $totalAmount,
                 'tax_amount' => $taxTotal,
-                'due_date' => $request->due_date,
+                'due_date' => $dueDate,
                 'status' => 'pending',
-                'currency' => $currency,
+                'currency_code' => $currency,
                 'exchange_rate' => $exchangeRate,
-                'base_currency_amount' => $baseCurrencyTotalAmount
+                'base_currency' => $baseCurrency,
+                'base_currency_total' => $baseCurrencyTotal,
+                'base_currency_tax' => $baseCurrencyTax
             ]);
             
-            // Create invoice lines
+            // Create invoice lines and update receipt lines
             foreach ($invoiceLines as $line) {
-                $vendorInvoice->lines()->create($line);
+                $invoiceLine = VendorInvoiceLine::create([
+                    'invoice_id' => $vendorInvoice->invoice_id,
+                    'po_line_id' => $line['po_line_id'],
+                    'item_id' => $line['item_id'],
+                    'quantity' => $line['quantity'],
+                    'unit_price' => $line['unit_price'],
+                    'subtotal' => $line['subtotal'],
+                    'tax' => $line['tax'],
+                    'total' => $line['total'],
+                    'base_currency_unit_price' => $line['base_currency_unit_price'],
+                    'base_currency_subtotal' => $line['base_currency_subtotal'],
+                    'base_currency_tax' => $line['base_currency_tax'],
+                    'base_currency_total' => $line['base_currency_total']
+                ]);
+                
+                // Update receipt line to mark as invoiced
+                GoodsReceiptLine::where('line_id', $line['receipt_line_id'])
+                    ->update([
+                        'is_invoiced' => true,
+                        'invoice_line_id' => $invoiceLine->line_id
+                    ]);
             }
             
-            // Create vendor payable record
+            // Create relations between invoice and receipts
+            foreach ($receipts as $receipt) {
+                DB::table('invoice_receipt_relations')->insert([
+                    'invoice_id' => $vendorInvoice->invoice_id,
+                    'receipt_id' => $receipt->receipt_id,
+                    'created_at' => now(),
+                    'updated_at' => now()
+                ]);
+            }
+            
+            // Create vendor payable
             $vendorPayable = VendorPayable::create([
-                'vendor_id' => $po->vendor_id,
+                'vendor_id' => $vendorId,
                 'invoice_id' => $vendorInvoice->invoice_id,
-                'amount' => $baseCurrencyTotalAmount, // In base currency
-                'due_date' => $request->due_date,
+                'amount' => $baseCurrencyTotal,
+                'due_date' => $dueDate,
                 'paid_amount' => 0,
-                'balance' => $baseCurrencyTotalAmount, // In base currency
+                'balance' => $baseCurrencyTotal,
                 'status' => 'Open',
-                'currency' => $currency,
-                'original_amount' => $totalAmount, // Original invoice amount
-                'exchange_rate' => $exchangeRate
+                'currency_code' => $currency,
+                'exchange_rate' => $exchangeRate,
+                'base_currency' => $baseCurrency,
+                'base_currency_amount' => $baseCurrencyTotal,
+                'base_currency_balance' => $baseCurrencyTotal
             ]);
             
-            // Create accounting journal entry if needed
+            // Create accounting entry if needed
             if ($request->input('create_journal_entry', false)) {
                 $this->createJournalEntry($vendorInvoice, $vendorPayable, $request);
             }
@@ -243,8 +338,8 @@ class VendorInvoiceController extends Controller
             
             return response()->json([
                 'status' => 'success',
-                'message' => 'Faktur Vendor berhasil dibuat',
-                'data' => $vendorInvoice->load(['vendor', 'purchaseOrder', 'lines.item'])
+                'message' => 'Vendor Invoice successfully created',
+                'data' => $vendorInvoice->load(['vendor', 'lines.item', 'goodsReceipts'])
             ], 201);
             
         } catch (\Exception $e) {
@@ -252,188 +347,142 @@ class VendorInvoiceController extends Controller
             
             return response()->json([
                 'status' => 'error',
-                'message' => 'Gagal membuat Faktur Vendor',
-                'error' => $e->getMessage()
+                'message' => 'Failed to create Vendor Invoice',
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
             ], 500);
         }
     }
 
     /**
-     * Menampilkan detail faktur vendor tertentu.
+     * Display the specified vendor invoice.
      *
      * @param  \App\Models\VendorInvoice  $vendorInvoice
      * @return \Illuminate\Http\Response
      */
     public function show(VendorInvoice $vendorInvoice)
     {
-        $vendorInvoice->load(['vendor', 'purchaseOrder', 'lines.item']);
+        $vendorInvoice->load([
+            'vendor', 
+            'lines.item', 
+            'lines.purchaseOrderLine.purchaseOrder',
+            'goodsReceipts'
+        ]);
+        
+        // Get additional receipt details
+        $receiptDetails = [];
+        foreach ($vendorInvoice->goodsReceipts as $receipt) {
+            $receiptLines = GoodsReceiptLine::where('receipt_id', $receipt->receipt_id)
+                ->where('invoice_line_id', '!=', null)
+                ->whereIn('invoice_line_id', $vendorInvoice->lines->pluck('line_id'))
+                ->with(['item', 'purchaseOrderLine.purchaseOrder'])
+                ->get();
+                
+            $receiptDetails[] = [
+                'receipt_id' => $receipt->receipt_id,
+                'receipt_number' => $receipt->receipt_number,
+                'receipt_date' => $receipt->receipt_date,
+                'lines' => $receiptLines
+            ];
+        }
         
         return response()->json([
             'status' => 'success',
-            'data' => $vendorInvoice
+            'data' => [
+                'invoice' => $vendorInvoice,
+                'receipt_details' => $receiptDetails
+            ]
         ]);
     }
 
     /**
-     * Memperbarui faktur vendor yang ada.
+     * Update the specified vendor invoice in storage.
      *
-     * @param  \App\Http\Requests\VendorInvoiceRequest  $request
+     * @param  \Illuminate\Http\Request  $request
      * @param  \App\Models\VendorInvoice  $vendorInvoice
      * @return \Illuminate\Http\Response
      */
-    public function update(VendorInvoiceRequest $request, VendorInvoice $vendorInvoice)
+    public function update(Request $request, VendorInvoice $vendorInvoice)
     {
-        // Check if invoice can be updated (only pending status)
+        // Only allow updating certain fields if invoice is in pending status
         if ($vendorInvoice->status !== 'pending') {
             return response()->json([
                 'status' => 'error',
-                'message' => 'Hanya faktur dengan status pending yang dapat diperbarui'
+                'message' => 'Only invoices with pending status can be updated'
             ], 400);
+        }
+        
+        $validator = Validator::make($request->all(), [
+            'invoice_number' => 'sometimes|required|string|max:50|unique:vendor_invoices,invoice_number,' . $vendorInvoice->invoice_id . ',invoice_id',
+            'invoice_date' => 'sometimes|required|date',
+            'due_date' => 'sometimes|nullable|date|after_or_equal:invoice_date',
+            'exchange_rate' => 'sometimes|required|numeric|min:0.000001',
+            'currency_code' => 'sometimes|required|string|size:3',
+        ]);
+        
+        if ($validator->fails()) {
+            return response()->json([
+                'status' => 'error',
+                'errors' => $validator->errors()
+            ], 422);
         }
         
         try {
             DB::beginTransaction();
             
-            // Get existing currency information
-            $currency = $request->currency ?? $vendorInvoice->currency;
-            $invoiceDate = $request->invoice_date ?? $vendorInvoice->invoice_date;
-            $baseCurrency = config('app.base_currency', 'USD');
-            
-            // Get exchange rate if currency is not base currency
-            $exchangeRate = 1; // Default for base currency
-            if ($currency !== $baseCurrency) {
-                if ($request->has('exchange_rate')) {
-                    $exchangeRate = $request->exchange_rate;
-                } else if ($vendorInvoice->exchange_rate) {
-                    $exchangeRate = $vendorInvoice->exchange_rate;
-                } else {
-                    // Fetch from database
-                    $rateRecord = ExchangeRate::where('from_currency', $currency)
-                        ->where('to_currency', $baseCurrency)
-                        ->where('rate_date', '<=', $invoiceDate)
-                        ->orderBy('rate_date', 'desc')
-                        ->first();
-                    
-                    if ($rateRecord) {
-                        $exchangeRate = $rateRecord->rate;
-                    } else {
-                        return response()->json([
-                            'status' => 'error',
-                            'message' => 'Kurs mata uang tidak ditemukan untuk ' . $currency . '. Mohon masukkan kurs mata uang secara manual.'
-                        ], 422);
-                    }
-                }
-            }
-            
-            // Calculate totals
-            $subtotal = 0;
-            $taxTotal = 0;
-            $invoiceLines = [];
-            
-            foreach ($request->lines as $line) {
-                $poLine = null;
-                if (isset($line['po_line_id'])) {
-                    $poLine = POLine::find($line['po_line_id']);
-                }
-                
-                $lineQuantity = $line['quantity'];
-                $lineUnitPrice = $line['unit_price'];
-                $lineTax = isset($line['tax']) ? $line['tax'] : 0;
-                
-                // Use PO line currency or invoice currency
-                $lineCurrency = $poLine && $poLine->currency ? $poLine->currency : $currency;
-                $lineExchangeRate = $exchangeRate;
-                
-                // If line currency differs from invoice currency, we need to convert
-                if ($lineCurrency !== $currency) {
-                    // Get exchange rate from line currency to base currency
-                    $lineToBaseRate = 1;
-                    if ($lineCurrency !== $baseCurrency) {
-                        $lineRateRecord = ExchangeRate::where('from_currency', $lineCurrency)
-                            ->where('to_currency', $baseCurrency)
-                            ->where('rate_date', '<=', $invoiceDate)
-                            ->orderBy('rate_date', 'desc')
-                            ->first();
-                            
-                        if ($lineRateRecord) {
-                            $lineToBaseRate = $lineRateRecord->rate;
-                        } else {
-                            return response()->json([
-                                'status' => 'error',
-                                'message' => 'Kurs mata uang tidak ditemukan untuk ' . $lineCurrency . '. Mohon masukkan kurs mata uang secara manual.'
-                            ], 422);
-                        }
-                    }
-                    
-                    // Convert line unit price to invoice currency via base currency
-                    $baseUnitPrice = $lineUnitPrice * $lineToBaseRate;
-                    $lineUnitPrice = $baseUnitPrice / $exchangeRate;
-                }
-                
-                $lineSubtotal = $lineUnitPrice * $lineQuantity;
-                $lineTotal = $lineSubtotal + $lineTax;
-                
-                $subtotal += $lineSubtotal;
-                $taxTotal += $lineTax;
-                
-                $invoiceLines[] = [
-                    'po_line_id' => $line['po_line_id'] ?? null,
-                    'item_id' => $line['item_id'],
-                    'quantity' => $lineQuantity,
-                    'unit_price' => $lineUnitPrice,
-                    'subtotal' => $lineSubtotal,
-                    'tax' => $lineTax,
-                    'total' => $lineTotal,
-                    'currency' => $currency,
-                    'exchange_rate' => $exchangeRate,
-                    'base_unit_price' => $lineUnitPrice * $exchangeRate
-                ];
-            }
-            
-            $totalAmount = $subtotal + $taxTotal;
-            
-            // Base currency amounts
-            $baseCurrencyTotalAmount = $totalAmount * $exchangeRate;
-            
-            // Update vendor invoice
-            $vendorInvoice->update([
-                'invoice_number' => $request->invoice_number,
-                'invoice_date' => $invoiceDate,
-                'total_amount' => $totalAmount,
-                'tax_amount' => $taxTotal,
-                'due_date' => $request->due_date,
-                'currency' => $currency,
-                'exchange_rate' => $exchangeRate,
-                'base_currency_amount' => $baseCurrencyTotalAmount
+            // Only allow updating metadata, not lines or receipts
+            $dataToUpdate = $request->only([
+                'invoice_number',
+                'invoice_date',
+                'due_date',
+                'currency_code',
+                'exchange_rate'
             ]);
             
-            // Update invoice lines
-            // Delete existing lines
-            $vendorInvoice->lines()->delete();
-            
-            // Create new lines
-            foreach ($invoiceLines as $line) {
-                $vendorInvoice->lines()->create($line);
+            // If currency or exchange rate changes, need to recalculate base amounts
+            $recalculateBase = false;
+            if (
+                (isset($dataToUpdate['currency_code']) && $dataToUpdate['currency_code'] !== $vendorInvoice->currency_code) ||
+                (isset($dataToUpdate['exchange_rate']) && $dataToUpdate['exchange_rate'] !== $vendorInvoice->exchange_rate)
+            ) {
+                $recalculateBase = true;
             }
             
-            // Update vendor payable
-            $vendorPayable = VendorPayable::where('invoice_id', $vendorInvoice->invoice_id)->first();
-            if ($vendorPayable) {
-                // Calculate remaining balance
-                $newBalance = $baseCurrencyTotalAmount - $vendorPayable->paid_amount;
+            if ($recalculateBase) {
+                $newExchangeRate = $dataToUpdate['exchange_rate'] ?? $vendorInvoice->exchange_rate;
                 
-                $vendorPayable->update([
-                    'amount' => $baseCurrencyTotalAmount,
-                    'due_date' => $request->due_date,
-                    'balance' => $newBalance,
-                    'currency' => $currency,
-                    'original_amount' => $totalAmount,
-                    'exchange_rate' => $exchangeRate
-                ]);
+                // Update base currency amounts in invoice
+                $dataToUpdate['base_currency_total'] = $vendorInvoice->total_amount * $newExchangeRate;
+                $dataToUpdate['base_currency_tax'] = $vendorInvoice->tax_amount * $newExchangeRate;
+                
+                // Update payable
+                $vendorPayable = VendorPayable::where('invoice_id', $vendorInvoice->invoice_id)->first();
+                if ($vendorPayable) {
+                    $vendorPayable->update([
+                        'currency_code' => $dataToUpdate['currency_code'] ?? $vendorInvoice->currency_code,
+                        'exchange_rate' => $newExchangeRate,
+                        'amount' => $dataToUpdate['base_currency_total'],
+                        'balance' => $dataToUpdate['base_currency_total'] - $vendorPayable->paid_amount,
+                        'due_date' => $dataToUpdate['due_date'] ?? $vendorPayable->due_date
+                    ]);
+                }
+                
+                // Update invoice lines
+                foreach ($vendorInvoice->lines as $line) {
+                    $line->update([
+                        'base_currency_unit_price' => $line->unit_price * $newExchangeRate,
+                        'base_currency_subtotal' => $line->subtotal * $newExchangeRate,
+                        'base_currency_tax' => $line->tax * $newExchangeRate,
+                        'base_currency_total' => $line->total * $newExchangeRate
+                    ]);
+                }
             }
             
-            // Update accounting journal entry if needed
+            $vendorInvoice->update($dataToUpdate);
+            
+            // Update journal entry if exists and requested
             if ($request->input('update_journal_entry', false)) {
+                $vendorPayable = VendorPayable::where('invoice_id', $vendorInvoice->invoice_id)->first();
                 $this->updateJournalEntry($vendorInvoice, $vendorPayable, $request);
             }
             
@@ -441,8 +490,8 @@ class VendorInvoiceController extends Controller
             
             return response()->json([
                 'status' => 'success',
-                'message' => 'Faktur Vendor berhasil diperbarui',
-                'data' => $vendorInvoice->load(['vendor', 'purchaseOrder', 'lines.item'])
+                'message' => 'Vendor Invoice successfully updated',
+                'data' => $vendorInvoice->load(['vendor', 'lines.item', 'goodsReceipts'])
             ]);
             
         } catch (\Exception $e) {
@@ -450,14 +499,14 @@ class VendorInvoiceController extends Controller
             
             return response()->json([
                 'status' => 'error',
-                'message' => 'Gagal memperbarui Faktur Vendor',
+                'message' => 'Failed to update Vendor Invoice',
                 'error' => $e->getMessage()
             ], 500);
         }
     }
 
     /**
-     * Menghapus faktur vendor dari penyimpanan.
+     * Remove the specified vendor invoice from storage.
      *
      * @param  \App\Models\VendorInvoice  $vendorInvoice
      * @return \Illuminate\Http\Response
@@ -469,12 +518,34 @@ class VendorInvoiceController extends Controller
         if ($vendorPayable && $vendorPayable->paid_amount > 0) {
             return response()->json([
                 'status' => 'error',
-                'message' => 'Tidak dapat menghapus faktur yang telah memiliki pembayaran'
+                'message' => 'Cannot delete invoice with payments'
+            ], 400);
+        }
+        
+        // Check if invoice status allows deletion
+        if (!in_array($vendorInvoice->status, ['pending', 'cancelled'])) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Only pending or cancelled invoices can be deleted'
             ], 400);
         }
         
         try {
             DB::beginTransaction();
+            
+            // Find receipt lines associated with this invoice
+            $receiptLineIds = GoodsReceiptLine::where('invoice_line_id', function($query) use ($vendorInvoice) {
+                $query->select('line_id')
+                    ->from('vendor_invoice_lines')
+                    ->where('invoice_id', $vendorInvoice->invoice_id);
+            })->pluck('line_id');
+            
+            // Update receipt lines to mark as not invoiced
+            GoodsReceiptLine::whereIn('line_id', $receiptLineIds)
+                ->update([
+                    'is_invoiced' => false,
+                    'invoice_line_id' => null
+                ]);
             
             // Delete related journal entries
             $journalEntries = JournalEntry::where('reference_type', 'VendorInvoice')
@@ -491,6 +562,11 @@ class VendorInvoiceController extends Controller
                 $vendorPayable->delete();
             }
             
+            // Delete invoice receipt relations
+            DB::table('invoice_receipt_relations')
+                ->where('invoice_id', $vendorInvoice->invoice_id)
+                ->delete();
+            
             // Delete invoice lines
             $vendorInvoice->lines()->delete();
             
@@ -501,7 +577,7 @@ class VendorInvoiceController extends Controller
             
             return response()->json([
                 'status' => 'success',
-                'message' => 'Faktur Vendor berhasil dihapus'
+                'message' => 'Vendor Invoice successfully deleted'
             ]);
             
         } catch (\Exception $e) {
@@ -509,14 +585,14 @@ class VendorInvoiceController extends Controller
             
             return response()->json([
                 'status' => 'error',
-                'message' => 'Gagal menghapus Faktur Vendor',
+                'message' => 'Failed to delete Vendor Invoice',
                 'error' => $e->getMessage()
             ], 500);
         }
     }
     
     /**
-     * Memperbarui status faktur vendor.
+     * Update the status of a vendor invoice.
      *
      * @param  \Illuminate\Http\Request  $request
      * @param  \App\Models\VendorInvoice  $vendorInvoice
@@ -549,7 +625,7 @@ class VendorInvoiceController extends Controller
         if (!in_array($newStatus, $allowedTransitions[$oldStatus])) {
             return response()->json([
                 'status' => 'error',
-                'message' => "Status tidak dapat diubah dari {$oldStatus} ke {$newStatus}"
+                'message' => "Status cannot be changed from {$oldStatus} to {$newStatus}"
             ], 400);
         }
         
@@ -573,11 +649,28 @@ class VendorInvoiceController extends Controller
                 }
             }
             
+            // If cancelled, update receipt lines to be uninvoiced
+            if ($newStatus === 'cancelled') {
+                // Find receipt lines associated with this invoice
+                $receiptLineIds = GoodsReceiptLine::where('invoice_line_id', function($query) use ($vendorInvoice) {
+                    $query->select('line_id')
+                        ->from('vendor_invoice_lines')
+                        ->where('invoice_id', $vendorInvoice->invoice_id);
+                })->pluck('line_id');
+                
+                // Update receipt lines to mark as not invoiced
+                GoodsReceiptLine::whereIn('line_id', $receiptLineIds)
+                    ->update([
+                        'is_invoiced' => false,
+                        'invoice_line_id' => null
+                    ]);
+            }
+            
             DB::commit();
             
             return response()->json([
                 'status' => 'success',
-                'message' => 'Status Faktur Vendor berhasil diperbarui',
+                'message' => 'Vendor Invoice status successfully updated',
                 'data' => $vendorInvoice
             ]);
             
@@ -586,14 +679,14 @@ class VendorInvoiceController extends Controller
             
             return response()->json([
                 'status' => 'error',
-                'message' => 'Gagal memperbarui status Faktur Vendor',
+                'message' => 'Failed to update Vendor Invoice status',
                 'error' => $e->getMessage()
             ], 500);
         }
     }
     
     /**
-     * Mengambil kurs mata uang untuk tanggal tertentu.
+     * Get exchange rate for a specific date.
      *
      * @param  \Illuminate\Http\Request  $request
      * @return \Illuminate\Http\Response
@@ -601,7 +694,7 @@ class VendorInvoiceController extends Controller
     public function getExchangeRate(Request $request)
     {
         $validator = Validator::make($request->all(), [
-            'currency' => 'required|string|size:3',
+            'currency_code' => 'required|string|size:3',
             'date' => 'required|date'
         ]);
 
@@ -612,7 +705,7 @@ class VendorInvoiceController extends Controller
             ], 422);
         }
         
-        $currency = $request->currency;
+        $currency = $request->currency_code;
         $date = $request->date;
         $baseCurrency = config('app.base_currency', 'USD');
         
@@ -621,7 +714,7 @@ class VendorInvoiceController extends Controller
             return response()->json([
                 'status' => 'success',
                 'data' => [
-                    'currency' => $baseCurrency,
+                    'currency_code' => $baseCurrency,
                     'rate' => 1,
                     'date' => $date
                 ]
@@ -629,31 +722,122 @@ class VendorInvoiceController extends Controller
         }
         
         // Get exchange rate
-        $rate = ExchangeRate::where('from_currency', $currency)
-            ->where('to_currency', $baseCurrency)
-            ->where('rate_date', '<=', $date)
-            ->orderBy('rate_date', 'desc')
-            ->first();
+        $rate = CurrencyRate::getCurrentRate($currency, $baseCurrency, $date);
         
         if (!$rate) {
             return response()->json([
                 'status' => 'error',
-                'message' => 'Kurs mata uang tidak ditemukan untuk ' . $currency . ' pada tanggal ' . $date
+                'message' => 'Exchange rate not found for ' . $currency . ' on date ' . $date
             ], 404);
         }
         
         return response()->json([
             'status' => 'success',
             'data' => [
-                'currency' => $currency,
-                'rate' => $rate->rate,
-                'date' => $rate->rate_date
+                'currency_code' => $currency,
+                'rate' => $rate,
+                'date' => $date
             ]
         ]);
     }
     
     /**
-     * Membuat entri jurnal untuk faktur vendor.
+     * Get uninvoiced receipts for a vendor.
+     *
+     * @param  \Illuminate\Http\Request  $request
+     * @return \Illuminate\Http\Response
+     */
+    public function getUninvoicedReceipts(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'vendor_id' => 'required|exists:vendors,vendor_id'
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'status' => 'error',
+                'errors' => $validator->errors()
+            ], 422);
+        }
+        
+        $vendorId = $request->vendor_id;
+        
+        // Get receipts that are not fully invoiced
+        $receipts = GoodsReceipt::where('vendor_id', $vendorId)
+            ->where('status', 'confirmed')
+            ->whereHas('lines', function($query) {
+                $query->where('is_invoiced', false);
+            })
+            ->with([
+                'lines' => function($query) {
+                    $query->where('is_invoiced', false)
+                        ->with(['purchaseOrderLine.purchaseOrder', 'item', 'warehouse']);
+                }, 
+                'vendor'
+            ])
+            ->get();
+        
+        // Calculate uninvoiced amounts and prepare response
+        $formattedReceipts = $receipts->map(function($receipt) {
+            $uninvoicedLines = $receipt->lines->map(function($line) {
+                $poLine = $line->purchaseOrderLine;
+                return [
+                    'line_id' => $line->line_id,
+                    'item_id' => $line->item_id,
+                    'item_code' => $line->item->item_code,
+                    'item_name' => $line->item->name,
+                    'po_number' => $poLine ? $poLine->purchaseOrder->po_number : null,
+                    'po_id' => $poLine ? $poLine->purchaseOrder->po_id : null,
+                    'po_line_id' => $poLine ? $poLine->line_id : null,
+                    'quantity' => $line->received_quantity,
+                    'unit_price' => $poLine ? $poLine->unit_price : 0,
+                    'tax' => $poLine ? ($poLine->tax / $poLine->quantity * $line->received_quantity) : 0,
+                    'subtotal' => $poLine ? ($poLine->unit_price * $line->received_quantity) : 0,
+                    'total' => $poLine ? ($poLine->unit_price * $line->received_quantity + 
+                        ($poLine->tax / $poLine->quantity * $line->received_quantity)) : 0,
+                    'currency_code' => $poLine ? $poLine->purchaseOrder->currency_code : null,
+                    'warehouse_id' => $line->warehouse_id,
+                    'warehouse_name' => $line->warehouse->name,
+                    'batch_number' => $line->batch_number
+                ];
+            });
+            
+            // Group by currency
+            $currencies = [];
+            foreach ($uninvoicedLines as $line) {
+                $currencyCode = $line['currency_code'] ?? 'UNKNOWN';
+                if (!isset($currencies[$currencyCode])) {
+                    $currencies[$currencyCode] = [
+                        'subtotal' => 0,
+                        'tax' => 0,
+                        'total' => 0
+                    ];
+                }
+                
+                $currencies[$currencyCode]['subtotal'] += $line['subtotal'];
+                $currencies[$currencyCode]['tax'] += $line['tax'];
+                $currencies[$currencyCode]['total'] += $line['total'];
+            }
+            
+            return [
+                'receipt_id' => $receipt->receipt_id,
+                'receipt_number' => $receipt->receipt_number,
+                'receipt_date' => $receipt->receipt_date,
+                'uninvoiced_lines' => $uninvoicedLines,
+                'uninvoiced_count' => $uninvoicedLines->count(),
+                'po_numbers' => $receipt->getPoNumbersAttribute(),
+                'totals_by_currency' => $currencies
+            ];
+        });
+        
+        return response()->json([
+            'status' => 'success',
+            'data' => $formattedReceipts
+        ]);
+    }
+    
+    /**
+     * Create journal entry for a vendor invoice.
      *
      * @param  \App\Models\VendorInvoice  $vendorInvoice
      * @param  \App\Models\Accounting\VendorPayable  $vendorPayable
@@ -670,7 +854,7 @@ class VendorInvoiceController extends Controller
         ]);
         
         if ($validator->fails()) {
-            throw new \Exception('Akun GL diperlukan untuk membuat entri jurnal: ' . json_encode($validator->errors()));
+            throw new \Exception('GL accounts required to create journal entry: ' . json_encode($validator->errors()));
         }
         
         // Get account IDs
@@ -687,7 +871,7 @@ class VendorInvoiceController extends Controller
             'entry_date' => $vendorInvoice->invoice_date,
             'reference_type' => 'VendorInvoice',
             'reference_id' => $vendorInvoice->invoice_id,
-            'description' => 'Faktur dari ' . $vendorInvoice->vendor->name . ' - ' . $vendorInvoice->invoice_number,
+            'description' => 'Invoice from ' . $vendorInvoice->vendor->name . ' - ' . $vendorInvoice->invoice_number,
             'period_id' => $periodId,
             'status' => 'Posted'
         ]);
@@ -710,8 +894,8 @@ class VendorInvoiceController extends Controller
             'account_id' => $expenseAccountId,
             'debit_amount' => $baseCurrencySubtotal,
             'credit_amount' => 0,
-            'description' => 'Biaya dari ' . $vendorInvoice->vendor->name,
-            'currency' => $vendorInvoice->currency,
+            'description' => 'Expense from ' . $vendorInvoice->vendor->name,
+            'currency_code' => $vendorInvoice->currency_code,
             'foreign_amount' => $subtotal
         ]);
         
@@ -722,8 +906,8 @@ class VendorInvoiceController extends Controller
                 'account_id' => $taxAccountId,
                 'debit_amount' => $baseCurrencyTaxAmount,
                 'credit_amount' => 0,
-                'description' => 'Pajak dari ' . $vendorInvoice->vendor->name,
-                'currency' => $vendorInvoice->currency,
+                'description' => 'Tax from ' . $vendorInvoice->vendor->name,
+                'currency_code' => $vendorInvoice->currency_code,
                 'foreign_amount' => $taxAmount
             ]);
         }
@@ -734,14 +918,14 @@ class VendorInvoiceController extends Controller
             'account_id' => $apAccountId,
             'debit_amount' => 0,
             'credit_amount' => $baseCurrencyTotalAmount,
-            'description' => 'Hutang ke ' . $vendorInvoice->vendor->name,
-            'currency' => $vendorInvoice->currency,
+            'description' => 'Payable to ' . $vendorInvoice->vendor->name,
+            'currency_code' => $vendorInvoice->currency_code,
             'foreign_amount' => $totalAmount
         ]);
     }
     
     /**
-     * Memperbarui entri jurnal untuk faktur vendor.
+     * Update journal entry for a vendor invoice.
      *
      * @param  \App\Models\VendorInvoice  $vendorInvoice
      * @param  \App\Models\Accounting\VendorPayable  $vendorPayable
@@ -769,7 +953,7 @@ class VendorInvoiceController extends Controller
         ]);
         
         if ($validator->fails()) {
-            throw new \Exception('Akun GL diperlukan untuk memperbarui entri jurnal: ' . json_encode($validator->errors()));
+            throw new \Exception('GL accounts required to update journal entry: ' . json_encode($validator->errors()));
         }
         
         // Get account IDs
@@ -780,7 +964,7 @@ class VendorInvoiceController extends Controller
         // Update journal entry header
         $journalEntry->update([
             'entry_date' => $vendorInvoice->invoice_date,
-            'description' => 'Faktur dari ' . $vendorInvoice->vendor->name . ' - ' . $vendorInvoice->invoice_number
+            'description' => 'Invoice from ' . $vendorInvoice->vendor->name . ' - ' . $vendorInvoice->invoice_number
         ]);
         
         // Delete existing journal entry lines
@@ -804,8 +988,8 @@ class VendorInvoiceController extends Controller
             'account_id' => $expenseAccountId,
             'debit_amount' => $baseCurrencySubtotal,
             'credit_amount' => 0,
-            'description' => 'Biaya dari ' . $vendorInvoice->vendor->name,
-            'currency' => $vendorInvoice->currency,
+            'description' => 'Expense from ' . $vendorInvoice->vendor->name,
+            'currency_code' => $vendorInvoice->currency_code,
             'foreign_amount' => $subtotal
         ]);
         
@@ -816,8 +1000,8 @@ class VendorInvoiceController extends Controller
                 'account_id' => $taxAccountId,
                 'debit_amount' => $baseCurrencyTaxAmount,
                 'credit_amount' => 0,
-                'description' => 'Pajak dari ' . $vendorInvoice->vendor->name,
-                'currency' => $vendorInvoice->currency,
+                'description' => 'Tax from ' . $vendorInvoice->vendor->name,
+                'currency_code' => $vendorInvoice->currency_code,
                 'foreign_amount' => $taxAmount
             ]);
         }
@@ -828,8 +1012,8 @@ class VendorInvoiceController extends Controller
             'account_id' => $apAccountId,
             'debit_amount' => 0,
             'credit_amount' => $baseCurrencyTotalAmount,
-            'description' => 'Hutang ke ' . $vendorInvoice->vendor->name,
-            'currency' => $vendorInvoice->currency,
+            'description' => 'Payable to ' . $vendorInvoice->vendor->name,
+            'currency_code' => $vendorInvoice->currency_code,
             'foreign_amount' => $totalAmount
         ]);
     }
@@ -849,7 +1033,7 @@ class VendorInvoiceController extends Controller
             ->first();
         
         if (!$currentPeriod) {
-            throw new \Exception('Tidak ada periode akuntansi yang aktif untuk tanggal saat ini');
+            throw new \Exception('No active accounting period found for the current date');
         }
         
         return $currentPeriod->period_id;

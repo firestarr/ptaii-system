@@ -1,768 +1,851 @@
 <!-- src/views/purchasing/PendingReceiptsDashboard.vue -->
 <template>
-    <div class="pending-receipts-dashboard-container">
-        <div class="page-header">
-            <h1>Pending Goods Receipts Dashboard</h1>
-            <div class="header-actions">
-                <router-link
-                    to="/purchasing/goods-receipts/create"
-                    class="btn btn-primary"
-                >
-                    <i class="fas fa-plus"></i> Create Goods Receipt
-                </router-link>
-            </div>
+    <div class="pending-receipts-dashboard">
+      <div class="card">
+        <div class="card-header">
+          <h2>Pending Receipts Dashboard</h2>
+          <div class="actions">
+            <router-link to="/purchasing/goods-receipts" class="btn btn-secondary">
+              <i class="fas fa-list"></i> All Receipts
+            </router-link>
+            <router-link to="/purchasing/goods-receipts/create" class="btn btn-primary">
+              <i class="fas fa-plus"></i> Create Receipt
+            </router-link>
+          </div>
         </div>
-
-        <div class="dashboard-content">
-            <!-- Summary Cards Section -->
-            <div class="summary-section">
-                <div class="summary-card">
-                    <div class="card-content">
-                        <div class="card-icon pending-icon">
-                            <i class="fas fa-clipboard-list"></i>
-                        </div>
-                        <div class="card-data">
-                            <div class="card-value">{{ pendingCount }}</div>
-                            <div class="card-label">Pending Receipts</div>
-                        </div>
-                    </div>
-                    <div class="card-footer">
-                        <router-link
-                            to="/purchasing/goods-receipts?status=pending"
-                        >
-                            View All <i class="fas fa-arrow-right"></i>
-                        </router-link>
-                    </div>
+  
+        <div class="card-body">
+          <!-- Loading indicator -->
+          <div v-if="loading" class="loading-container">
+            <i class="fas fa-spinner fa-spin"></i> Loading dashboard data...
+          </div>
+  
+          <div v-else>
+            <!-- Summary Cards -->
+            <div class="summary-cards">
+              <div class="summary-card">
+                <div class="summary-icon total-receipts">
+                  <i class="fas fa-receipt"></i>
                 </div>
-
-                <div class="summary-card">
-                    <div class="card-content">
-                        <div class="card-icon overdue-icon">
-                            <i class="fas fa-exclamation-triangle"></i>
-                        </div>
-                        <div class="card-data">
-                            <div class="card-value">{{ overdueCount }}</div>
-                            <div class="card-label">Overdue (>48h)</div>
-                        </div>
-                    </div>
-                    <div class="card-footer">
-                        <router-link
-                            to="/purchasing/goods-receipts?status=pending&sort_field=receipt_date&sort_direction=asc"
-                        >
-                            View All <i class="fas fa-arrow-right"></i>
-                        </router-link>
-                    </div>
+                <div class="summary-content">
+                  <span class="summary-label">Pending Receipts</span>
+                  <span class="summary-value">{{ metrics.pendingReceipts }}</span>
                 </div>
-
-                <div class="summary-card">
-                    <div class="card-content">
-                        <div class="card-icon today-icon">
-                            <i class="fas fa-calendar-day"></i>
-                        </div>
-                        <div class="card-data">
-                            <div class="card-value">{{ todayCount }}</div>
-                            <div class="card-label">Created Today</div>
-                        </div>
-                    </div>
-                    <div class="card-footer">
-                        <router-link
-                            :to="`/purchasing/goods-receipts?date_from=${todayDateStr}&date_to=${todayDateStr}`"
-                        >
-                            View All <i class="fas fa-arrow-right"></i>
-                        </router-link>
-                    </div>
+              </div>
+  
+              <div class="summary-card">
+                <div class="summary-icon total-items">
+                  <i class="fas fa-box"></i>
                 </div>
-
-                <div class="summary-card">
-                    <div class="card-content">
-                        <div class="card-icon confirmed-icon">
+                <div class="summary-content">
+                  <span class="summary-label">Items to Receive</span>
+                  <span class="summary-value">{{ metrics.pendingItems }}</span>
+                </div>
+              </div>
+  
+              <div class="summary-card">
+                <div class="summary-icon total-vendors">
+                  <i class="fas fa-users"></i>
+                </div>
+                <div class="summary-content">
+                  <span class="summary-label">Vendors</span>
+                  <span class="summary-value">{{ metrics.vendorCount }}</span>
+                </div>
+              </div>
+  
+              <div class="summary-card">
+                <div class="summary-icon overdue">
+                  <i class="fas fa-exclamation-triangle"></i>
+                </div>
+                <div class="summary-content">
+                  <span class="summary-label">Overdue Receipts</span>
+                  <span class="summary-value">{{ metrics.overdueCount }}</span>
+                </div>
+              </div>
+            </div>
+  
+            <!-- Pending Receipts -->
+            <div class="dashboard-section">
+              <div class="section-header">
+                <h3>Pending Receipts</h3>
+                <div class="section-actions">
+                  <div class="search-box">
+                    <input
+                      type="text"
+                      v-model="pendingReceiptsSearch"
+                      placeholder="Search receipt or vendor..."
+                      @input="filterPendingReceipts"
+                    />
+                    <i class="fas fa-search"></i>
+                  </div>
+                </div>
+              </div>
+              
+              <div v-if="filteredPendingReceipts.length === 0" class="empty-state">
+                <i class="fas fa-inbox"></i>
+                <p>No pending receipts found</p>
+              </div>
+              
+              <div v-else class="table-responsive">
+                <table class="data-table">
+                  <thead>
+                    <tr>
+                      <th>Receipt Number</th>
+                      <th>Date</th>
+                      <th>Vendor</th>
+                      <th>Items</th>
+                      <th>PO Numbers</th>
+                      <th>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="receipt in filteredPendingReceipts" :key="receipt.receipt_id">
+                      <td>{{ receipt.receipt_number }}</td>
+                      <td>{{ formatDate(receipt.receipt_date) }}</td>
+                      <td>{{ receipt.vendor ? receipt.vendor.name : 'N/A' }}</td>
+                      <td>{{ receipt.lines.length }}</td>
+                      <td>{{ receipt.po_numbers }}</td>
+                      <td>
+                        <div class="table-actions">
+                          <router-link :to="`/purchasing/goods-receipts/${receipt.receipt_id}`" class="btn-icon" title="View Details">
+                            <i class="fas fa-eye"></i>
+                          </router-link>
+                          <router-link :to="`/purchasing/goods-receipts/${receipt.receipt_id}/confirm`" class="btn-icon confirm" title="Confirm Receipt">
                             <i class="fas fa-check-circle"></i>
+                          </router-link>
                         </div>
-                        <div class="card-data">
-                            <div class="card-value">
-                                {{ confirmedTodayCount }}
-                            </div>
-                            <div class="card-label">Confirmed Today</div>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+  
+            <!-- Outstanding Purchase Orders -->
+            <div class="dashboard-section">
+              <div class="section-header">
+                <h3>Outstanding Purchase Orders</h3>
+                <div class="section-actions">
+                  <div class="search-box">
+                    <input
+                      type="text"
+                      v-model="outstandingPOsSearch"
+                      placeholder="Search PO or vendor..."
+                      @input="filterOutstandingPOs"
+                    />
+                    <i class="fas fa-search"></i>
+                  </div>
+                </div>
+              </div>
+              
+              <div v-if="filteredOutstandingPOs.length === 0" class="empty-state">
+                <i class="fas fa-file-invoice"></i>
+                <p>No outstanding purchase orders found</p>
+              </div>
+              
+              <div v-else class="table-responsive">
+                <table class="data-table">
+                  <thead>
+                    <tr>
+                      <th>PO Number</th>
+                      <th>Date</th>
+                      <th>Vendor</th>
+                      <th>Expected Delivery</th>
+                      <th>Status</th>
+                      <th>Items</th>
+                      <th>Progress</th>
+                      <th>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="po in filteredOutstandingPOs" :key="po.po_id">
+                      <td>{{ po.po_number }}</td>
+                      <td>{{ formatDate(po.po_date) }}</td>
+                      <td>{{ po.vendor ? po.vendor.name : 'N/A' }}</td>
+                      <td>
+                        <span :class="{ 'overdue-date': isOverdue(po.expected_delivery) }">
+                          {{ formatDate(po.expected_delivery) }}
+                        </span>
+                      </td>
+                      <td>
+                        <span :class="'status-badge ' + po.status">
+                          {{ po.status }}
+                        </span>
+                      </td>
+                      <td>{{ po.total_items }}</td>
+                      <td>
+                        <div class="progress-bar">
+                          <div class="progress-fill" :style="{ width: po.progress + '%' }"></div>
                         </div>
-                    </div>
-                    <div class="card-footer">
-                        <router-link
-                            :to="`/purchasing/goods-receipts?status=confirmed&date_from=${todayDateStr}&date_to=${todayDateStr}`"
-                        >
-                            View All <i class="fas fa-arrow-right"></i>
-                        </router-link>
-                    </div>
-                </div>
+                        <div class="progress-text">{{ po.progress }}% received</div>
+                      </td>
+                      <td>
+                        <div class="table-actions">
+                          <router-link :to="`/purchasing/orders/${po.po_id}`" class="btn-icon" title="View PO">
+                            <i class="fas fa-eye"></i>
+                          </router-link>
+                          <router-link 
+                            to="/purchasing/goods-receipts/create" 
+                            class="btn-icon create" 
+                            title="Create Receipt"
+                            @click="selectPOForReceipt(po)"
+                          >
+                            <i class="fas fa-plus"></i>
+                          </router-link>
+                        </div>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
             </div>
-
-            <!-- Recent Pending Receipts Section -->
-            <div class="table-section">
-                <div class="section-header">
-                    <h2>Recent Pending Receipts</h2>
-                    <router-link
-                        to="/purchasing/goods-receipts?status=pending"
-                        class="view-all-link"
-                    >
-                        View All <i class="fas fa-arrow-right"></i>
-                    </router-link>
-                </div>
-
-                <div v-if="isLoading" class="loading-indicator">
-                    <i class="fas fa-spinner fa-spin"></i> Loading pending
-                    receipts...
-                </div>
-
-                <div
-                    v-else-if="pendingReceipts.length === 0"
-                    class="empty-state"
-                >
-                    <div class="empty-icon">
-                        <i class="fas fa-check-circle"></i>
+  
+            <!-- Vendor Performance -->
+            <div class="dashboard-section">
+              <div class="section-header">
+                <h3>Vendor Receipt Performance</h3>
+              </div>
+              
+              <div v-if="vendorPerformance.length === 0" class="empty-state">
+                <i class="fas fa-chart-line"></i>
+                <p>No vendor performance data available</p>
+              </div>
+              
+              <div v-else class="vendor-performance-grid">
+                <div v-for="vendor in vendorPerformance" :key="vendor.vendor_id" class="vendor-card">
+                  <h4>{{ vendor.name }}</h4>
+                  <div class="vendor-metrics">
+                    <div class="metric">
+                      <span class="metric-label">On-Time Delivery:</span>
+                      <span class="metric-value">{{ vendor.on_time_percentage }}%</span>
                     </div>
-                    <h3>All Caught Up!</h3>
-                    <p>There are no pending goods receipts at the moment.</p>
-                </div>
-
-                <div v-else class="data-table-wrapper">
-                    <table class="data-table">
-                        <thead>
-                            <tr>
-                                <th>Receipt #</th>
-                                <th>Date</th>
-                                <th>Vendor</th>
-                                <th>PO #</th>
-                                <th>Age</th>
-                                <th>Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr
-                                v-for="receipt in pendingReceipts"
-                                :key="receipt.receipt_id"
-                                :class="{
-                                    'overdue-row': isOverdue(
-                                        receipt.receipt_date
-                                    ),
-                                }"
-                            >
-                                <td>{{ receipt.receipt_number }}</td>
-                                <td>{{ formatDate(receipt.receipt_date) }}</td>
-                                <td>
-                                    {{
-                                        receipt.vendor
-                                            ? receipt.vendor.name
-                                            : "N/A"
-                                    }}
-                                </td>
-                                <td>
-                                    <router-link
-                                        v-if="receipt.purchaseOrder"
-                                        :to="`/purchasing/orders/${receipt.po_id}`"
-                                    >
-                                        {{ receipt.purchaseOrder.po_number }}
-                                    </router-link>
-                                    <span v-else>N/A</span>
-                                </td>
-                                <td>
-                                    <span
-                                        :class="
-                                            getAgeClass(receipt.receipt_date)
-                                        "
-                                    >
-                                        {{ getAgeText(receipt.receipt_date) }}
-                                    </span>
-                                </td>
-                                <td>
-                                    <div class="action-buttons">
-                                        <router-link
-                                            :to="`/purchasing/goods-receipts/${receipt.receipt_id}`"
-                                            class="action-btn view-btn"
-                                            title="View Details"
-                                        >
-                                            <i class="fas fa-eye"></i>
-                                        </router-link>
-                                        <router-link
-                                            :to="`/purchasing/goods-receipts/${receipt.receipt_id}/confirm`"
-                                            class="action-btn confirm-btn"
-                                            title="Confirm Receipt"
-                                        >
-                                            <i class="fas fa-check-circle"></i>
-                                        </router-link>
-                                    </div>
-                                </td>
-                            </tr>
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-
-            <!-- Items to Receive Section -->
-            <div class="table-section">
-                <div class="section-header">
-                    <h2>Top Items Awaiting Receipt</h2>
-                </div>
-
-                <div v-if="isLoadingItems" class="loading-indicator">
-                    <i class="fas fa-spinner fa-spin"></i> Loading items data...
-                </div>
-
-                <div v-else-if="pendingItems.length === 0" class="empty-state">
-                    <div class="empty-icon">
-                        <i class="fas fa-box"></i>
+                    <div class="metric">
+                      <span class="metric-label">Avg. Receipt Time:</span>
+                      <span class="metric-value">{{ vendor.avg_receipt_days }} days</span>
                     </div>
-                    <h3>No Items Pending</h3>
-                    <p>There are no items awaiting receipt at the moment.</p>
+                    <div class="metric">
+                      <span class="metric-label">Receipts Pending:</span>
+                      <span class="metric-value">{{ vendor.pending_receipts }}</span>
+                    </div>
+                  </div>
+                  <div class="vendor-chart">
+                    <div class="on-time-bar">
+                      <div class="on-time-fill" :style="{ width: vendor.on_time_percentage + '%' }"></div>
+                    </div>
+                  </div>
                 </div>
-
-                <div v-else class="data-table-wrapper">
-                    <table class="data-table">
-                        <thead>
-                            <tr>
-                                <th>Item</th>
-                                <th>Code</th>
-                                <th>Pending Qty</th>
-                                <th>Value</th>
-                                <th>Open POs</th>
-                                <th>Oldest PO Date</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr
-                                v-for="item in pendingItems"
-                                :key="item.item_id"
-                            >
-                                <td>{{ item.name }}</td>
-                                <td>{{ item.item_code }}</td>
-                                <td>{{ item.pending_quantity }}</td>
-                                <td>
-                                    {{ formatCurrency(item.pending_value) }}
-                                </td>
-                                <td>{{ item.open_pos }}</td>
-                                <td>
-                                    <span
-                                        :class="
-                                            getAgeClass(item.oldest_po_date)
-                                        "
-                                    >
-                                        {{ formatDate(item.oldest_po_date) }}
-                                    </span>
-                                </td>
-                            </tr>
-                        </tbody>
-                    </table>
-                </div>
+              </div>
             </div>
+          </div>
         </div>
+      </div>
     </div>
-</template>
-
-<script>
-import { ref, computed, onMounted } from "vue";
-
-export default {
-    name: "PendingReceiptsDashboard",
-    setup() {
-        // Data
-        const pendingReceipts = ref([]);
-        const pendingItems = ref([]);
-        const isLoading = ref(true);
-        const isLoadingItems = ref(true);
-
-        // Summary counts
-        const pendingCount = ref(0);
-        const overdueCount = ref(0);
-        const todayCount = ref(0);
-        const confirmedTodayCount = ref(0);
-
-        // Today's date for filtering
-        const today = new Date();
-        const todayDateStr = computed(() => {
-            return today.toISOString().slice(0, 10);
-        });
-
-        // Fetch pending receipts
-        const fetchPendingReceipts = async () => {
-            isLoading.value = true;
-
-            try {
-                const response = await fetch(
-                    "/api/goods-receipts?status=pending&per_page=5&sort_field=receipt_date&sort_direction=asc",
-                    {
-                        headers: {
-                            Authorization: `Bearer ${localStorage.getItem(
-                                "token"
-                            )}`,
-                            "Content-Type": "application/json",
-                        },
-                    }
-                );
-
-                const data = await response.json();
-
-                if (data && data.data) {
-                    pendingReceipts.value = data.data;
-                } else {
-                    pendingReceipts.value = [];
-                }
-            } catch (error) {
-                console.error("Error fetching pending receipts:", error);
-                pendingReceipts.value = [];
-            } finally {
-                isLoading.value = false;
-            }
-        };
-
-        // Fetch dashboard summary
-        const fetchDashboardSummary = async () => {
-            try {
-                const response = await fetch(
-                    "/api/goods-receipts/dashboard-summary",
-                    {
-                        headers: {
-                            Authorization: `Bearer ${localStorage.getItem(
-                                "token"
-                            )}`,
-                            "Content-Type": "application/json",
-                        },
-                    }
-                );
-
-                const data = await response.json();
-
-                if (data && data.data) {
-                    pendingCount.value = data.data.pending_count || 0;
-                    overdueCount.value = data.data.overdue_count || 0;
-                    todayCount.value = data.data.today_count || 0;
-                    confirmedTodayCount.value =
-                        data.data.confirmed_today_count || 0;
-                }
-            } catch (error) {
-                console.error("Error fetching dashboard summary:", error);
-            }
-        };
-
-        // Fetch pending items
-        const fetchPendingItems = async () => {
-            isLoadingItems.value = true;
-
-            try {
-                const response = await fetch(
-                    "/api/goods-receipts/pending-items",
-                    {
-                        headers: {
-                            Authorization: `Bearer ${localStorage.getItem(
-                                "token"
-                            )}`,
-                            "Content-Type": "application/json",
-                        },
-                    }
-                );
-
-                const data = await response.json();
-
-                if (data && data.data) {
-                    pendingItems.value = data.data;
-                } else {
-                    pendingItems.value = [];
-                }
-            } catch (error) {
-                console.error("Error fetching pending items:", error);
-                pendingItems.value = [];
-            } finally {
-                isLoadingItems.value = false;
-            }
-        };
-
-        // Format date
-        const formatDate = (dateString) => {
-            if (!dateString) return "N/A";
-            const date = new Date(dateString);
-            return date.toLocaleDateString("en-US", {
-                year: "numeric",
-                month: "short",
-                day: "2-digit",
-            });
-        };
-
-        // Format currency
-        const formatCurrency = (value) => {
-            if (value === undefined || value === null) return "$0.00";
-            return new Intl.NumberFormat("en-US", {
-                style: "currency",
-                currency: "USD",
-            }).format(value);
-        };
-
-        // Check if a receipt is overdue (older than 48 hours)
-        const isOverdue = (dateString) => {
-            if (!dateString) return false;
-
-            const receiptDate = new Date(dateString);
-            const now = new Date();
-            const diffHours = (now - receiptDate) / (1000 * 60 * 60);
-
-            return diffHours > 48;
-        };
-
-        // Get age text
-        const getAgeText = (dateString) => {
-            if (!dateString) return "N/A";
-
-            const receiptDate = new Date(dateString);
-            const now = new Date();
-            const diffHours = Math.floor(
-                (now - receiptDate) / (1000 * 60 * 60)
-            );
-
-            if (diffHours < 1) {
-                return "Just now";
-            } else if (diffHours < 24) {
-                return `${diffHours} hour${diffHours > 1 ? "s" : ""}`;
-            } else {
-                const diffDays = Math.floor(diffHours / 24);
-                return `${diffDays} day${diffDays > 1 ? "s" : ""}`;
-            }
-        };
-
-        // Get CSS class based on age
-        const getAgeClass = (dateString) => {
-            if (!dateString) return "";
-
-            const itemDate = new Date(dateString);
-            const now = new Date();
-            const diffHours = (now - itemDate) / (1000 * 60 * 60);
-
-            if (diffHours < 24) {
-                return "age-normal";
-            } else if (diffHours < 48) {
-                return "age-warning";
-            } else {
-                return "age-critical";
-            }
-        };
-
-        // Initialize
-        onMounted(() => {
-            fetchPendingReceipts();
-            fetchDashboardSummary();
-            fetchPendingItems();
-        });
-
-        return {
-            pendingReceipts,
-            pendingItems,
-            isLoading,
-            isLoadingItems,
-            pendingCount,
-            overdueCount,
-            todayCount,
-            confirmedTodayCount,
-            todayDateStr,
-            formatDate,
-            formatCurrency,
-            isOverdue,
-            getAgeText,
-            getAgeClass,
-        };
+  </template>
+  
+  <script>
+  import axios from 'axios';
+  
+  export default {
+    name: 'PendingReceiptsDashboard',
+    data() {
+      return {
+        loading: true,
+        metrics: {
+          pendingReceipts: 0,
+          pendingItems: 0,
+          vendorCount: 0,
+          overdueCount: 0
+        },
+        pendingReceipts: [],
+        outstandingPOs: [],
+        vendorPerformance: [],
+        pendingReceiptsSearch: '',
+        outstandingPOsSearch: '',
+        filteredPendingReceipts: [],
+        filteredOutstandingPOs: []
+      };
     },
-};
-</script>
-
-<style scoped>
-.pending-receipts-dashboard-container {
-    padding: 1rem;
-}
-
-.page-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 1.5rem;
-}
-
-.page-header h1 {
-    margin: 0;
-    font-size: 1.5rem;
-    color: var(--gray-800);
-}
-
-.dashboard-content {
-    display: flex;
-    flex-direction: column;
-    gap: 1.5rem;
-}
-
-/* Summary Cards */
-.summary-section {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
-    gap: 1.5rem;
-}
-
-.summary-card {
+    created() {
+      this.fetchDashboardData();
+    },
+    methods: {
+      fetchDashboardData() {
+        this.loading = true;
+        
+        // For a real implementation, you would create a specific API endpoint for the dashboard
+        // This is a simulation using existing endpoints
+        Promise.all([
+          this.fetchPendingReceipts(),
+          this.fetchOutstandingPOs(),
+          this.fetchVendorPerformance()
+        ])
+          .then(() => {
+            // Calculate metrics
+            this.calculateMetrics();
+          })
+          .catch(error => {
+            console.error('Error fetching dashboard data:', error);
+            this.$toast.error('Failed to load dashboard data');
+          })
+          .finally(() => {
+            this.loading = false;
+          });
+      },
+      fetchPendingReceipts() {
+        return axios.get('/api/goods-receipts', { params: { status: 'pending' } })
+          .then(response => {
+            this.pendingReceipts = response.data.data.data || [];
+            this.filteredPendingReceipts = [...this.pendingReceipts];
+          });
+      },
+      fetchOutstandingPOs() {
+        return axios.get('/api/purchase-orders', { 
+          params: { 
+            status: ['sent', 'partial'],
+            outstanding: true 
+          } 
+        })
+          .then(response => {
+            this.outstandingPOs = response.data.data || [];
+            
+            // Calculate progress for each PO
+            this.outstandingPOs = this.outstandingPOs.map(po => {
+              let received = 0;
+              let total = 0;
+              
+              if (po.lines && po.lines.length > 0) {
+                po.lines.forEach(line => {
+                  const lineReceived = line.received_quantity || 0;
+                  const lineTotal = line.quantity || 0;
+                  
+                  received += lineReceived;
+                  total += lineTotal;
+                });
+                
+                po.progress = total > 0 ? Math.round((received / total) * 100) : 0;
+                po.total_items = po.lines.length;
+              } else {
+                po.progress = 0;
+                po.total_items = 0;
+              }
+              
+              return po;
+            });
+            
+            this.filteredOutstandingPOs = [...this.outstandingPOs];
+          });
+      },
+      fetchVendorPerformance() {
+        // In a real implementation, this would be a specific endpoint
+        // Here we'll simulate it with sample data based on vendors in the POs
+        return Promise.resolve().then(() => {
+          const vendors = {};
+          
+          // Collect vendor IDs from POs
+          this.outstandingPOs.forEach(po => {
+            if (po.vendor && po.vendor.vendor_id) {
+              if (!vendors[po.vendor.vendor_id]) {
+                vendors[po.vendor.vendor_id] = {
+                  vendor_id: po.vendor.vendor_id,
+                  name: po.vendor.name,
+                  total_pos: 0,
+                  on_time_deliveries: 0,
+                  total_deliveries: 0,
+                  receipt_days: [],
+                  pending_receipts: 0
+                };
+              }
+              
+              vendors[po.vendor.vendor_id].total_pos++;
+              
+              // Simulate some random performance data
+              const onTime = Math.random() > 0.3;
+              if (onTime) {
+                vendors[po.vendor.vendor_id].on_time_deliveries++;
+              }
+              vendors[po.vendor.vendor_id].total_deliveries++;
+              
+              // Random receipt days between 1 and 10
+              vendors[po.vendor.vendor_id].receipt_days.push(Math.floor(Math.random() * 10) + 1);
+            }
+          });
+          
+          // Count pending receipts per vendor
+          this.pendingReceipts.forEach(receipt => {
+            if (receipt.vendor && receipt.vendor.vendor_id && vendors[receipt.vendor.vendor_id]) {
+              vendors[receipt.vendor.vendor_id].pending_receipts++;
+            }
+          });
+          
+          // Calculate averages and percentages
+          this.vendorPerformance = Object.values(vendors).map(vendor => {
+            return {
+              vendor_id: vendor.vendor_id,
+              name: vendor.name,
+              on_time_percentage: vendor.total_deliveries > 0 
+                ? Math.round((vendor.on_time_deliveries / vendor.total_deliveries) * 100) 
+                : 0,
+              avg_receipt_days: vendor.receipt_days.length > 0 
+                ? Math.round(vendor.receipt_days.reduce((sum, days) => sum + days, 0) / vendor.receipt_days.length * 10) / 10
+                : 0,
+              pending_receipts: vendor.pending_receipts
+            };
+          });
+        });
+      },
+      calculateMetrics() {
+        this.metrics = {
+          pendingReceipts: this.pendingReceipts.length,
+          pendingItems: this.pendingReceipts.reduce((sum, receipt) => sum + (receipt.lines ? receipt.lines.length : 0), 0),
+          vendorCount: this.vendorPerformance.length,
+          overdueCount: this.outstandingPOs.filter(po => this.isOverdue(po.expected_delivery)).length
+        };
+      },
+      formatDate(dateString) {
+        if (!dateString) return 'N/A';
+        const date = new Date(dateString);
+        return date.toLocaleDateString('id-ID', { 
+          year: 'numeric', 
+          month: 'short', 
+          day: 'numeric' 
+        });
+      },
+      isOverdue(dateString) {
+        if (!dateString) return false;
+        const deliveryDate = new Date(dateString);
+        const today = new Date();
+        return deliveryDate < today;
+      },
+      filterPendingReceipts() {
+        if (!this.pendingReceiptsSearch) {
+          this.filteredPendingReceipts = [...this.pendingReceipts];
+          return;
+        }
+        
+        const search = this.pendingReceiptsSearch.toLowerCase();
+        this.filteredPendingReceipts = this.pendingReceipts.filter(receipt => 
+          receipt.receipt_number.toLowerCase().includes(search) ||
+          (receipt.vendor && receipt.vendor.name.toLowerCase().includes(search))
+        );
+      },
+      filterOutstandingPOs() {
+        if (!this.outstandingPOsSearch) {
+          this.filteredOutstandingPOs = [...this.outstandingPOs];
+          return;
+        }
+        
+        const search = this.outstandingPOsSearch.toLowerCase();
+        this.filteredOutstandingPOs = this.outstandingPOs.filter(po => 
+          po.po_number.toLowerCase().includes(search) ||
+          (po.vendor && po.vendor.name.toLowerCase().includes(search))
+        );
+      },
+      selectPOForReceipt(po) {
+        // Store selected PO in localStorage to use it in the create form
+        localStorage.setItem('selectedPOForReceipt', JSON.stringify({
+          vendor_id: po.vendor.vendor_id,
+          po_ids: [po.po_id]
+        }));
+      }
+    }
+  };
+  </script>
+  
+  <style scoped>
+  .pending-receipts-dashboard {
+    max-width: 100%;
+  }
+  
+  .card {
     background-color: white;
     border-radius: 0.5rem;
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-    overflow: hidden;
-}
-
-.card-content {
-    display: flex;
+    margin-bottom: 2rem;
+  }
+  
+  .card-header {
     padding: 1.5rem;
+    border-bottom: 1px solid var(--gray-200);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  
+  .card-header h2 {
+    margin: 0;
+    font-size: 1.5rem;
+  }
+  
+  .actions {
+    display: flex;
+    gap: 0.5rem;
+  }
+  
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 1rem;
+    border-radius: 0.375rem;
+    font-weight: 500;
+    font-size: 0.875rem;
+    cursor: pointer;
+    transition: all 0.2s;
+    text-decoration: none;
+    border: 1px solid transparent;
+  }
+  
+  .btn-primary {
+    background-color: var(--primary-color);
+    color: white;
+    border-color: var(--primary-color);
+  }
+  
+  .btn-primary:hover {
+    background-color: var(--primary-dark);
+  }
+  
+  .btn-secondary {
+    background-color: var(--gray-200);
+    color: var(--gray-700);
+    border-color: var(--gray-300);
+  }
+  
+  .btn-secondary:hover {
+    background-color: var(--gray-300);
+  }
+  
+  .card-body {
+    padding: 1.5rem;
+  }
+  
+  .loading-container {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding: 3rem 0;
+    font-size: 1rem;
+    color: var(--gray-500);
+  }
+  
+  .loading-container i {
+    margin-right: 0.5rem;
+  }
+  
+  .summary-cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: 1.5rem;
+    margin-bottom: 2rem;
+  }
+  
+  .summary-card {
+    display: flex;
+    align-items: center;
     gap: 1rem;
-}
-
-.card-icon {
+    padding: 1.5rem;
+    border-radius: 0.5rem;
+    background-color: white;
+    border: 1px solid var(--gray-200);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+  }
+  
+  .summary-icon {
     width: 3rem;
     height: 3rem;
+    border-radius: 0.5rem;
     display: flex;
     align-items: center;
     justify-content: center;
-    border-radius: 0.5rem;
-    font-size: 1.5rem;
-}
-
-.pending-icon {
-    background-color: #dbeafe;
-    color: #1e40af;
-}
-
-.overdue-icon {
-    background-color: #fee2e2;
-    color: #b91c1c;
-}
-
-.today-icon {
-    background-color: #f0fdf4;
-    color: #166534;
-}
-
-.confirmed-icon {
-    background-color: #d1fae5;
-    color: #065f46;
-}
-
-.card-data {
+    color: white;
+    font-size: 1.25rem;
+  }
+  
+  .summary-icon.total-receipts {
+    background-color: #2563eb;
+  }
+  
+  .summary-icon.total-items {
+    background-color: #10b981;
+  }
+  
+  .summary-icon.total-vendors {
+    background-color: #8b5cf6;
+  }
+  
+  .summary-icon.overdue {
+    background-color: #ef4444;
+  }
+  
+  .summary-content {
     display: flex;
     flex-direction: column;
-}
-
-.card-value {
-    font-size: 1.875rem;
-    font-weight: 600;
-    color: var(--gray-900);
-}
-
-.card-label {
+  }
+  
+  .summary-label {
     font-size: 0.875rem;
     color: var(--gray-500);
-}
-
-.card-footer {
-    padding: 0.75rem 1.5rem;
-    background-color: var(--gray-50);
-    border-top: 1px solid var(--gray-200);
-}
-
-.card-footer a {
-    display: flex;
-    justify-content: flex-end;
-    align-items: center;
-    gap: 0.5rem;
-    color: var(--primary-color);
-    text-decoration: none;
-    font-size: 0.875rem;
-    font-weight: 500;
-}
-
-.card-footer a:hover {
-    color: var(--primary-dark);
-}
-
-/* Table Sections */
-.table-section {
-    background-color: white;
-    border-radius: 0.5rem;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-    overflow: hidden;
-}
-
-.section-header {
+    margin-bottom: 0.25rem;
+  }
+  
+  .summary-value {
+    font-size: 1.5rem;
+    font-weight: 600;
+    color: var(--gray-800);
+  }
+  
+  .dashboard-section {
+    margin-bottom: 2.5rem;
+  }
+  
+  .section-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 1rem 1.5rem;
-    background-color: var(--gray-50);
-    border-bottom: 1px solid var(--gray-200);
-}
-
-.section-header h2 {
+    margin-bottom: 1rem;
+  }
+  
+  .section-header h3 {
     margin: 0;
     font-size: 1.25rem;
     color: var(--gray-800);
-}
-
-.view-all-link {
+  }
+  
+  .section-actions {
     display: flex;
-    align-items: center;
     gap: 0.5rem;
-    color: var(--primary-color);
-    text-decoration: none;
+  }
+  
+  .search-box {
+    position: relative;
+    min-width: 250px;
+  }
+  
+  .search-box input {
+    width: 100%;
+    padding: 0.5rem 2rem 0.5rem 0.75rem;
+    border: 1px solid var(--gray-300);
+    border-radius: 0.375rem;
     font-size: 0.875rem;
-    font-weight: 500;
-}
-
-.view-all-link:hover {
-    color: var(--primary-dark);
-}
-
-.loading-indicator {
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    padding: 2rem;
+  }
+  
+  .search-box i {
+    position: absolute;
+    right: 0.75rem;
+    top: 50%;
+    transform: translateY(-50%);
     color: var(--gray-500);
-    font-size: 0.875rem;
-}
-
-.loading-indicator i {
-    margin-right: 0.5rem;
-}
-
-.empty-state {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    padding: 3rem 2rem;
+  }
+  
+  .empty-state {
     text-align: center;
-}
-
-.empty-icon {
-    font-size: 2.5rem;
-    color: var(--gray-300);
-    margin-bottom: 1rem;
-}
-
-.empty-state h3 {
-    font-size: 1.125rem;
-    color: var(--gray-700);
-    margin-bottom: 0.5rem;
-}
-
-.empty-state p {
+    padding: 2rem 0;
     color: var(--gray-500);
-    max-width: 24rem;
-}
-
-.data-table-wrapper {
+  }
+  
+  .empty-state i {
+    font-size: 2rem;
+    margin-bottom: 0.5rem;
+  }
+  
+  .table-responsive {
     overflow-x: auto;
-}
-
-.data-table {
+    margin-bottom: 1rem;
+  }
+  
+  .data-table {
     width: 100%;
     border-collapse: collapse;
-    font-size: 0.875rem;
-}
-
-.data-table th {
-    text-align: left;
-    padding: 0.75rem 1rem;
+  }
+  
+  .data-table th {
     background-color: var(--gray-50);
-    font-weight: 500;
+    padding: 0.75rem 1rem;
+    text-align: left;
+    font-weight: 600;
     color: var(--gray-700);
     border-bottom: 1px solid var(--gray-200);
-}
-
-.data-table td {
+    white-space: nowrap;
+  }
+  
+  .data-table td {
     padding: 0.75rem 1rem;
-    border-bottom: 1px solid var(--gray-100);
-}
-
-.data-table tr:hover td {
+    border-bottom: 1px solid var(--gray-200);
+    color: var(--gray-800);
+  }
+  
+  .data-table tr:hover td {
     background-color: var(--gray-50);
-}
-
-.overdue-row td {
-    background-color: #fef2f2;
-}
-
-.overdue-row:hover td {
-    background-color: #fee2e2;
-}
-
-.action-buttons {
+  }
+  
+  .overdue-date {
+    color: #dc2626;
+    font-weight: 500;
+  }
+  
+  .status-badge {
+    display: inline-block;
+    padding: 0.25rem 0.5rem;
+    border-radius: 0.25rem;
+    font-size: 0.75rem;
+    font-weight: 500;
+    text-transform: capitalize;
+  }
+  
+  .status-badge.sent {
+    background-color: #dbeafe;
+    color: #1e40af;
+  }
+  
+  .status-badge.partial {
+    background-color: #fef3c7;
+    color: #92400e;
+  }
+  
+  .progress-bar {
+    height: 0.5rem;
+    background-color: var(--gray-200);
+    border-radius: 0.25rem;
+    overflow: hidden;
+    margin-bottom: 0.25rem;
+  }
+  
+  .progress-fill {
+    height: 100%;
+    background-color: #10b981;
+    border-radius: 0.25rem;
+  }
+  
+  .progress-text {
+    font-size: 0.75rem;
+    color: var(--gray-600);
+  }
+  
+  .table-actions {
     display: flex;
     gap: 0.5rem;
-    justify-content: flex-end;
-}
-
-.action-btn {
-    display: inline-flex;
+  }
+  
+  .btn-icon {
+    display: flex;
     align-items: center;
     justify-content: center;
     width: 2rem;
     height: 2rem;
     border-radius: 0.375rem;
-    cursor: pointer;
-    transition: background-color 0.2s;
-}
-
-.view-btn {
-    color: var(--primary-color);
-}
-
-.view-btn:hover {
-    background-color: var(--primary-bg);
-}
-
-.confirm-btn {
-    color: var(--success-color);
-}
-
-.confirm-btn:hover {
-    background-color: var(--success-bg);
-}
-
-.age-normal {
     color: var(--gray-700);
-}
-
-.age-warning {
-    color: #d97706;
-}
-
-.age-critical {
-    color: #dc2626;
-    font-weight: 500;
-}
-
-.btn {
-    padding: 0.625rem 1.25rem;
+    background-color: var(--gray-100);
+    border: 1px solid var(--gray-200);
+    text-decoration: none;
+    transition: all 0.2s;
+  }
+  
+  .btn-icon:hover {
+    background-color: var(--gray-200);
+  }
+  
+  .btn-icon.confirm {
+    color: #059669;
+    background-color: #d1fae5;
+    border-color: #059669;
+  }
+  
+  .btn-icon.confirm:hover {
+    background-color: #a7f3d0;
+  }
+  
+  .btn-icon.create {
+    color: #0ea5e9;
+    background-color: #e0f2fe;
+    border-color: #0ea5e9;
+  }
+  
+  .btn-icon.create:hover {
+    background-color: #bae6fd;
+  }
+  
+  .vendor-performance-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 1.5rem;
+  }
+  
+  .vendor-card {
+    padding: 1.5rem;
+    border: 1px solid var(--gray-200);
+    border-radius: 0.5rem;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+  }
+  
+  .vendor-card h4 {
+    margin-top: 0;
+    margin-bottom: 1rem;
+    font-size: 1rem;
+    color: var(--gray-800);
+  }
+  
+  .vendor-metrics {
+    margin-bottom: 1rem;
+  }
+  
+  .metric {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 0.5rem;
+  }
+  
+  .metric-label {
     font-size: 0.875rem;
-    font-weight: 500;
-    border-radius: 0.375rem;
-    cursor: pointer;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.5rem;
-    border: none;
-    transition: background-color 0.2s, color 0.2s;
-}
-
-.btn-primary {
-    background-color: var(--primary-color);
-    color: white;
-}
-
-.btn-primary:hover {
-    background-color: var(--primary-dark);
-}
-
-@media (max-width: 768px) {
-    .summary-section {
-        grid-template-columns: 1fr;
+    color: var(--gray-600);
+  }
+  
+  .metric-value {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--gray-800);
+  }
+  
+  .vendor-chart {
+    margin-top: 1rem;
+  }
+  
+  .on-time-bar {
+    height: 0.5rem;
+    background-color: var(--gray-200);
+    border-radius: 0.25rem;
+    overflow: hidden;
+  }
+  
+  .on-time-fill {
+    height: 100%;
+    background-color: #10b981;
+    border-radius: 0.25rem;
+  }
+  
+  @media (max-width: 768px) {
+    .card-header {
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 1rem;
     }
-}
-</style>
+    
+    .actions {
+      width: 100%;
+    }
+    
+    .actions .btn {
+      flex: 1;
+      justify-content: center;
+    }
+    
+    .section-header {
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 0.5rem;
+    }
+    
+    .search-box {
+      width: 100%;
+    }
+  }
+  </style>

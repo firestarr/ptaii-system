@@ -11,18 +11,15 @@ class VendorInvoiceRequest extends FormRequest
         return true; // Add authorization logic if needed
     }
 
+    // Update VendorInvoiceRequest
     public function rules()
     {
         $rules = [
+            'invoice_number' => 'required|string|max:50|unique:vendor_invoices,invoice_number',
             'invoice_date' => 'required|date',
-            'po_id' => 'required|exists:purchase_orders,po_id',
+            'receipt_ids' => 'required|array|min:1',
+            'receipt_ids.*' => 'required|exists:goods_receipts,receipt_id',
             'due_date' => 'nullable|date|after_or_equal:invoice_date',
-            'lines' => 'required|array|min:1',
-            'lines.*.po_line_id' => 'required|exists:po_lines,line_id',
-            'lines.*.item_id' => 'required|exists:items,item_id',
-            'lines.*.quantity' => 'required|numeric|min:0.01',
-            'lines.*.unit_price' => 'required|numeric|min:0',
-            'lines.*.tax' => 'nullable|numeric|min:0'
         ];
         
         // Add invoice_number validation only for new invoices

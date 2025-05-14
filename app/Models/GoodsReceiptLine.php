@@ -49,6 +49,12 @@ class GoodsReceiptLine extends Model
         return $this->belongsTo(PurchaseOrder::class, 'po_id');
     }
 
+    // Add to GoodsReceiptLine model
+    public function invoiceLine()
+    {
+        return $this->belongsTo(VendorInvoiceLine::class, 'invoice_line_id');
+    }
+
     /**
      * Get the item associated with the line.
      */
