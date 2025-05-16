@@ -1,445 +1,303 @@
-<!-- src/views/inventory/StockAdjustments.vue -->
+<!-- src/views/inventory/StockAdjustment.vue -->
 <template>
-  <div class="stock-adjustments">
-    <!-- Search and Filter Section -->
-    <SearchFilter
-      v-model:value="searchQuery"
-      placeholder="Cari penyesuaian stok..."
-      @search="applyFilters"
-      @clear="clearSearch"
-    >
-      <template #filters>
-        <div class="filter-group">
-          <label for="dateRangeFilter">Rentang Waktu</label>
-          <select id="dateRangeFilter" v-model="dateRangeFilter" @change="applyFilters">
-            <option value="all">Semua Waktu</option>
-            <option value="today">Hari Ini</option>
-            <option value="yesterday">Kemarin</option>
-            <option value="week">Minggu Ini</option>
-            <option value="month">Bulan Ini</option>
-          </select>
-        </div>
-
-        <div class="filter-group">
-          <label for="statusFilter">Status</label>
-          <select id="statusFilter" v-model="statusFilter" @change="applyFilters">
-            <option value="">Semua Status</option>
-            <option value="Pending">Pending</option>
-            <option value="Approved">Disetujui</option>
-            <option value="Cancelled">Dibatalkan</option>
-          </select>
-        </div>
-      </template>
-
-      <template #actions>
-        <button class="btn btn-primary" @click="openNewAdjustmentModal">
-          <i class="fas fa-plus"></i> Penyesuaian Baru
-        </button>
-      </template>
-    </SearchFilter>
-
-    <!-- Adjustments Grid -->
-    <div class="adjustments-container">
-      <div v-if="isLoading" class="loading-indicator">
-        <i class="fas fa-spinner fa-spin"></i> Memuat penyesuaian stok...
-      </div>
-
-      <div v-else-if="filteredAdjustments.length === 0" class="empty-state">
-        <div class="empty-icon">
-          <i class="fas fa-sliders-h"></i>
-        </div>
-        <h3>Tidak ada penyesuaian stok ditemukan</h3>
-        <p>Coba sesuaikan pencarian atau filter, atau buat penyesuaian stok baru.</p>
-      </div>
-
-      <div v-else class="adjustments-grid">
-        <div
-          v-for="adjustment in filteredAdjustments"
-          :key="adjustment.adjustment_id"
-          class="adjustment-card"
-          @click="viewAdjustmentDetails(adjustment)"
-        >
-          <div class="adjustment-header">
-            <span
-              class="adjustment-status"
-              :class="{
-                'pending': adjustment.status === 'Pending',
-                'approved': adjustment.status === 'Approved',
-                'cancelled': adjustment.status === 'Cancelled'
-              }"
-            >
-              {{ getStatusLabel(adjustment.status) }}
-            </span>
-            <span class="adjustment-date">{{ formatDate(adjustment.adjustment_date) }}</span>
-          </div>
-
-          <div class="adjustment-body">
-            <div class="adjustment-id">ID: {{ adjustment.adjustment_id }}</div>
-            <div v-if="adjustment.adjustment_reason" class="adjustment-reason">
-              <strong>Alasan:</strong> {{ adjustment.adjustment_reason }}
-            </div>
-
-            <div class="adjustment-summary">
-              <div class="summary-item">
-                <div class="summary-label">Item</div>
-                <div class="summary-value">{{ adjustment.lines.length }}</div>
-              </div>
-              <div class="summary-item">
-                <div class="summary-label">Total Selisih</div>
-                <div class="summary-value" :class="getTotalVarianceClass(adjustment)">
-                  {{ getTotalVariance(adjustment) }}
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div class="adjustment-footer">
-            <div v-if="adjustment.reference_document" class="reference-document">
-              Ref: {{ adjustment.reference_document }}
-            </div>
-
-            <div class="adjustment-actions">
-              <button
-                v-if="adjustment.status === 'Pending'"
-                class="action-btn approve-btn"
-                title="Setujui Penyesuaian"
-                @click.stop="approveAdjustment(adjustment)"
-              >
-                <i class="fas fa-check"></i> Setujui
-              </button>
-              <button
-                v-if="adjustment.status === 'Pending'"
-                class="action-btn cancel-btn"
-                title="Batalkan Penyesuaian"
-                @click.stop="cancelAdjustment(adjustment)"
-              >
-                <i class="fas fa-times"></i> Batalkan
-              </button>
-            </div>
-          </div>
-        </div>
+  <div class="stock-adjustment">
+    <div class="page-header">
+      <div class="header-left">
+        <router-link to="/item-stocks" class="back-link">
+          <i class="fas fa-arrow-left"></i> Back to Stock List
+        </router-link>
+        <h1>Stock Adjustment</h1>
       </div>
     </div>
 
-    <!-- New Adjustment Modal -->
-    <div v-if="showAdjustmentModal" class="modal">
-      <div class="modal-backdrop" @click="closeAdjustmentModal"></div>
-      <div class="modal-content modal-lg">
-        <div class="modal-header">
-          <h2>Penyesuaian Stok Baru</h2>
-          <button class="close-btn" @click="closeAdjustmentModal">
-            <i class="fas fa-times"></i>
-          </button>
+    <div class="content-container">
+      <div class="adjustment-form-card">
+        <div class="card-header">
+          <h2>Adjust Stock Quantity</h2>
         </div>
-        <div class="modal-body">
-          <form @submit.prevent="saveAdjustment">
-            <div class="form-row">
+        <div class="card-body">
+          <form @submit.prevent="submitAdjustment">
+            <div class="form-grid">
+              <div class="form-group span-full">
+                <label for="itemSelect">Item <span class="required">*</span></label>
+                <div class="select-wrapper">
+                  <select 
+                    id="itemSelect" 
+                    v-model="form.itemId" 
+                    @change="onItemChange" 
+                    :disabled="loading"
+                    required
+                  >
+                    <option value="">Select an item</option>
+                    <option v-for="item in items" :key="item.item_id" :value="item.item_id">
+                      {{ item.item_code }} - {{ item.name }}
+                    </option>
+                  </select>
+                </div>
+              </div>
+
               <div class="form-group">
-                <label for="adjustment_date">Tanggal Penyesuaian*</label>
-                <input
-                  type="date"
-                  id="adjustment_date"
-                  v-model="adjustmentForm.adjustment_date"
+                <label for="warehouseSelect">Warehouse <span class="required">*</span></label>
+                <div class="select-wrapper">
+                  <select 
+                    id="warehouseSelect" 
+                    v-model="form.warehouseId" 
+                    @change="onWarehouseChange" 
+                    :disabled="loading || !form.itemId"
+                    required
+                  >
+                    <option value="">Select warehouse</option>
+                    <option v-for="warehouse in warehouses" :key="warehouse.warehouse_id" :value="warehouse.warehouse_id">
+                      {{ warehouse.name }}
+                    </option>
+                  </select>
+                </div>
+              </div>
+
+              <div class="form-group" v-if="form.warehouseId && selectedItem">
+                <div class="stock-info-box">
+                  <div class="info-label">Current Stock:</div>
+                  <div class="info-value">{{ currentStock }} {{ selectedItem.uom?.symbol || '' }}</div>
+                </div>
+              </div>
+
+              <div class="form-group">
+                <label for="adjustmentTypeSelect">Adjustment Type <span class="required">*</span></label>
+                <div class="select-wrapper">
+                  <select 
+                    id="adjustmentTypeSelect" 
+                    v-model="form.adjustmentType" 
+                    :disabled="loading"
+                    required
+                  >
+                    <option value="absolute">Set to Specific Value</option>
+                    <option value="increase">Increase Quantity</option>
+                    <option value="decrease">Decrease Quantity</option>
+                  </select>
+                </div>
+              </div>
+
+              <div class="form-group">
+                <label for="quantityInput">
+                  {{ form.adjustmentType === 'absolute' ? 'New Quantity' : 'Adjustment Amount' }} 
+                  <span class="required">*</span>
+                </label>
+                <input 
+                  type="number" 
+                  id="quantityInput" 
+                  v-model.number="form.quantity" 
+                  min="0" 
+                  step="0.01" 
+                  :disabled="loading || !form.warehouseId"
                   required
-                  class="form-control"
+                />
+                <div class="input-hint" v-if="selectedItem">
+                  {{ selectedItem.uom?.symbol || 'units' }}
+                </div>
+                <div class="error-message" v-if="quantityError">
+                  {{ quantityError }}
+                </div>
+              </div>
+
+              <div class="form-group span-full">
+                <label for="reasonSelect">Reason <span class="required">*</span></label>
+                <div class="select-wrapper">
+                  <select 
+                    id="reasonSelect" 
+                    v-model="form.reason" 
+                    :disabled="loading"
+                    required
+                  >
+                    <option value="">Select a reason</option>
+                    <option value="inventory_count">Inventory Count</option>
+                    <option value="damaged">Damaged/Expired Goods</option>
+                    <option value="lost">Lost/Stolen</option>
+                    <option value="system_error">System Error</option>
+                    <option value="returned">Returned Items</option>
+                    <option value="production">Production Excess/Shortage</option>
+                    <option value="other">Other</option>
+                  </select>
+                </div>
+              </div>
+
+              <div v-if="form.reason === 'other'" class="form-group span-full">
+                <label for="otherReasonInput">Specify Reason <span class="required">*</span></label>
+                <input 
+                  type="text" 
+                  id="otherReasonInput" 
+                  v-model="form.otherReason" 
+                  placeholder="Specify other reason for adjustment" 
+                  :disabled="loading"
+                  required
                 />
               </div>
-              <div class="form-group">
-                <label for="reference_document">Dokumen Referensi</label>
-                <input
-                  type="text"
-                  id="reference_document"
-                  v-model="adjustmentForm.reference_document"
-                  class="form-control"
+
+              <div class="form-group span-full">
+                <label for="referenceInput">Reference Number</label>
+                <input 
+                  type="text" 
+                  id="referenceInput" 
+                  v-model="form.referenceNumber" 
+                  placeholder="Optional reference number" 
+                  :disabled="loading"
+                  maxlength="50"
                 />
               </div>
-            </div>
 
-            <div class="form-group">
-              <label for="adjustment_reason">Alasan Penyesuaian</label>
-              <textarea
-                id="adjustment_reason"
-                v-model="adjustmentForm.adjustment_reason"
-                rows="3"
-                class="form-control"
-              ></textarea>
-            </div>
-
-            <div class="adjustment-lines-header">
-              <h3>Detail Item</h3>
-              <button type="button" class="btn btn-secondary" @click="addAdjustmentLine">
-                <i class="fas fa-plus"></i> Tambah Item
-              </button>
-            </div>
-
-            <div class="adjustment-lines">
-              <div v-if="adjustmentForm.lines.length === 0" class="empty-lines">
-                <p>Belum ada item yang ditambahkan. Klik "Tambah Item" untuk menambahkan item.</p>
-              </div>
-
-              <div v-else class="adjustment-lines-table">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Item</th>
-                      <th>Gudang</th>
-                      <th>Lokasi</th>
-                      <th>Stok Tercatat</th>
-                      <th>Stok Aktual</th>
-                      <th>Selisih</th>
-                      <th>Aksi</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr v-for="(line, index) in adjustmentForm.lines" :key="index">
-                      <td>
-                        <select
-                          v-model="line.item_id"
-                          required
-                          @change="updateBookQuantity(index)"
-                          class="form-control"
-                        >
-                          <option value="">-- Pilih Item --</option>
-                          <option v-for="item in items" :key="item.item_id" :value="item.item_id">
-                            {{ item.item_code }} - {{ item.name }}
-                          </option>
-                        </select>
-                      </td>
-                      <td>
-                        <select
-                          v-model="line.warehouse_id"
-                          required
-                          @change="updateBookQuantity(index)"
-                          class="form-control"
-                        >
-                          <option value="">-- Pilih --</option>
-                          <option
-                            v-for="warehouse in warehouses"
-                            :key="warehouse.warehouse_id"
-                            :value="warehouse.warehouse_id"
-                          >
-                            {{ warehouse.name }}
-                          </option>
-                        </select>
-                      </td>
-                      <td>
-                        <select
-                          v-model="line.location_id"
-                          :disabled="!line.warehouse_id || !getAvailableLocations(line.warehouse_id).length"
-                          @change="updateBookQuantity(index)"
-                          class="form-control"
-                        >
-                          <option value="">-- Pilih --</option>
-                          <option
-                            v-for="location in getAvailableLocations(line.warehouse_id)"
-                            :key="location.location_id"
-                            :value="location.location_id"
-                          >
-                            {{ location.code }}
-                          </option>
-                        </select>
-                      </td>
-                      <td>
-                        <input
-                          type="number"
-                          v-model="line.book_quantity"
-                          readonly
-                          class="form-control quantity-input"
-                        />
-                      </td>
-                      <td>
-                        <input
-                          type="number"
-                          v-model="line.adjusted_quantity"
-                          required
-                          step="0.01"
-                          class="form-control quantity-input"
-                          @input="calculateVariance(index)"
-                        />
-                      </td>
-                      <td>
-                        <div class="variance" :class="getVarianceClass(line)">
-                          {{ line.variance }}
-                        </div>
-                      </td>
-                      <td>
-                        <button
-                          type="button"
-                          class="action-btn delete-btn"
-                          @click="removeAdjustmentLine(index)"
-                        >
-                          <i class="fas fa-trash"></i>
-                        </button>
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
+              <div class="form-group span-full">
+                <label for="notesInput">Notes</label>
+                <textarea 
+                  id="notesInput" 
+                  v-model="form.notes" 
+                  rows="3" 
+                  placeholder="Additional notes for this adjustment" 
+                  :disabled="loading"
+                ></textarea>
               </div>
             </div>
 
             <div class="form-actions">
-              <button type="button" class="btn btn-secondary" @click="closeAdjustmentModal">
-                Batal
-              </button>
-              <button
-                type="submit"
-                class="btn btn-primary"
-                :disabled="adjustmentForm.lines.length === 0"
+              <button 
+                type="button" 
+                class="btn btn-secondary" 
+                @click="resetForm" 
+                :disabled="loading"
               >
-                Buat Penyesuaian
+                Reset
+              </button>
+              <button 
+                type="submit" 
+                class="btn btn-primary" 
+                :disabled="loading || !isFormValid"
+              >
+                <i v-if="loading" class="fas fa-spinner fa-spin"></i>
+                <span v-else>Submit Adjustment</span>
               </button>
             </div>
           </form>
         </div>
       </div>
-    </div>
 
-    <!-- Adjustment Details Modal -->
-    <div v-if="showDetailsModal" class="modal">
-      <div class="modal-backdrop" @click="closeDetailsModal"></div>
-      <div class="modal-content modal-lg">
-        <div class="modal-header">
-          <h2>Detail Penyesuaian</h2>
-          <button class="close-btn" @click="closeDetailsModal">
-            <i class="fas fa-times"></i>
-          </button>
+      <div class="adjustment-preview-card" v-if="form.itemId && form.warehouseId && form.quantity >= 0">
+        <div class="card-header">
+          <h2>Adjustment Preview</h2>
         </div>
-        <div class="modal-body">
-          <div v-if="selectedAdjustment" class="adjustment-details">
-            <div class="details-header">
-              <div class="detail-row">
-                <div class="detail-item">
-                  <div class="detail-label">ID Penyesuaian</div>
-                  <div class="detail-value">{{ selectedAdjustment.adjustment_id }}</div>
+        <div class="card-body">
+          <div class="preview-container">
+            <div class="stock-box">
+              <div class="warehouse-title">{{ warehouseName }}</div>
+              <div class="item-name">{{ selectedItem?.item_code }} - {{ selectedItem?.name }}</div>
+              <div class="stock-visualization">
+                <div class="stock-level">
+                  <div class="stock-label">Current Stock:</div>
+                  <div class="stock-value">{{ currentStock }} {{ selectedItem?.uom?.symbol || '' }}</div>
                 </div>
-                <div class="detail-item">
-                  <div class="detail-label">Tanggal</div>
-                  <div class="detail-value">{{ formatDate(selectedAdjustment.adjustment_date) }}</div>
-                </div>
-                <div class="detail-item">
-                  <div class="detail-label">Status</div>
-                  <div class="detail-value">
-                    <span
-                      class="adjustment-status"
-                      :class="{
-                        'pending': selectedAdjustment.status === 'Pending',
-                        'approved': selectedAdjustment.status === 'Approved',
-                        'cancelled': selectedAdjustment.status === 'Cancelled'
-                      }"
-                    >
-                      {{ getStatusLabel(selectedAdjustment.status) }}
-                    </span>
+                
+                <div class="adjustment-arrow" v-if="form.adjustmentType !== 'absolute'">
+                  <i 
+                    :class="form.adjustmentType === 'increase' ? 'fas fa-arrow-up' : 'fas fa-arrow-down'"
+                    :style="{color: form.adjustmentType === 'increase' ? 'var(--success-color)' : 'var(--danger-color)'}"
+                  ></i>
+                  <div 
+                    class="adjustment-value"
+                    :style="{color: form.adjustmentType === 'increase' ? 'var(--success-color)' : 'var(--danger-color)'}"
+                  >
+                    {{ form.adjustmentType === 'increase' ? '+' : '-' }}{{ form.quantity }} {{ selectedItem?.uom?.symbol || '' }}
                   </div>
                 </div>
-                <div class="detail-item">
-                  <div class="detail-label">Referensi</div>
-                  <div class="detail-value">{{ selectedAdjustment.reference_document || '-' }}</div>
-                </div>
-              </div>
-
-              <div v-if="selectedAdjustment.adjustment_reason" class="detail-row">
-                <div class="detail-item full-width">
-                  <div class="detail-label">Alasan</div>
-                  <div class="detail-value">{{ selectedAdjustment.adjustment_reason }}</div>
+                
+                <div class="stock-level result">
+                  <div class="stock-label">{{ form.adjustmentType === 'absolute' ? 'New Stock:' : 'Result:' }}</div>
+                  <div class="stock-value">{{ calculateResultStock() }} {{ selectedItem?.uom?.symbol || '' }}</div>
                 </div>
               </div>
             </div>
-
-            <div class="details-section">
-              <h3 class="section-title">Detail Item</h3>
-              <div class="adjustment-lines-table">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Item</th>
-                      <th>Gudang</th>
-                      <th>Lokasi</th>
-                      <th>Stok Tercatat</th>
-                      <th>Stok Aktual</th>
-                      <th>Selisih</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr v-for="line in selectedAdjustment.lines" :key="line.line_id">
-                      <td>
-                        <div class="item-info">
-                          <span class="item-code">{{ line.item.item_code }}</span>
-                          <span class="item-name">{{ line.item.name }}</span>
-                        </div>
-                      </td>
-                      <td>{{ line.warehouse.name }}</td>
-                      <td>{{ line.location ? line.location.code : '-' }}</td>
-                      <td>{{ line.book_quantity }}</td>
-                      <td>{{ line.adjusted_quantity }}</td>
-                      <td>
-                        <div class="variance" :class="getVarianceClass(line)">
-                          {{ line.variance }}
-                        </div>
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
+          </div>
+          
+          <div class="adjustment-details">
+            <div class="detail-item">
+              <div class="detail-label">Type:</div>
+              <div class="detail-value">{{ formatAdjustmentType(form.adjustmentType) }}</div>
             </div>
-
-            <div class="details-footer">
-              <div class="detail-item">
-                <div class="detail-label">Total Selisih</div>
-                <div class="detail-value" :class="getTotalVarianceClass(selectedAdjustment)">
-                  {{ getTotalVariance(selectedAdjustment) }}
-                </div>
-              </div>
-
-              <div class="details-actions">
-                <button
-                  v-if="selectedAdjustment.status === 'Pending'"
-                  class="btn btn-success"
-                  @click="approveAdjustment(selectedAdjustment)"
-                >
-                  <i class="fas fa-check"></i> Setujui
-                </button>
-                <button
-                  v-if="selectedAdjustment.status === 'Pending'"
-                  class="btn btn-danger"
-                  @click="cancelAdjustment(selectedAdjustment)"
-                >
-                  <i class="fas fa-times"></i> Batalkan
-                </button>
-                <button class="btn btn-secondary" @click="closeDetailsModal">
-                  Tutup
-                </button>
-              </div>
+            <div class="detail-item">
+              <div class="detail-label">Reason:</div>
+              <div class="detail-value">{{ formatReason() }}</div>
+            </div>
+            <div class="detail-item" v-if="form.referenceNumber">
+              <div class="detail-label">Reference:</div>
+              <div class="detail-value">{{ form.referenceNumber }}</div>
             </div>
           </div>
         </div>
       </div>
     </div>
 
-    <!-- Confirmation Modal -->
-    <div v-if="showConfirmationModal" class="modal">
-      <div class="modal-backdrop" @click="closeConfirmationModal"></div>
-      <div class="modal-content modal-sm">
+    <!-- Success Modal -->
+    <div class="modal" v-if="showSuccessModal">
+      <div class="modal-backdrop" @click="showSuccessModal = false"></div>
+      <div class="modal-content">
         <div class="modal-header">
-          <h2>{{ confirmationTitle }}</h2>
-          <button class="close-btn" @click="closeConfirmationModal">
+          <h2>Adjustment Successful</h2>
+          <button class="close-btn" @click="showSuccessModal = false">
             <i class="fas fa-times"></i>
           </button>
         </div>
         <div class="modal-body">
-          <p>{{ confirmationMessage }}</p>
-
-          <div class="form-actions">
-            <button type="button" class="btn btn-secondary" @click="closeConfirmationModal">
-              Batal
-            </button>
-            <button
-              type="button"
-              :class="confirmationAction === 'approve' ? 'btn btn-success' : 'btn btn-danger'"
-              @click="confirmAction"
-            >
-              {{ confirmationAction === 'approve' ? 'Setujui' : 'Batalkan' }}
-            </button>
+          <div class="success-message">
+            <i class="fas fa-check-circle"></i>
+            <p>Stock adjustment completed successfully!</p>
           </div>
+          <div class="adjustment-details">
+            <div class="adjustment-detail">
+              <div class="detail-label">Item:</div>
+              <div class="detail-value">{{ selectedItem?.item_code }} - {{ selectedItem?.name }}</div>
+            </div>
+            <div class="adjustment-detail">
+              <div class="detail-label">Warehouse:</div>
+              <div class="detail-value">{{ warehouseName }}</div>
+            </div>
+            <div class="adjustment-detail">
+              <div class="detail-label">Type:</div>
+              <div class="detail-value">{{ formatAdjustmentType(form.adjustmentType) }}</div>
+            </div>
+            <div class="adjustment-detail">
+              <div class="detail-label">Change:</div>
+              <div class="detail-value">
+                {{ form.adjustmentType === 'absolute' ? 'Set to ' : (form.adjustmentType === 'increase' ? '+' : '-') }}
+                {{ form.quantity }} {{ selectedItem?.uom?.symbol || '' }}
+              </div>
+            </div>
+            <div class="adjustment-detail">
+              <div class="detail-label">New Stock:</div>
+              <div class="detail-value">{{ calculateResultStock() }} {{ selectedItem?.uom?.symbol || '' }}</div>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-secondary" @click="showSuccessModal = false">Close</button>
+          <button class="btn btn-primary" @click="newAdjustment">New Adjustment</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Error Modal -->
+    <div class="modal" v-if="showErrorModal">
+      <div class="modal-backdrop" @click="showErrorModal = false"></div>
+      <div class="modal-content">
+        <div class="modal-header">
+          <h2>Adjustment Failed</h2>
+          <button class="close-btn" @click="showErrorModal = false">
+            <i class="fas fa-times"></i>
+          </button>
+        </div>
+        <div class="modal-body">
+          <div class="error-message">
+            <i class="fas fa-exclamation-circle"></i>
+            <p>{{ errorMessage }}</p>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-primary" @click="showErrorModal = false">Try Again</button>
         </div>
       </div>
     </div>
@@ -447,955 +305,753 @@
 </template>
 
 <script>
-import { ref, computed, onMounted } from 'vue';
-import SearchFilter from '@/components/common/SearchFilter.vue';
+import axios from 'axios';
 
 export default {
-  name: 'StockAdjustments',
-  components: {
-    SearchFilter
-  },
-  setup() {
-    // Data
-    const adjustments = ref([]);
-    const warehouses = ref([]);
-    const items = ref([]);
-    const isLoading = ref(true);
-
-    // Search and filtering
-    const searchQuery = ref('');
-    const dateRangeFilter = ref('month');
-    const statusFilter = ref('');
-
-    // Modals
-    const showAdjustmentModal = ref(false);
-    const showDetailsModal = ref(false);
-    const showConfirmationModal = ref(false);
-    const selectedAdjustment = ref(null);
-    const confirmationTitle = ref('');
-    const confirmationMessage = ref('');
-    const confirmationAction = ref('');
-    const adjustmentToAction = ref(null);
-
-    // Form
-    const adjustmentForm = ref({
-      adjustment_date: new Date().toISOString().substr(0, 10),
-      adjustment_reason: '',
-      reference_document: '',
-      status: 'Pending',
-      lines: []
-    });
-
-    // Computed properties
-    const filteredAdjustments = computed(() => {
-      let result = [...adjustments.value];
-
-      // Apply search filter
-      if (searchQuery.value) {
-        const query = searchQuery.value.toLowerCase();
-        result = result.filter(adjustment => {
-          return (
-            adjustment.adjustment_id.toString().includes(query) ||
-            (adjustment.reference_document && adjustment.reference_document.toLowerCase().includes(query)) ||
-            (adjustment.adjustment_reason && adjustment.adjustment_reason.toLowerCase().includes(query))
-          );
-        });
-      }
-
-      // Apply date range filter
-      if (dateRangeFilter.value !== 'all') {
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-
-        const yesterday = new Date(today);
-        yesterday.setDate(yesterday.getDate() - 1);
-
-        const firstDayOfWeek = new Date(today);
-        firstDayOfWeek.setDate(firstDayOfWeek.getDate() - firstDayOfWeek.getDay());
-
-        const firstDayOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
-
-        switch (dateRangeFilter.value) {
-          case 'today':
-            result = result.filter(adjustment => {
-              const adjustmentDate = new Date(adjustment.adjustment_date);
-              return adjustmentDate.setHours(0, 0, 0, 0) === today.getTime();
-            });
-            break;
-          case 'yesterday':
-            result = result.filter(adjustment => {
-              const adjustmentDate = new Date(adjustment.adjustment_date);
-              return adjustmentDate.setHours(0, 0, 0, 0) === yesterday.getTime();
-            });
-            break;
-          case 'week':
-            result = result.filter(adjustment => {
-              const adjustmentDate = new Date(adjustment.adjustment_date);
-              return adjustmentDate >= firstDayOfWeek && adjustmentDate <= today;
-            });
-            break;
-          case 'month':
-            result = result.filter(adjustment => {
-              const adjustmentDate = new Date(adjustment.adjustment_date);
-              return adjustmentDate >= firstDayOfMonth && adjustmentDate <= today;
-            });
-            break;
-        }
-      }
-
-      // Apply status filter
-      if (statusFilter.value) {
-        result = result.filter(adjustment => {
-          return adjustment.status === statusFilter.value;
-        });
-      }
-
-      // Sort by adjustment_id (newest first)
-      result.sort((a, b) => b.adjustment_id - a.adjustment_id);
-
-      return result;
-    });
-
-    // Methods
-    const fetchAdjustments = async () => {
-      isLoading.value = true;
-
-      try {
-        // For demo purposes, use dummy data
-        setTimeout(() => {
-          adjustments.value = [
-            {
-              adjustment_id: 1,
-              adjustment_date: '2025-03-22',
-              adjustment_reason: 'Physical count discrepancy',
-              status: 'Approved',
-              reference_document: 'Count-2025-001',
-              lines: [
-                {
-                  line_id: 1,
-                  item: { item_id: 1, item_code: 'ITEM-001', name: 'Laptop Model X' },
-                  warehouse: { name: 'Main Warehouse' },
-                  location: { code: 'A-01-01' },
-                  book_quantity: 20,
-                  adjusted_quantity: 25,
-                  variance: 5
-                },
-                {
-                  line_id: 2,
-                  item: { item_id: 3, item_code: 'ITEM-003', name: 'USB Cable Type-C' },
-                  warehouse: { name: 'Main Warehouse' },
-                  location: { code: 'A-02-01' },
-                  book_quantity: 150,
-                  adjusted_quantity: 145,
-                  variance: -5
-                }
-              ]
-            },
-            {
-              adjustment_id: 2,
-              adjustment_date: '2025-03-21',
-              adjustment_reason: 'Damaged items',
-              status: 'Approved',
-              reference_document: 'DMG-2025-002',
-              lines: [
-                {
-                  line_id: 3,
-                  item: { item_id: 2, item_code: 'ITEM-002', name: 'Smartphone Y Pro' },
-                  warehouse: { name: 'Retail Store' },
-                  location: { code: 'S-01-01' },
-                  book_quantity: 45,
-                  adjusted_quantity: 43,
-                  variance: -2
-                }
-              ]
-            },
-            {
-              adjustment_id: 3,
-              adjustment_date: '2025-03-20',
-              adjustment_reason: 'Initial stock setup',
-              status: 'Pending',
-              reference_document: 'INIT-2025-001',
-              lines: [
-                {
-                  line_id: 4,
-                  item: { item_id: 6, item_code: 'ITEM-006', name: 'Mechanical Keyboard' },
-                  warehouse: { name: 'Office Supplies' },
-                  location: { code: 'O-01-01' },
-                  book_quantity: 0,
-                  adjusted_quantity: 10,
-                  variance: 10
-                },
-                {
-                  line_id: 5,
-                  item: { item_id: 8, item_code: 'ITEM-008', name: 'A4 Paper Ream' },
-                  warehouse: { name: 'Office Supplies' },
-                  location: { code: 'O-01-02' },
-                  book_quantity: 0,
-                  adjusted_quantity: 20,
-                  variance: 20
-                }
-              ]
-            },
-            {
-              adjustment_id: 4,
-              adjustment_date: '2025-03-19',
-              adjustment_reason: 'System correction',
-              status: 'Cancelled',
-              reference_document: 'COR-2025-001',
-              lines: [
-                {
-                  line_id: 6,
-                  item: { item_id: 4, item_code: 'ITEM-004', name: 'Office Chair' },
-                  warehouse: { name: 'Office Supplies' },
-                  location: { code: 'O-01-01' },
-                  book_quantity: 10,
-                  adjusted_quantity: 8,
-                  variance: -2
-                }
-              ]
-            }
-          ];
-          isLoading.value = false;
-        }, 500);
-      } catch (error) {
-        console.error('Error fetching adjustments:', error);
-        isLoading.value = false;
-      }
-    };
-
-    const fetchWarehouses = async () => {
-      try {
-        warehouses.value = [
-          {
-            warehouse_id: 1,
-            name: 'Main Warehouse',
-            zones: [
-              {
-                zone_id: 1,
-                name: 'Receiving Zone',
-                locations: [
-                  { location_id: 1, code: 'A-01-01' },
-                  { location_id: 2, code: 'A-01-02' }
-                ]
-              },
-              {
-                zone_id: 2,
-                name: 'Storage Zone',
-                locations: [
-                  { location_id: 3, code: 'A-02-01' },
-                  { location_id: 4, code: 'A-02-02' },
-                  { location_id: 5, code: 'A-02-03' }
-                ]
-              }
-            ]
-          },
-          {
-            warehouse_id: 2,
-            name: 'Retail Store',
-            zones: [
-              {
-                zone_id: 3,
-                name: 'Sales Floor',
-                locations: [
-                  { location_id: 6, code: 'S-01-01' },
-                  { location_id: 7, code: 'S-01-02' }
-                ]
-              },
-              {
-                zone_id: 4,
-                name: 'Back Store',
-                locations: [{ location_id: 8, code: 'S-02-01' }]
-              }
-            ]
-          },
-          {
-            warehouse_id: 3,
-            name: 'Office Supplies',
-            zones: [
-              {
-                zone_id: 5,
-                name: 'Office Zone',
-                locations: [
-                  { location_id: 9, code: 'O-01-01' },
-                  { location_id: 10, code: 'O-01-02' }
-                ]
-              }
-            ]
-          }
-        ];
-      } catch (error) {
-        console.error('Error fetching warehouses:', error);
-      }
-    };
-
-    const fetchItems = async () => {
-      try {
-        items.value = [
-          { item_id: 1, item_code: 'ITEM-001', name: 'Laptop Model X', current_stock: 25 },
-          { item_id: 2, item_code: 'ITEM-002', name: 'Smartphone Y Pro', current_stock: 45 },
-          { item_id: 3, item_code: 'ITEM-003', name: 'USB Cable Type-C', current_stock: 150 },
-          { item_id: 4, item_code: 'ITEM-004', name: 'Office Chair', current_stock: 8 },
-          { item_id: 5, item_code: 'ITEM-005', name: 'Wireless Mouse', current_stock: 25 },
-          { item_id: 6, item_code: 'ITEM-006', name: 'Mechanical Keyboard', current_stock: 10 },
-          { item_id: 7, item_code: 'ITEM-007', name: 'HDMI Cable 2m', current_stock: 12 },
-          { item_id: 8, item_code: 'ITEM-008', name: 'A4 Paper Ream', current_stock: 20 }
-        ];
-      } catch (error) {
-        console.error('Error fetching items:', error);
-      }
-    };
-
-    const formatDate = (dateString) => {
-      if (!dateString) return '-';
-      const date = new Date(dateString);
-      return date.toLocaleDateString('id-ID', {
-        year: 'numeric',
-        month: 'long',
-        day: 'numeric'
-      });
-    };
-
-    const getStatusLabel = (status) => {
-      switch (status) {
-        case 'Pending':
-          return 'Menunggu';
-        case 'Approved':
-          return 'Disetujui';
-        case 'Cancelled':
-          return 'Dibatalkan';
-        default:
-          return status;
-      }
-    };
-
-    const getTotalVariance = (adjustment) => {
-      const total = adjustment.lines.reduce((sum, line) => sum + line.variance, 0);
-      return total > 0 ? `+${total}` : total;
-    };
-
-    const getTotalVarianceClass = (adjustment) => {
-      const total = adjustment.lines.reduce((sum, line) => sum + line.variance, 0);
-      if (total > 0) return 'positive-variance';
-      if (total < 0) return 'negative-variance';
-      return '';
-    };
-
-    const getVarianceClass = (line) => {
-      if (line.variance > 0) return 'positive-variance';
-      if (line.variance < 0) return 'negative-variance';
-      return '';
-    };
-
-    const getAvailableLocations = (warehouseId) => {
-      if (!warehouseId) return [];
-      const selectedWarehouse = warehouses.value.find(w => w.warehouse_id === parseInt(warehouseId));
-      if (!selectedWarehouse || !selectedWarehouse.zones) return [];
-      return selectedWarehouse.zones.reduce((locations, zone) => {
-        if (zone.locations) {
-          return [...locations, ...zone.locations];
-        }
-        return locations;
-      }, []);
-    };
-
-    const applyFilters = () => {
-      // Placeholder for future filtering logic
-    };
-
-    const clearSearch = () => {
-      searchQuery.value = '';
-    };
-
-    const openNewAdjustmentModal = () => {
-      adjustmentForm.value = {
-        adjustment_date: new Date().toISOString().substr(0, 10),
-        adjustment_reason: '',
-        reference_document: '',
-        status: 'Pending',
-        lines: []
-      };
-      showAdjustmentModal.value = true;
-    };
-
-    const closeAdjustmentModal = () => {
-      showAdjustmentModal.value = false;
-    };
-
-    const addAdjustmentLine = () => {
-      adjustmentForm.value.lines.push({
-        item_id: '',
-        warehouse_id: '',
-        location_id: '',
-        book_quantity: 0,
-        adjusted_quantity: 0,
-        variance: 0
-      });
-    };
-
-    const removeAdjustmentLine = (index) => {
-      adjustmentForm.value.lines.splice(index, 1);
-    };
-
-    const updateBookQuantity = (index) => {
-      const line = adjustmentForm.value.lines[index];
-      line.book_quantity = 0;
-      line.adjusted_quantity = 0;
-      line.variance = 0;
-      if (line.item_id && line.warehouse_id) {
-        const selectedItem = items.value.find(item => item.item_id === parseInt(line.item_id));
-        if (selectedItem) {
-          line.book_quantity = selectedItem.current_stock;
-          line.adjusted_quantity = selectedItem.current_stock;
-        }
-      }
-    };
-
-    const calculateVariance = (index) => {
-      const line = adjustmentForm.value.lines[index];
-      line.variance = parseFloat(line.adjusted_quantity) - parseFloat(line.book_quantity);
-    };
-
-    const viewAdjustmentDetails = (adjustment) => {
-      selectedAdjustment.value = adjustment;
-      showDetailsModal.value = true;
-    };
-
-    const closeDetailsModal = () => {
-      showDetailsModal.value = false;
-      selectedAdjustment.value = null;
-    };
-
-    const approveAdjustment = (adjustment) => {
-      adjustmentToAction.value = adjustment;
-      confirmationTitle.value = 'Setujui Penyesuaian';
-      confirmationMessage.value = `Apakah Anda yakin ingin menyetujui penyesuaian #${adjustment.adjustment_id}?`;
-      confirmationAction.value = 'approve';
-      showConfirmationModal.value = true;
-    };
-
-    const cancelAdjustment = (adjustment) => {
-      adjustmentToAction.value = adjustment;
-      confirmationTitle.value = 'Batalkan Penyesuaian';
-      confirmationMessage.value = `Apakah Anda yakin ingin membatalkan penyesuaian #${adjustment.adjustment_id}?`;
-      confirmationAction.value = 'cancel';
-      showConfirmationModal.value = true;
-    };
-
-    const closeConfirmationModal = () => {
-      showConfirmationModal.value = false;
-      adjustmentToAction.value = null;
-    };
-
-    const confirmAction = async () => {
-      try {
-        if (confirmationAction.value === 'approve') {
-          const index = adjustments.value.findIndex(adj => adj.adjustment_id === adjustmentToAction.value.adjustment_id);
-          if (index !== -1) {
-            adjustments.value[index].status = 'Approved';
-            if (
-              selectedAdjustment.value &&
-              selectedAdjustment.value.adjustment_id === adjustmentToAction.value.adjustment_id
-            ) {
-              selectedAdjustment.value.status = 'Approved';
-            }
-          }
-          alert('Penyesuaian berhasil disetujui!');
-        } else if (confirmationAction.value === 'cancel') {
-          const index = adjustments.value.findIndex(adj => adj.adjustment_id === adjustmentToAction.value.adjustment_id);
-          if (index !== -1) {
-            adjustments.value[index].status = 'Cancelled';
-            if (
-              selectedAdjustment.value &&
-              selectedAdjustment.value.adjustment_id === adjustmentToAction.value.adjustment_id
-            ) {
-              selectedAdjustment.value.status = 'Cancelled';
-            }
-          }
-          alert('Penyesuaian berhasil dibatalkan!');
-        }
-        closeConfirmationModal();
-      } catch (error) {
-        console.error('Error updating adjustment:', error);
-        alert('Terjadi kesalahan saat memperbarui penyesuaian. Silakan coba lagi.');
-        closeConfirmationModal();
-      }
-    };
-
-    const saveAdjustment = async () => {
-      try {
-        if (adjustmentForm.value.lines.length === 0) {
-          alert('Silakan tambahkan setidaknya satu item.');
-          return;
-        }
-
-        const hasEmptyFields = adjustmentForm.value.lines.some(line => !line.item_id || !line.warehouse_id);
-        if (hasEmptyFields) {
-          alert('Silakan isi semua field yang diperlukan untuk detail item.');
-          return;
-        }
-
-        const newAdjustment = {
-          adjustment_id: adjustments.value.length + 1,
-          adjustment_date: adjustmentForm.value.adjustment_date,
-          adjustment_reason: adjustmentForm.value.adjustment_reason,
-          reference_document: adjustmentForm.value.reference_document,
-          status: 'Pending',
-          lines: adjustmentForm.value.lines.map((line, index) => {
-            const selectedItem = items.value.find(item => item.item_id === parseInt(line.item_id));
-            const selectedWarehouse = warehouses.value.find(wh => wh.warehouse_id === parseInt(line.warehouse_id));
-            let selectedLocation = null;
-            if (line.location_id) {
-              const availableLocations = getAvailableLocations(line.warehouse_id);
-              selectedLocation = availableLocations.find(loc => loc.location_id === parseInt(line.location_id));
-            }
-            return {
-              line_id: index + 1,
-              item: selectedItem ? { item_id: selectedItem.item_id, item_code: selectedItem.item_code, name: selectedItem.name } : null,
-              warehouse: selectedWarehouse ? { name: selectedWarehouse.name } : null,
-              location: selectedLocation ? { code: selectedLocation.code } : null,
-              book_quantity: parseFloat(line.book_quantity),
-              adjusted_quantity: parseFloat(line.adjusted_quantity),
-              variance: parseFloat(line.variance)
-            };
-          })
-        };
-
-        adjustments.value.unshift(newAdjustment);
-        closeAdjustmentModal();
-        alert('Penyesuaian stok berhasil dibuat!');
-      } catch (error) {
-        console.error('Error saving adjustment:', error);
-        alert('Terjadi kesalahan saat menyimpan penyesuaian. Silakan coba lagi.');
-      }
-    };
-
-    // Initial data loading
-    onMounted(() => {
-      fetchAdjustments();
-      fetchWarehouses();
-      fetchItems();
-    });
-
+  name: 'StockAdjustment',
+  data() {
     return {
-      adjustments,
-      warehouses,
-      items,
-      isLoading,
-      searchQuery,
-      dateRangeFilter,
-      statusFilter,
-      filteredAdjustments,
-      showAdjustmentModal,
-      showDetailsModal,
-      showConfirmationModal,
-      selectedAdjustment,
-      confirmationTitle,
-      confirmationMessage,
-      confirmationAction,
-      adjustmentForm,
-      formatDate,
-      getStatusLabel,
-      getTotalVariance,
-      getTotalVarianceClass,
-      getVarianceClass,
-      getAvailableLocations,
-      applyFilters,
-      clearSearch,
-      openNewAdjustmentModal,
-      closeAdjustmentModal,
-      addAdjustmentLine,
-      removeAdjustmentLine,
-      updateBookQuantity,
-      calculateVariance,
-      viewAdjustmentDetails,
-      closeDetailsModal,
-      approveAdjustment,
-      cancelAdjustment,
-      closeConfirmationModal,
-      confirmAction,
-      saveAdjustment
+      form: {
+        itemId: '',
+        warehouseId: '',
+        quantity: 0,
+        adjustmentType: 'absolute',
+        reason: '',
+        otherReason: '',
+        referenceNumber: '',
+        notes: ''
+      },
+      items: [],
+      warehouses: [],
+      selectedItem: null,
+      currentStock: 0,
+      loading: false,
+      quantityError: '',
+      showSuccessModal: false,
+      showErrorModal: false,
+      errorMessage: ''
     };
+  },
+  computed: {
+    isFormValid() {
+      if (!this.form.itemId || !this.form.warehouseId || this.form.quantity < 0 || !this.form.reason) {
+        return false;
+      }
+      
+      if (this.form.reason === 'other' && !this.form.otherReason) {
+        return false;
+      }
+      
+      if (this.form.adjustmentType === 'decrease' && this.form.quantity > this.currentStock) {
+        return false;
+      }
+      
+      return true;
+    },
+    warehouseName() {
+      const warehouse = this.warehouses.find(w => w.warehouse_id == this.form.warehouseId);
+      return warehouse ? warehouse.name : '';
+    }
+  },
+  created() {
+    this.fetchData();
+    this.initFromQuery();
+  },
+  methods: {
+    async fetchData() {
+      this.loading = true;
+      
+      try {
+        // Fetch all items
+        const itemsResponse = await axios.get('/items');
+        if (itemsResponse.data && itemsResponse.data.data) {
+          this.items = itemsResponse.data.data;
+        }
+        
+        // Fetch all warehouses
+        const warehousesResponse = await axios.get('/warehouses');
+        if (warehousesResponse.data && warehousesResponse.data.data) {
+          this.warehouses = warehousesResponse.data.data;
+        }
+      } catch (err) {
+        console.error('Error fetching data:', err);
+        this.errorMessage = 'Failed to load item and warehouse data. Please try again later.';
+        this.showErrorModal = true;
+      } finally {
+        this.loading = false;
+      }
+    },
+    initFromQuery() {
+      // If item and/or warehouse passed in query parameters, initialize the form
+      const { item, warehouse } = this.$route.query;
+      
+      if (item) {
+        this.form.itemId = parseInt(item, 10) || '';
+        this.$nextTick(() => {
+          this.onItemChange();
+        });
+      }
+      
+      if (warehouse) {
+        this.form.warehouseId = parseInt(warehouse, 10) || '';
+        this.$nextTick(() => {
+          this.onWarehouseChange();
+        });
+      }
+    },
+    async onItemChange() {
+      if (!this.form.itemId) {
+        this.selectedItem = null;
+        this.currentStock = 0;
+        return;
+      }
+      
+      this.loading = true;
+      
+      try {
+        // Get the selected item details
+        const itemResponse = await axios.get(`/items/${this.form.itemId}`);
+        if (itemResponse.data && itemResponse.data.data) {
+          this.selectedItem = itemResponse.data.data;
+        }
+        
+        // If warehouse is already selected, get current stock
+        if (this.form.warehouseId) {
+          this.onWarehouseChange();
+        }
+      } catch (err) {
+        console.error('Error fetching item data:', err);
+        this.errorMessage = 'Failed to load item data. Please try again later.';
+        this.showErrorModal = true;
+      } finally {
+        this.loading = false;
+      }
+    },
+    async onWarehouseChange() {
+      if (!this.form.itemId || !this.form.warehouseId) {
+        this.currentStock = 0;
+        return;
+      }
+      
+      this.loading = true;
+      
+      try {
+        // Get the item's stock in the selected warehouse
+        const stockResponse = await axios.get(`/item-stocks/item/${this.form.itemId}`);
+        if (stockResponse.data && stockResponse.data.data) {
+          const itemStock = stockResponse.data.data;
+          
+          // Find stock in the selected warehouse
+          const warehouseStock = itemStock.warehouse_stocks.find(
+            stock => stock.warehouse_id == this.form.warehouseId
+          );
+          
+          this.currentStock = warehouseStock ? warehouseStock.quantity : 0;
+        }
+      } catch (err) {
+        console.error('Error fetching warehouse stock:', err);
+        this.errorMessage = 'Failed to load warehouse stock data. Please try again later.';
+        this.showErrorModal = true;
+      } finally {
+        this.loading = false;
+      }
+    },
+    calculateResultStock() {
+      if (this.form.adjustmentType === 'absolute') {
+        return parseFloat(this.form.quantity) || 0;
+      } else if (this.form.adjustmentType === 'increase') {
+        return parseFloat((this.currentStock + parseFloat(this.form.quantity || 0)).toFixed(2));
+      } else if (this.form.adjustmentType === 'decrease') {
+        return parseFloat(Math.max(0, this.currentStock - parseFloat(this.form.quantity || 0)).toFixed(2));
+      }
+      return 0;
+    },
+    formatAdjustmentType(type) {
+      switch(type) {
+        case 'absolute': return 'Set to Specific Value';
+        case 'increase': return 'Increase Quantity';
+        case 'decrease': return 'Decrease Quantity';
+        default: return type;
+      }
+    },
+    formatReason() {
+      if (this.form.reason === 'other' && this.form.otherReason) {
+        return this.form.otherReason;
+      }
+      
+      switch(this.form.reason) {
+        case 'inventory_count': return 'Inventory Count';
+        case 'damaged': return 'Damaged/Expired Goods';
+        case 'lost': return 'Lost/Stolen';
+        case 'system_error': return 'System Error';
+        case 'returned': return 'Returned Items';
+        case 'production': return 'Production Excess/Shortage';
+        default: return this.form.reason;
+      }
+    },
+    validateForm() {
+      this.quantityError = '';
+      
+      if (isNaN(this.form.quantity) || this.form.quantity < 0) {
+        this.quantityError = 'Quantity must be greater than or equal to zero';
+        return false;
+      }
+      
+      if (this.form.adjustmentType === 'decrease' && this.form.quantity > this.currentStock) {
+        this.quantityError = `Quantity to decrease exceeds current stock (${this.currentStock})`;
+        return false;
+      }
+      
+      if (this.form.reason === 'other' && !this.form.otherReason.trim()) {
+        this.errorMessage = 'Please specify a reason for the adjustment';
+        this.showErrorModal = true;
+        return false;
+      }
+      
+      return true;
+    },
+    async submitAdjustment() {
+      if (!this.validateForm()) return;
+      
+      this.loading = true;
+      
+      try {
+        // Determine the actual new quantity based on the adjustment type
+        let newQuantity = this.form.quantity;
+        if (this.form.adjustmentType === 'increase') {
+          newQuantity = this.currentStock + parseFloat(this.form.quantity);
+        } else if (this.form.adjustmentType === 'decrease') {
+          newQuantity = Math.max(0, this.currentStock - parseFloat(this.form.quantity));
+        }
+        
+        // Reason with proper formatting
+        const reason = this.form.reason === 'other' ? this.form.otherReason : this.form.reason;
+        
+        const response = await axios.post('/item-stocks/adjust', {
+          item_id: this.form.itemId,
+          warehouse_id: this.form.warehouseId,
+          new_quantity: newQuantity,
+          reason: reason,
+          reference_number: this.form.referenceNumber || undefined,
+          notes: this.form.notes || undefined
+        });
+        
+        if (response.data && response.data.message) {
+          // Show success modal
+          this.showSuccessModal = true;
+        }
+      } catch (err) {
+        console.error('Error submitting adjustment:', err);
+        this.errorMessage = err.response?.data?.message || 'Failed to submit stock adjustment. Please try again later.';
+        this.showErrorModal = true;
+      } finally {
+        this.loading = false;
+      }
+    },
+    resetForm() {
+      this.form = {
+        itemId: '',
+        warehouseId: '',
+        quantity: 0,
+        adjustmentType: 'absolute',
+        reason: '',
+        otherReason: '',
+        referenceNumber: '',
+        notes: ''
+      };
+      this.selectedItem = null;
+      this.currentStock = 0;
+      this.quantityError = '';
+    },
+    newAdjustment() {
+      this.resetForm();
+      this.showSuccessModal = false;
+    }
+  },
+  watch: {
+    'form.adjustmentType'() {
+      // Reset quantity error when adjustment type changes
+      this.quantityError = '';
+    },
+    'form.quantity'() {
+      // Validate quantity when it changes
+      if (this.form.adjustmentType === 'decrease' && this.form.quantity > this.currentStock) {
+        this.quantityError = `Quantity to decrease exceeds current stock (${this.currentStock})`;
+      } else {
+        this.quantityError = '';
+      }
+    }
   }
 };
 </script>
 
 <style scoped>
-.stock-adjustments {
+.stock-adjustment {
+  margin-bottom: 2rem;
+}
+
+.page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 1.5rem;
+}
+
+.header-left {
   display: flex;
   flex-direction: column;
-  gap: 1.5rem;
+  gap: 0.5rem;
 }
 
-.adjustments-container {
-  width: 100%;
+.back-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--primary-color);
+  text-decoration: none;
+  font-size: 0.875rem;
 }
 
-.adjustments-grid {
+.back-link:hover {
+  text-decoration: underline;
+}
+
+.page-header h1 {
+  margin: 0;
+  font-size: 1.75rem;
+}
+
+.content-container {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  grid-template-columns: 1fr;
   gap: 1.5rem;
 }
 
-.adjustment-card {
+@media (min-width: 1024px) {
+  .content-container {
+    grid-template-columns: 3fr 2fr;
+  }
+}
+
+.adjustment-form-card, .adjustment-preview-card {
   background-color: white;
   border-radius: 0.5rem;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
   overflow: hidden;
-  display: flex;
-  flex-direction: column;
-  cursor: pointer;
-  transition: box-shadow 0.3s;
 }
 
-.adjustment-card:hover {
-  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-}
-
-.adjustment-header {
-  padding: 0.75rem 1rem;
-  background-color: var(--gray-50);
-  border-bottom: 1px solid var(--gray-200);
+.card-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  padding: 1rem 1.5rem;
+  background-color: var(--gray-50);
+  border-bottom: 1px solid var(--gray-200);
 }
 
-.adjustment-status {
-  font-size: 0.75rem;
-  font-weight: 500;
-  padding: 0.25rem 0.5rem;
-  border-radius: 0.25rem;
+.card-header h2 {
+  margin: 0;
+  font-size: 1.25rem;
+  color: var(--gray-800);
 }
 
-.adjustment-status.pending {
-  background-color: var(--warning-bg);
-  color: var(--warning-color);
+.card-body {
+  padding: 1.5rem;
 }
 
-.adjustment-status.approved {
-  background-color: var(--success-bg);
-  color: var(--success-color);
-}
-
-.adjustment-status.cancelled {
-  background-color: var(--gray-100);
-  color: var(--gray-600);
-}
-
-.adjustment-date {
-  font-size: 0.75rem;
-  color: var(--gray-500);
-}
-
-.adjustment-body {
-  padding: 1rem;
-  flex: 1;
-}
-
-.adjustment-id {
-  font-size: 0.875rem;
-  color: var(--gray-500);
-  margin-bottom: 0.5rem;
-}
-
-.adjustment-reason {
-  font-size: 0.875rem;
-  margin-bottom: 1rem;
-  color: var(--gray-700);
-}
-
-.adjustment-summary {
+.form-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
   gap: 1rem;
-  margin-top: 1rem;
 }
 
-.summary-item {
-  background-color: var(--gray-50);
-  padding: 0.75rem;
-  border-radius: 0.375rem;
-  text-align: center;
-}
-
-.summary-label {
-  font-size: 0.75rem;
-  color: var(--gray-500);
-  margin-bottom: 0.25rem;
-}
-
-.summary-value {
-  font-size: 1.125rem;
-  font-weight: 600;
-  color: var(--gray-800);
-}
-
-.positive-variance {
-  color: var(--success-color);
-}
-
-.negative-variance {
-  color: var(--danger-color);
-}
-
-.adjustment-footer {
-  padding: 0.75rem 1rem;
-  border-top: 1px solid var(--gray-200);
+.form-group {
   display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.reference-document {
-  font-size: 0.75rem;
-  color: var(--gray-500);
-}
-
-.adjustment-actions {
-  display: flex;
-  gap: 0.5rem;
-}
-
-.action-btn {
-  background: none;
-  border: none;
-  font-size: 0.75rem;
-  padding: 0.25rem 0.5rem;
-  border-radius: 0.25rem;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
+  flex-direction: column;
   gap: 0.25rem;
 }
 
-.approve-btn {
-  color: var(--success-color);
+.form-group.span-full {
+  grid-column: span 2;
 }
 
-.approve-btn:hover {
-  background-color: var(--success-bg);
+.form-group label {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--gray-700);
 }
 
-.cancel-btn {
+.required {
   color: var(--danger-color);
 }
 
-.cancel-btn:hover {
-  background-color: var(--danger-bg);
+.select-wrapper {
+  position: relative;
 }
 
-.delete-btn {
+.select-wrapper select {
+  width: 100%;
+  padding: 0.625rem 2rem 0.625rem 0.75rem;
+  border: 1px solid var(--gray-200);
+  border-radius: 0.375rem;
+  font-size: 0.875rem;
+  appearance: none;
+  background-color: white;
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3E%3Cpath stroke='%236B7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3E%3C/svg%3E");
+  background-position: right 0.5rem center;
+  background-repeat: no-repeat;
+  background-size: 1.5em 1.5em;
+}
+
+.select-wrapper select:focus {
+  outline: none;
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+}
+
+.select-wrapper select:disabled {
+  background-color: var(--gray-100);
+  cursor: not-allowed;
+}
+
+.form-group input[type="number"],
+.form-group input[type="text"] {
+  padding: 0.625rem 0.75rem;
+  border: 1px solid var(--gray-200);
+  border-radius: 0.375rem;
+  font-size: 0.875rem;
+}
+
+.form-group input:focus {
+  outline: none;
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+}
+
+.form-group input:disabled {
+  background-color: var(--gray-100);
+  cursor: not-allowed;
+}
+
+.form-group textarea {
+  padding: 0.625rem 0.75rem;
+  border: 1px solid var(--gray-200);
+  border-radius: 0.375rem;
+  font-size: 0.875rem;
+  resize: vertical;
+}
+
+.form-group textarea:focus {
+  outline: none;
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+}
+
+.form-group textarea:disabled {
+  background-color: var(--gray-100);
+  cursor: not-allowed;
+}
+
+.input-hint {
+  font-size: 0.75rem;
+  color: var(--gray-500);
+  margin-top: 0.25rem;
+}
+
+.error-message {
+  font-size: 0.75rem;
   color: var(--danger-color);
+  margin-top: 0.25rem;
 }
 
-.delete-btn:hover {
-  background-color: var(--danger-bg);
-}
-
-.empty-state {
+.stock-info-box {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 4rem 0;
-  text-align: center;
-  color: var(--gray-500);
-}
-
-.empty-icon {
-  font-size: 3rem;
-  margin-bottom: 1rem;
-  color: var(--gray-300);
-}
-
-.empty-state h3 {
-  font-size: 1.25rem;
-  margin: 0 0 0.5rem 0;
-  color: var(--gray-800);
-}
-
-.empty-state p {
-  margin: 0;
-  font-size: 0.875rem;
-}
-
-.loading-indicator {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  padding: 4rem 0;
-  color: var(--gray-500);
-  font-size: 1rem;
-}
-
-.loading-indicator i {
-  margin-right: 0.5rem;
-}
-
-.adjustment-lines-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 1rem;
-  padding-top: 1rem;
-  border-top: 1px solid var(--gray-200);
-}
-
-.adjustment-lines-header h3 {
-  font-size: 1rem;
-  font-weight: 600;
-  margin: 0;
-  color: var(--gray-800);
-}
-
-.adjustment-lines {
-  margin-bottom: 1.5rem;
-}
-
-.empty-lines {
+  gap: 0.5rem;
   background-color: var(--gray-50);
-  padding: 1.5rem;
+  border: 1px solid var(--gray-200);
   border-radius: 0.375rem;
-  text-align: center;
+  padding: 1rem;
+}
+
+.info-label {
+  font-size: 0.75rem;
   color: var(--gray-500);
-  font-style: italic;
+  font-weight: 500;
 }
 
-.adjustment-lines-table {
-  overflow-x: auto;
-}
-
-.adjustment-lines-table table {
-  width: 100%;
-  border-collapse: collapse;
+.info-value {
   font-size: 0.875rem;
-}
-
-.adjustment-lines-table th {
-  text-align: left;
-  padding: 0.75rem;
-  background-color: var(--gray-50);
-  border-bottom: 1px solid var(--gray-200);
-  color: var(--gray-600);
   font-weight: 500;
+  color: var(--gray-800);
 }
 
-.adjustment-lines-table td {
-  padding: 0.5rem 0.75rem;
-  border-bottom: 1px solid var(--gray-100);
+.form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 1rem;
+  margin-top: 1.5rem;
 }
 
-.quantity-input {
-  text-align: right;
-}
-
-.variance {
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.625rem 1rem;
+  border-radius: 0.375rem;
   font-weight: 500;
+  font-size: 0.875rem;
+  cursor: pointer;
+  border: none;
+  transition: all 0.2s;
 }
 
-.adjustment-details {
+.btn-primary {
+  background-color: var(--primary-color);
+  color: white;
+}
+
+.btn-primary:hover:not(:disabled) {
+  background-color: var(--primary-dark);
+}
+
+.btn-secondary {
+  background-color: var(--gray-100);
+  color: var(--gray-800);
+  border: 1px solid var(--gray-200);
+}
+
+.btn-secondary:hover:not(:disabled) {
+  background-color: var(--gray-200);
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.preview-container {
   display: flex;
   flex-direction: column;
   gap: 1.5rem;
 }
 
-.details-header {
-  background-color: var(--gray-50);
-  border-radius: 0.375rem;
-  padding: 1rem;
+.stock-box {
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
+  gap: 1rem;
+  background-color: var(--gray-50);
+  border: 1px solid var(--gray-200);
+  border-radius: 0.5rem;
+  padding: 1.5rem;
 }
 
-.detail-row {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+.warehouse-title {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--gray-700);
+}
+
+.item-name {
+  font-size: 0.875rem;
+  color: var(--gray-600);
+  margin-bottom: 0.5rem;
+}
+
+.stock-visualization {
+  display: flex;
+  flex-direction: column;
   gap: 1rem;
+  padding: 1rem 0;
+}
+
+.stock-level {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.stock-label {
+  font-size: 0.875rem;
+  color: var(--gray-600);
+}
+
+.stock-value {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--gray-800);
+}
+
+.stock-level.result .stock-value {
+  font-weight: 600;
+  font-size: 1rem;
+  color: var(--primary-color);
+}
+
+.adjustment-arrow {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-left: auto;
+  font-size: 0.875rem;
+}
+
+.adjustment-value {
+  font-weight: 500;
+}
+
+.adjustment-details {
+  margin-top: 1.5rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--gray-200);
 }
 
 .detail-item {
   display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-}
-
-.detail-item.full-width {
-  grid-column: 1 / -1;
+  margin-bottom: 0.75rem;
 }
 
 .detail-label {
-  font-size: 0.75rem;
-  color: var(--gray-500);
+  width: 5rem;
   font-weight: 500;
+  color: var(--gray-700);
+  font-size: 0.875rem;
 }
 
 .detail-value {
+  flex: 1;
   color: var(--gray-800);
   font-size: 0.875rem;
 }
 
-.details-section {
-  border: 1px solid var(--gray-200);
-  border-radius: 0.375rem;
-  overflow: hidden;
+.modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 50;
 }
 
-.section-title {
-  font-size: 1rem;
-  font-weight: 600;
-  margin: 0;
-  padding: 0.75rem 1rem;
-  background-color: var(--gray-50);
-  border-bottom: 1px solid var(--gray-200);
-  color: var(--gray-800);
+.modal-backdrop {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.5);
 }
 
-.details-footer {
+.modal-content {
+  position: relative;
+  background-color: white;
+  border-radius: 0.5rem;
+  max-width: 28rem;
+  width: 100%;
+  z-index: 60;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+}
+
+.modal-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 1rem;
-  background-color: var(--gray-50);
-  border-radius: 0.375rem;
+  padding: 1rem 1.5rem;
+  border-bottom: 1px solid var(--gray-200);
 }
 
-.details-actions {
+.modal-header h2 {
+  margin: 0;
+  font-size: 1.25rem;
+  color: var(--gray-800);
+}
+
+.close-btn {
+  background: none;
+  border: none;
+  color: var(--gray-500);
+  cursor: pointer;
+  padding: 0.5rem;
   display: flex;
-  gap: 0.75rem;
+  align-items: center;
+  justify-content: center;
 }
 
-.item-info {
+.close-btn:hover {
+  color: var(--gray-800);
+}
+
+.modal-body {
+  padding: 1.5rem;
+}
+
+.success-message, .modal-body .error-message {
   display: flex;
   flex-direction: column;
+  align-items: center;
+  text-align: center;
+  margin-bottom: 1.5rem;
 }
 
-.item-code {
-  font-size: 0.75rem;
-  color: var(--gray-500);
+.success-message i, .modal-body .error-message i {
+  font-size: 3rem;
+  margin-bottom: 1rem;
 }
 
-.item-name {
+.success-message i {
+  color: var(--success-color);
+}
+
+.modal-body .error-message i {
+  color: var(--danger-color);
+}
+
+.success-message p, .modal-body .error-message p {
+  font-size: 1rem;
+  color: var(--gray-800);
+  margin: 0;
+}
+
+.adjustment-details {
+  margin-top: 1.5rem;
+  border-top: 1px solid var(--gray-200);
+  padding-top: 1.5rem;
+}
+
+.adjustment-detail {
+  display: flex;
+  margin-bottom: 0.5rem;
+}
+
+.adjustment-detail .detail-label {
+  width: 7rem;
   font-weight: 500;
+  color: var(--gray-700);
+}
+
+.adjustment-detail .detail-value {
+  flex: 1;
+  color: var(--gray-800);
+}
+
+.modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 1rem;
+  padding: 1rem 1.5rem;
+  border-top: 1px solid var(--gray-200);
 }
 
 @media (max-width: 768px) {
-  .adjustments-grid {
+  .form-grid {
     grid-template-columns: 1fr;
   }
-
-  .detail-row {
-    grid-template-columns: 1fr;
-  }
-
-  .details-footer {
-    flex-direction: column;
-    gap: 1rem;
-  }
-
-  .details-actions {
-    flex-direction: column;
-    align-items: stretch;
+  
+  .form-group.span-full {
+    grid-column: span 1;
   }
 }
 </style>

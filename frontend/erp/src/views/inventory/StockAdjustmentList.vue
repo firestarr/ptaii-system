@@ -417,7 +417,7 @@
         error.value = null;
         
         try {
-          const response = await axios.get('/api/stock-adjustments', {
+          const response = await axios.get('/stock-adjustments', {
             params: {
               search: filters.search,
               status: filters.status,
@@ -497,7 +497,7 @@
         isDeleting.value = true;
         
         try {
-          await axios.delete(`/api/stock-adjustments/${adjustmentToDelete.value.adjustment_id}`);
+          await axios.delete(`/stock-adjustments/${adjustmentToDelete.value.adjustment_id}`);
           showDeleteModal.value = false;
           
           // Remove item from list
@@ -523,7 +523,7 @@
       
       const submitAdjustment = async (adjustment) => {
         try {
-          await axios.post(`/api/stock-adjustments/${adjustment.adjustment_id}/submit`);
+          await axios.post(`/stock-adjustments/${adjustment.adjustment_id}/submit`);
           
           // Update the status in the local list
           const index = adjustments.value.findIndex(a => a.adjustment_id === adjustment.adjustment_id);
@@ -559,7 +559,7 @@
             payload.adjustment_reason = approvalForm.adjustment_reason;
           }
           
-          await axios.post(`/api/stock-adjustments/${adjustmentToAction.value.adjustment_id}/approve`, payload);
+          await axios.post(`/stock-adjustments/${adjustmentToAction.value.adjustment_id}/approve`, payload);
           
           // Update the status in the local list
           const index = adjustments.value.findIndex(a => a.adjustment_id === adjustmentToAction.value.adjustment_id);
@@ -590,7 +590,7 @@
         isProcessing.value = true;
         
         try {
-          await axios.post(`/api/stock-adjustments/${adjustmentToAction.value.adjustment_id}/reject`, {
+          await axios.post(`/stock-adjustments/${adjustmentToAction.value.adjustment_id}/reject`, {
             rejection_reason: rejectForm.rejection_reason
           });
           

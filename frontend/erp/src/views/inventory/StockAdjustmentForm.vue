@@ -373,7 +373,7 @@
         try {
           // Load adjustment data if in edit mode
           if (isEditMode.value) {
-            const adjustmentResponse = await axios.get(`/api/stock-adjustments/${route.params.id}`);
+            const adjustmentResponse = await axios.get(`/stock-adjustments/${route.params.id}`);
             const adjustmentData = adjustmentResponse.data.data;
             
             form.adjustment_date = adjustmentData.adjustment_date;
@@ -386,8 +386,8 @@
           
           // Load items and warehouses regardless of mode
           const [itemsResponse, warehousesResponse] = await Promise.all([
-            axios.get('/api/items'),
-            axios.get('/api/warehouses')
+            axios.get('/items'),
+            axios.get('/warehouses')
           ]);
           
           items.value = itemsResponse.data.data;
@@ -395,7 +395,7 @@
           
           // Now populate lines if in edit mode
           if (isEditMode.value) {
-            const adjustmentResponse = await axios.get(`/api/stock-adjustments/${route.params.id}`);
+            const adjustmentResponse = await axios.get(`/stock-adjustments/${route.params.id}`);
             const adjustmentData = adjustmentResponse.data.data;
             
             if (adjustmentData.adjustment_lines && adjustmentData.adjustment_lines.length > 0) {
@@ -434,12 +434,12 @@
           if (warehouseLocations.value[targetWarehouseId]) return;
           
           // Fetch all zones for this warehouse
-          const zonesResponse = await axios.get(`/api/warehouses/${targetWarehouseId}/zones`);
+          const zonesResponse = await axios.get(`/warehouses/${targetWarehouseId}/zones`);
           const zones = zonesResponse.data.data;
           
           // For each zone, fetch its locations
           const locationsPromises = zones.map(zone => 
-            axios.get(`/api/zones/${zone.zone_id}/locations`)
+            axios.get(`/zones/${zone.zone_id}/locations`)
           );
           
           const locationsResponses = await Promise.all(locationsPromises);
@@ -482,7 +482,7 @@
             params.location_id = line.location_id;
           }
           
-          const response = await axios.get('/api/items/stock-status', { params });
+          const response = await axios.get('/items/stock-status', { params });
           
           line.book_quantity = response.data.current_stock || 0;
           
@@ -584,9 +584,9 @@
           };
           
           if (isEditMode.value) {
-            await axios.put(`/api/stock-adjustments/${route.params.id}`, payload);
+            await axios.put(`/stock-adjustments/${route.params.id}`, payload);
           } else {
-            await axios.post('/api/stock-adjustments', payload);
+            await axios.post('/stock-adjustments', payload);
           }
           
           // Navigate back to the list

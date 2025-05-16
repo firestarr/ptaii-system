@@ -21,7 +21,7 @@ class StockTransactionController extends Controller
      */
     public function index(Request $request)
     {
-        $query = StockTransaction::with(['item', 'warehouse', 'location', 'batch']);
+        $query = StockTransaction::with(['item', 'warehouse', 'batch']);
         
         // Filter by item
         if ($request->has('item_id')) {
@@ -148,7 +148,7 @@ class StockTransactionController extends Controller
      */
     public function show($id)
     {
-        $transaction = StockTransaction::with(['item', 'warehouse', 'location', 'batch'])->find($id);
+        $transaction = StockTransaction::with(['item', 'warehouse', 'batch'])->find($id);
         
         if (!$transaction) {
             return response()->json([
@@ -239,7 +239,7 @@ class StockTransactionController extends Controller
         }
         
         $query = StockTransaction::where('item_id', $itemId)
-            ->with(['warehouse', 'location', 'batch']);
+            ->with(['warehouse', 'batch']);
         
         // Filter by date range
         if ($request->has('start_date')) {
@@ -408,7 +408,7 @@ class StockTransactionController extends Controller
     {
         // Implementasi untuk mendapatkan transaksi berdasarkan warehouse
         $transactions = StockTransaction::where('warehouse_id', $warehouseId)
-                        ->with(['item', 'warehouse', 'location', 'batch'])
+                        ->with(['item', 'warehouse', 'batch'])
                         ->orderBy('transaction_date', 'desc')
                         ->get();
         

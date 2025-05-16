@@ -39,7 +39,7 @@ axios.interceptors.response.use(
 );
 
 // Definisikan feature flag terlebih dahulu
-window._VUE_PROD_HYDRATION_MISMATCH_DETAILS_ = false;
+window.__VUE_PROD_HYDRATION_MISMATCH_DETAILS__ = false;
 // Create and mount the Vue application
 const app = createApp(App);
 app.use(router);

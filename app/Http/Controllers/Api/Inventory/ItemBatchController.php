@@ -218,30 +218,31 @@ class ItemBatchController extends Controller
      * @param  int  $days
      * @return \Illuminate\Http\Response
      */
-    public function nearExpiry($days = 30)
-    {
-        $date = now()->addDays($days)->format('Y-m-d');
+public function nearExpiry($days = 30)
+{
+    $days = (int) $days;
+    $date = now()->addDays($days)->format('Y-m-d');
+    
+    $batches = ItemBatch::where('expiry_date', '<=', $date)
+        ->where('expiry_date', '>=', now()->format('Y-m-d'))
+        ->with('item')
+        ->get();
         
-        $batches = ItemBatch::where('expiry_date', '<=', $date)
-            ->where('expiry_date', '>=', now()->format('Y-m-d'))
-            ->with('item')
-            ->get();
-            
-        $batchesData = $batches->map(function ($batch) {
-            return [
-                'batch_id' => $batch->batch_id,
-                'batch_number' => $batch->batch_number,
-                'item_id' => $batch->item_id,
-                'item_name' => $batch->item->name,
-                'item_code' => $batch->item->item_code,
-                'expiry_date' => $batch->expiry_date,
-                'days_until_expiry' => $batch->daysUntilExpiry()
-            ];
-        });
+    $batchesData = $batches->map(function ($batch) {
+        return [
+            'batch_id' => $batch->batch_id,
+            'batch_number' => $batch->batch_number,
+            'item_id' => $batch->item_id,
+            'item_name' => $batch->item->name,
+            'item_code' => $batch->item->item_code,
+            'expiry_date' => $batch->expiry_date,
+            'days_until_expiry' => $batch->daysUntilExpiry()
+        ];
+    });
 
-        return response()->json([
-            'success' => true,
-            'data' => $batchesData
-        ]);
-    }
+    return response()->json([
+        'success' => true,
+        'data' => $batchesData
+    ]);
+}
 }

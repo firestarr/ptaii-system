@@ -16,6 +16,7 @@ use App\Http\Controllers\Api\Inventory\ItemBatchController;
 use App\Http\Controllers\Api\Inventory\StockTransactionController;
 use App\Http\Controllers\Api\Inventory\StockAdjustmentController;
 use App\Http\Controllers\Api\Inventory\CycleCountingController;
+use App\Http\Controllers\Api\Inventory\ItemStockController;
 
 // purchase order
 use App\Http\Controllers\Api\VendorController;
@@ -354,14 +355,19 @@ Route::get('purchase-orders/reports/outstanding-items', [PurchaseOrderController
     Route::get('deliveries/outstanding-items/{soId}', [DeliveryController::class, 'getOutstandingItemsForDelivery']);
     Route::post('deliveries/from-outstanding', [DeliveryController::class, 'storeFromOutstanding']);
     
+
+
     // Routes untuk ItemStock
-    Route::get('item-stocks', 'Api\Inventory\ItemStockController@index');
-    Route::get('item-stocks/item/{itemId}', 'Api\Inventory\ItemStockController@getItemStock');
-    Route::get('item-stocks/warehouse/{warehouseId}', 'Api\Inventory\ItemStockController@getWarehouseStock');
-    Route::post('item-stocks/transfer', 'Api\Inventory\ItemStockController@transferStock');
-    Route::post('item-stocks/adjust', 'Api\Inventory\ItemStockController@adjustStock');
-    Route::post('item-stocks/reserve', 'Api\Inventory\ItemStockController@reserveStock');
-    Route::post('item-stocks/release-reservation', 'Api\Inventory\ItemStockController@releaseReservation');
+    Route::get('item-stocks', [ItemStockController::class, 'index']);
+    Route::get('item-stocks/item/{itemId}', [ItemStockController::class, 'getItemStock']);
+    Route::get('item-stocks/warehouse/{warehouseId}', [ItemStockController::class, 'getWarehouseStock']);
+    Route::get('item-stocks/negative', [ItemStockController::class, 'getNegativeStocks']);
+    Route::get('item-stocks/negative-stock-summary', [ItemStockController::class, 'getNegativeStockSummary']);
+    Route::post('item-stocks/transfer', [ItemStockController::class, 'transferStock']);
+    Route::post('item-stocks/adjust', [ItemStockController::class, 'adjustStock']);
+    Route::post('item-stocks/reserve', [ItemStockController::class, 'reserveStock']);
+    Route::post('item-stocks/release-reservation', [ItemStockController::class, 'releaseReservation']);
+    
     
     // Routes untuk System Settings
     Route::get('settings', 'Api\Admin\SystemSettingController@index');

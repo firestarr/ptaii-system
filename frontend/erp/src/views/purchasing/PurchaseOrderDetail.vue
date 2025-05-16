@@ -291,22 +291,20 @@
     </div>
 
     <!-- Status Update Confirmation Modal -->
-    <div class="modal fade" id="statusModal" tabindex="-1" role="dialog" aria-hidden="true" v-if="showStatusModal">
-      <div class="modal-dialog" role="document">
-        <div class="modal-content">
-          <div class="modal-header">
-            <h5 class="modal-title">Update Purchase Order Status</h5>
-            <button type="button" class="close" @click="showStatusModal = false">
-              <span aria-hidden="true">&times;</span>
-            </button>
-          </div>
-          <div class="modal-body">
-            Are you sure you want to change the status of this purchase order to <strong>{{ newStatus }}</strong>?
-          </div>
-          <div class="modal-footer">
-            <button type="button" class="btn btn-secondary" @click="showStatusModal = false">Cancel</button>
-            <button type="button" class="btn btn-primary" @click="confirmStatusUpdate()">Update Status</button>
-          </div>
+    <div v-if="showStatusModal" class="modal-backdrop">
+      <div class="modal-simple">
+        <div class="modal-header">
+          <h5 class="modal-title">Update Purchase Order Status</h5>
+          <button type="button" class="close" @click="showStatusModal = false">
+            <span aria-hidden="true">&times;</span>
+          </button>
+        </div>
+        <div class="modal-body">
+          Are you sure you want to change the status of this purchase order to <strong>{{ newStatus }}</strong>?
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" @click="showStatusModal = false">Cancel</button>
+          <button type="button" class="btn btn-primary" @click="confirmStatusUpdate()">Update Status</button>
         </div>
       </div>
     </div>
@@ -478,10 +476,12 @@ export default {
       return statusIndex <= currentIndex;
     },
     updateStatus(status) {
+      console.log('updateStatus called with status:', status);
       this.newStatus = status;
       this.showStatusModal = true;
     },
     async confirmStatusUpdate() {
+      console.log('confirmStatusUpdate called with newStatus:', this.newStatus);
       try {
         const response = await axios.patch(
           `/purchase-orders/${this.purchaseOrder.po_id}/status`,
@@ -497,6 +497,8 @@ export default {
           
           // Reload the purchase order to get the latest data
           this.loadPurchaseOrder(this.purchaseOrder.po_id);
+        } else {
+          alert('Failed to update purchase order status');
         }
       } catch (error) {
         console.error('Error updating status:', error);
@@ -673,5 +675,51 @@ export default {
     background-color: transparent !important;
     border-bottom: 1px solid #000 !important;
   }
+}
+.modal-backdrop {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(0,0,0,0.5);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 1050;
+}
+
+.modal-simple {
+  background: white;
+  border-radius: 0.3rem;
+  width: 400px;
+  max-width: 90%;
+  box-shadow: 0 3px 9px rgba(0,0,0,0.5);
+  display: flex;
+  flex-direction: column;
+}
+
+.modal-header, .modal-footer {
+  padding: 1rem;
+  border-bottom: 1px solid #dee2e6;
+}
+
+.modal-header {
+  border-bottom: none;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.modal-body {
+  padding: 1rem;
+  flex-grow: 1;
+}
+
+.modal-footer {
+  border-top: 1px solid #dee2e6;
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
 }
 </style>

@@ -160,7 +160,7 @@
       // Table columns definition
       const columns = [
         { key: 'routing_code', label: 'Kode Routing', sortable: true },
-        { key: 'item.name', label: 'Produk', sortable: true },
+        { key: 'item_name', label: 'Produk', sortable: true },
         { key: 'revision', label: 'Revisi', sortable: true },
         { key: 'effective_date', label: 'Tanggal Efektif', sortable: true },
         { key: 'status', label: 'Status', sortable: true },
@@ -193,10 +193,18 @@
             },
             });
 
+            console.log('Routings data:', response.data.data);
+
             // Check if response has the expected structure
             if (response.data && response.data.data) {
-            routings.value = response.data.data;
-            filteredRoutings.value = response.data.data;
+            // Add flat item_name property for each routing
+            const routingsWithItemName = response.data.data.map(routing => ({
+                ...routing,
+                item_name: routing.item ? routing.item.name : '',
+            }));
+
+            routings.value = routingsWithItemName;
+            filteredRoutings.value = routingsWithItemName;
 
             // Update pagination if meta is available
             if (response.data.meta) {

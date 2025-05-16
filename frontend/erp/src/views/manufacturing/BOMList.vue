@@ -139,7 +139,7 @@ export default {
     
     const columns = [
       { key: 'bom_code', label: 'BOM Code', sortable: true },
-      { key: 'item.name', label: 'Item', sortable: true },
+      { key: 'item_name', label: 'Item', sortable: true },
       { key: 'revision', label: 'Revision', sortable: true },
       { key: 'effective_date', label: 'Effective Date', sortable: true, template: 'effective_date' },
       { key: 'has_yield_based', label: 'Type', template: 'has_yield_based', class: 'text-center', sortable: false },
@@ -162,7 +162,13 @@ export default {
           }
         });
         
-        boms.value = response.data.data;
+        // Add flat item_name property for each BOM
+        const bomsWithItemName = response.data.data.map(bom => ({
+          ...bom,
+          item_name: bom.item ? bom.item.name : '',
+        }));
+        
+        boms.value = bomsWithItemName;
         
         // Update pagination
         const meta = response.data.meta;

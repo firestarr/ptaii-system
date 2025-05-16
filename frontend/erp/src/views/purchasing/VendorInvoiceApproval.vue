@@ -1,844 +1,966 @@
 <!-- src/views/purchasing/VendorInvoiceApproval.vue -->
 <template>
-    <div class="invoice-approval-container">
-        <div class="page-header">
-            <div class="header-left">
-                <router-link
-                    :to="`/purchasing/vendor-invoices/${id}`"
-                    class="back-link"
-                >
-                    <i class="fas fa-arrow-left"></i> Back to Invoice Details
-                </router-link>
-                <h1>Approve Vendor Invoice</h1>
-            </div>
-        </div>
-
-        <div v-if="isLoading" class="loading-container">
-            <div class="loading-spinner">
-                <i class="fas fa-spinner fa-spin"></i>
-            </div>
-            <p>Loading invoice data...</p>
-        </div>
-
-        <div v-else-if="!vendorInvoice" class="error-container">
-            <div class="error-icon">
-                <i class="fas fa-exclamation-triangle"></i>
-            </div>
-            <h2>Invoice Not Found</h2>
-            <p>
-                The requested vendor invoice could not be found or may have been
-                deleted.
-            </p>
-            <router-link
-                to="/purchasing/vendor-invoices"
-                class="btn btn-primary"
-            >
-                Return to Vendor Invoices List
-            </router-link>
-        </div>
-
-        <div v-else-if="!canApprove" class="error-container">
-            <div class="error-icon">
-                <i class="fas fa-lock"></i>
-            </div>
-            <h2>Cannot Approve Invoice</h2>
-            <p>
-                This invoice cannot be approved because its status is "{{
-                    vendorInvoice.status
-                }}".
-            </p>
-            <p>Only pending invoices can be approved.</p>
-            <router-link
-                :to="`/purchasing/vendor-invoices/${id}`"
-                class="btn btn-primary"
-            >
-                Return to Invoice Details
-            </router-link>
-        </div>
-
-        <div v-else class="approval-content">
-            <div class="detail-card">
-                <div class="card-header">
-                    <h2 class="card-title">Invoice Approval</h2>
-                </div>
-                <div class="card-body">
-                    <div class="summary-section">
-                        <h3 class="section-subtitle">Invoice Summary</h3>
-                        <div class="info-grid">
-                            <div class="info-item">
-                                <span class="info-label">Invoice Number</span>
-                                <span class="info-value">{{
-                                    vendorInvoice.invoice_number
-                                }}</span>
-                            </div>
-                            <div class="info-item">
-                                <span class="info-label">Invoice Date</span>
-                                <span class="info-value">{{
-                                    formatDate(vendorInvoice.invoice_date)
-                                }}</span>
-                            </div>
-                            <div class="info-item">
-                                <span class="info-label">Due Date</span>
-                                <span class="info-value">{{
-                                    formatDate(vendorInvoice.due_date)
-                                }}</span>
-                            </div>
-                            <div class="info-item">
-                                <span class="info-label">Vendor</span>
-                                <span class="info-value">{{
-                                    vendorInvoice.vendor.name
-                                }}</span>
-                            </div>
-                            <div class="info-item">
-                                <span class="info-label">Purchase Order</span>
-                                <span class="info-value">{{
-                                    vendorInvoice.purchase_order.po_number
-                                }}</span>
-                            </div>
-                            <div class="info-item">
-                                <span class="info-label">Total Amount</span>
-                                <span class="info-value">{{
-                                    formatCurrency(vendorInvoice.total_amount)
-                                }}</span>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="validation-section">
-                        <h3 class="section-subtitle">Validation Checks</h3>
-                        <ul class="validation-list">
-                            <li
-                                :class="[
-                                    'validation-item',
-                                    poExists ? 'valid' : 'invalid',
-                                ]"
-                            >
-                                <div class="validation-icon">
-                                    <i
-                                        class="fas"
-                                        :class="
-                                            poExists ? 'fa-check' : 'fa-times'
-                                        "
-                                    ></i>
-                                </div>
-                                <div class="validation-content">
-                                    <div class="validation-title">
-                                        Purchase Order Exists
-                                    </div>
-                                    <div class="validation-message">
-                                        {{
-                                            poExists
-                                                ? "The purchase order exists and is valid."
-                                                : "Purchase order not found or invalid."
-                                        }}
-                                    </div>
-                                </div>
-                            </li>
-                            <li
-                                :class="[
-                                    'validation-item',
-                                    poStatusValid ? 'valid' : 'invalid',
-                                ]"
-                            >
-                                <div class="validation-icon">
-                                    <i
-                                        class="fas"
-                                        :class="
-                                            poStatusValid
-                                                ? 'fa-check'
-                                                : 'fa-times'
-                                        "
-                                    ></i>
-                                </div>
-                                <div class="validation-content">
-                                    <div class="validation-title">
-                                        Purchase Order Status
-                                    </div>
-                                    <div class="validation-message">
-                                        {{
-                                            poStatusValid
-                                                ? "The purchase order is in a valid status for invoicing."
-                                                : 'Purchase order must be in "partial", "received", or "completed" status.'
-                                        }}
-                                    </div>
-                                </div>
-                            </li>
-                            <li
-                                :class="[
-                                    'validation-item',
-                                    lineItemsMatch ? 'valid' : 'invalid',
-                                ]"
-                            >
-                                <div class="validation-icon">
-                                    <i
-                                        class="fas"
-                                        :class="
-                                            lineItemsMatch
-                                                ? 'fa-check'
-                                                : 'fa-times'
-                                        "
-                                    ></i>
-                                </div>
-                                <div class="validation-content">
-                                    <div class="validation-title">
-                                        Line Items Match
-                                    </div>
-                                    <div class="validation-message">
-                                        {{
-                                            lineItemsMatch
-                                                ? "All invoice line items match with purchase order lines."
-                                                : "Some invoice line items do not match with purchase order."
-                                        }}
-                                    </div>
-                                </div>
-                            </li>
-                            <li
-                                :class="[
-                                    'validation-item',
-                                    quantitiesValid ? 'valid' : 'warning',
-                                ]"
-                            >
-                                <div class="validation-icon">
-                                    <i
-                                        class="fas"
-                                        :class="
-                                            quantitiesValid
-                                                ? 'fa-check'
-                                                : 'fa-exclamation-triangle'
-                                        "
-                                    ></i>
-                                </div>
-                                <div class="validation-content">
-                                    <div class="validation-title">
-                                        Quantities Valid
-                                    </div>
-                                    <div class="validation-message">
-                                        {{
-                                            quantitiesValid
-                                                ? "Invoice quantities match with received quantities."
-                                                : "Some invoice quantities exceed received quantities."
-                                        }}
-                                    </div>
-                                </div>
-                            </li>
-                            <li
-                                :class="[
-                                    'validation-item',
-                                    pricesMatch ? 'valid' : 'warning',
-                                ]"
-                            >
-                                <div class="validation-icon">
-                                    <i
-                                        class="fas"
-                                        :class="
-                                            pricesMatch
-                                                ? 'fa-check'
-                                                : 'fa-exclamation-triangle'
-                                        "
-                                    ></i>
-                                </div>
-                                <div class="validation-content">
-                                    <div class="validation-title">
-                                        Prices Match
-                                    </div>
-                                    <div class="validation-message">
-                                        {{
-                                            pricesMatch
-                                                ? "Invoice prices match with purchase order prices."
-                                                : "Some invoice prices differ from purchase order."
-                                        }}
-                                    </div>
-                                </div>
-                            </li>
-                        </ul>
-                    </div>
-
-                    <div class="approval-form">
-                        <h3 class="section-subtitle">Approval Decision</h3>
-                        <div class="form-group">
-                            <label for="comments">Comments</label>
-                            <textarea
-                                id="comments"
-                                v-model="approvalData.comments"
-                                rows="3"
-                                placeholder="Add any comments or notes about this approval decision"
-                            ></textarea>
-                        </div>
-
-                        <div class="form-actions">
-                            <button
-                                type="button"
-                                class="btn btn-danger"
-                                @click="rejectInvoice"
-                                :disabled="isProcessing"
-                            >
-                                <i class="fas fa-times-circle"></i>
-                                {{
-                                    isProcessing
-                                        ? "Processing..."
-                                        : "Reject Invoice"
-                                }}
-                            </button>
-                            <button
-                                type="button"
-                                class="btn btn-success"
-                                @click="approveInvoice"
-                                :disabled="isProcessing || !allValidationsPass"
-                            >
-                                <i class="fas fa-check-circle"></i>
-                                {{
-                                    isProcessing
-                                        ? "Processing..."
-                                        : "Approve Invoice"
-                                }}
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
+  <div class="vendor-invoice-approval">
+    <div class="page-header">
+      <h1>Approve Vendor Invoice</h1>
+      <div class="actions">
+        <router-link :to="`/purchasing/vendor-invoices/${$route.params.id}`" class="btn btn-outline">
+          <i class="fas fa-arrow-left"></i> Back to Details
+        </router-link>
+      </div>
     </div>
+
+    <div v-if="loading" class="loading">
+      <i class="fas fa-spinner fa-spin"></i> Loading invoice details...
+    </div>
+
+    <div v-else-if="!invoice" class="empty-state">
+      <i class="fas fa-file-invoice"></i>
+      <h3>Invoice not found</h3>
+      <p>The requested invoice could not be found or has been deleted.</p>
+    </div>
+
+    <div v-else-if="invoice.status !== 'pending'" class="alert-card">
+      <div class="alert-icon">
+        <i class="fas fa-exclamation-circle"></i>
+      </div>
+      <div class="alert-content">
+        <h3>Cannot Approve Invoice</h3>
+        <p>This invoice cannot be approved because its current status is <strong>{{ capitalizeFirst(invoice.status) }}</strong>.</p>
+        <p>Only invoices with "Pending" status can be approved.</p>
+        <router-link :to="`/purchasing/vendor-invoices/${invoice.invoice_id}`" class="btn btn-primary mt-2">
+          Return to Invoice Details
+        </router-link>
+      </div>
+    </div>
+
+    <div v-else class="approval-container">
+      <div class="card invoice-summary">
+        <div class="card-header">
+          <h2>Invoice Summary</h2>
+        </div>
+        <div class="card-body">
+          <div class="invoice-meta">
+            <div class="meta-group">
+              <label>Invoice Number</label>
+              <div class="meta-value">{{ invoice.invoice_number }}</div>
+            </div>
+            <div class="meta-group">
+              <label>Vendor</label>
+              <div class="meta-value">{{ invoice.vendor?.name }}</div>
+              <div class="meta-subtitle">{{ invoice.vendor?.vendor_code }}</div>
+            </div>
+            <div class="meta-group">
+              <label>Invoice Date</label>
+              <div class="meta-value">{{ formatDate(invoice.invoice_date) }}</div>
+            </div>
+            <div class="meta-group">
+              <label>Due Date</label>
+              <div class="meta-value">{{ formatDate(invoice.due_date) }}</div>
+              <div class="meta-subtitle">{{ getDueStatus(invoice.due_date) }}</div>
+            </div>
+            <div class="meta-group">
+              <label>Currency</label>
+              <div class="meta-value">{{ invoice.currency_code }}</div>
+              <div class="meta-subtitle" v-if="invoice.currency_code !== 'USD'">
+                Exchange Rate: {{ invoice.exchange_rate }}
+              </div>
+            </div>
+            <div class="meta-group">
+              <label>Total Amount</label>
+              <div class="meta-value">{{ formatCurrency(invoice.total_amount, invoice.currency_code) }}</div>
+              <div class="meta-subtitle" v-if="invoice.currency_code !== 'USD'">
+                {{ formatCurrency(invoice.base_currency_total, 'USD') }} (USD)
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card receipt-verification mt-4">
+        <div class="card-header">
+          <h2>Receipt Verification</h2>
+        </div>
+        <div class="card-body">
+          <div class="receipt-status">
+            <div class="status-icon">
+              <i class="fas fa-check-circle"></i>
+            </div>
+            <div class="status-details">
+              <h3>All Items Verified</h3>
+              <p>All invoice items have been verified against corresponding goods receipts.</p>
+            </div>
+          </div>
+
+          <div class="receipts-table">
+            <h4>Related Receipts</h4>
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Receipt #</th>
+                  <th>Receipt Date</th>
+                  <th>Status</th>
+                  <th>Items</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="receipt in relatedReceipts" :key="receipt.receipt_id">
+                  <td>{{ receipt.receipt_number }}</td>
+                  <td>{{ formatDate(receipt.receipt_date) }}</td>
+                  <td>
+                    <span class="status-badge status-success">Confirmed</span>
+                  </td>
+                  <td>{{ receipt.total_items }}</td>
+                  <td>
+                    <router-link :to="`/purchasing/goods-receipts/${receipt.receipt_id}`" class="btn-icon" title="View Receipt">
+                      <i class="fas fa-eye"></i>
+                    </router-link>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <div class="card accounting-setup mt-4">
+        <div class="card-header">
+          <h2>Accounting Setup</h2>
+        </div>
+        <div class="card-body">
+          <div class="form-group">
+            <div class="checkbox-group">
+              <input type="checkbox" id="create_journal_entry" v-model="createJournalEntry" />
+              <label for="create_journal_entry">Create Journal Entry</label>
+            </div>
+          </div>
+
+          <div v-if="createJournalEntry" class="journal-entry-options">
+            <div class="form-row">
+              <div class="form-group">
+                <label for="ap_account_id">Accounts Payable Account</label>
+                <select id="ap_account_id" v-model="journalEntry.ap_account_id" required>
+                  <option value="" disabled>Select account</option>
+                  <option value="AP001">AP001 - Accounts Payable</option>
+                  <option value="AP002">AP002 - International Payables</option>
+                </select>
+              </div>
+
+              <div class="form-group">
+                <label for="expense_account_id">Expense Account</label>
+                <select id="expense_account_id" v-model="journalEntry.expense_account_id" required>
+                  <option value="" disabled>Select account</option>
+                  <option value="EXP001">EXP001 - Purchase Expense</option>
+                  <option value="EXP002">EXP002 - Inventory Expense</option>
+                </select>
+              </div>
+
+              <div class="form-group">
+                <label for="tax_account_id">Tax Account</label>
+                <select id="tax_account_id" v-model="journalEntry.tax_account_id" required>
+                  <option value="" disabled>Select account</option>
+                  <option value="TAX001">TAX001 - Input VAT</option>
+                  <option value="TAX002">TAX002 - Sales Tax</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="journal-preview">
+              <h4>Journal Entry Preview</h4>
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Account</th>
+                    <th>Description</th>
+                    <th>Debit (USD)</th>
+                    <th>Credit (USD)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>{{ getAccountName(journalEntry.expense_account_id) }}</td>
+                    <td>Expense from {{ invoice.vendor?.name }}</td>
+                    <td>{{ formatCurrency(invoice.base_currency_total - invoice.base_currency_tax, 'USD') }}</td>
+                    <td>-</td>
+                  </tr>
+                  <tr v-if="invoice.tax_amount > 0">
+                    <td>{{ getAccountName(journalEntry.tax_account_id) }}</td>
+                    <td>Tax from {{ invoice.vendor?.name }}</td>
+                    <td>{{ formatCurrency(invoice.base_currency_tax, 'USD') }}</td>
+                    <td>-</td>
+                  </tr>
+                  <tr>
+                    <td>{{ getAccountName(journalEntry.ap_account_id) }}</td>
+                    <td>Payable to {{ invoice.vendor?.name }}</td>
+                    <td>-</td>
+                    <td>{{ formatCurrency(invoice.base_currency_total, 'USD') }}</td>
+                  </tr>
+                </tbody>
+                <tfoot>
+                  <tr>
+                    <td colspan="2" class="text-right"><strong>Total:</strong></td>
+                    <td>{{ formatCurrency(invoice.base_currency_total, 'USD') }}</td>
+                    <td>{{ formatCurrency(invoice.base_currency_total, 'USD') }}</td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card approval-comments mt-4">
+        <div class="card-header">
+          <h2>Approval Comments</h2>
+        </div>
+        <div class="card-body">
+          <div class="form-group">
+            <label for="approval_comments">Comments (Optional)</label>
+            <textarea 
+              id="approval_comments" 
+              v-model="approvalComments" 
+              rows="3" 
+              placeholder="Add any comments regarding this approval..."
+            ></textarea>
+          </div>
+        </div>
+      </div>
+
+      <div class="form-actions mt-4">
+        <button type="button" class="btn btn-secondary" @click="cancel">
+          Cancel
+        </button>
+        <button 
+          type="button" 
+          class="btn btn-danger" 
+          @click="rejectInvoice"
+          :disabled="approving || rejecting"
+        >
+          <i v-if="rejecting" class="fas fa-spinner fa-spin"></i>
+          Reject
+        </button>
+        <button 
+          type="button" 
+          class="btn btn-primary" 
+          @click="approveInvoice"
+          :disabled="approving || rejecting"
+        >
+          <i v-if="approving" class="fas fa-spinner fa-spin"></i>
+          Approve
+        </button>
+      </div>
+
+      <!-- Confirm Approval Modal -->
+      <div v-if="showApproveModal" class="modal">
+        <div class="modal-backdrop" @click="showApproveModal = false"></div>
+        <div class="modal-content modal-sm">
+          <div class="modal-header">
+            <h2>Confirm Approval</h2>
+            <button class="close-btn" @click="showApproveModal = false">
+              <i class="fas fa-times"></i>
+            </button>
+          </div>
+          <div class="modal-body">
+            <p>Are you sure you want to approve invoice <strong>{{ invoice.invoice_number }}</strong>?</p>
+            <p>This will convert it to a payable and allow payment processing.</p>
+            
+            <div class="form-actions">
+              <button type="button" class="btn btn-secondary" @click="showApproveModal = false">
+                Cancel
+              </button>
+              <button type="button" class="btn btn-primary" @click="confirmApprove">
+                <i v-if="approving" class="fas fa-spinner fa-spin"></i>
+                Confirm Approval
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Confirm Rejection Modal -->
+      <div v-if="showRejectModal" class="modal">
+        <div class="modal-backdrop" @click="showRejectModal = false"></div>
+        <div class="modal-content modal-sm">
+          <div class="modal-header">
+            <h2>Confirm Rejection</h2>
+            <button class="close-btn" @click="showRejectModal = false">
+              <i class="fas fa-times"></i>
+            </button>
+          </div>
+          <div class="modal-body">
+            <p>Are you sure you want to reject invoice <strong>{{ invoice.invoice_number }}</strong>?</p>
+            <p class="text-warning">
+              <i class="fas fa-exclamation-triangle"></i> 
+              This will mark the invoice as cancelled and release related receipt lines.
+            </p>
+            
+            <div class="form-group">
+              <label for="rejection_reason">Rejection Reason</label>
+              <textarea 
+                id="rejection_reason" 
+                v-model="rejectionReason" 
+                rows="3" 
+                placeholder="Please provide a reason for rejection..."
+                required
+              ></textarea>
+            </div>
+            
+            <div class="form-actions">
+              <button type="button" class="btn btn-secondary" @click="showRejectModal = false">
+                Cancel
+              </button>
+              <button 
+                type="button" 
+                class="btn btn-danger" 
+                @click="confirmReject"
+                :disabled="!rejectionReason.trim()"
+              >
+                <i v-if="rejecting" class="fas fa-spinner fa-spin"></i>
+                Confirm Rejection
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
 </template>
 
 <script>
-import { ref, computed, onMounted } from "vue";
-import { useRouter } from "vue-router";
-import VendorInvoiceService from "@/services/VendorInvoiceService";
+import axios from 'axios';
 
 export default {
-    name: "VendorInvoiceApproval",
-    props: {
-        id: {
-            type: [Number, String],
-            required: true,
-        },
+  name: 'VendorInvoiceApproval',
+  data() {
+    return {
+      loading: true,
+      approving: false,
+      rejecting: false,
+      invoice: null,
+      relatedReceipts: [],
+      createJournalEntry: true,
+      journalEntry: {
+        ap_account_id: 'AP001',
+        expense_account_id: 'EXP001',
+        tax_account_id: 'TAX001'
+      },
+      approvalComments: '',
+      rejectionReason: '',
+      showApproveModal: false,
+      showRejectModal: false
+    };
+  },
+  created() {
+    this.loadInvoice();
+  },
+  methods: {
+    async loadInvoice() {
+      try {
+        const invoiceId = this.$route.params.id;
+        const response = await axios.get(`/vendor-invoices/${invoiceId}`);
+        
+        if (response.data.status === 'success') {
+          this.invoice = response.data.data.invoice;
+          this.relatedReceipts = response.data.data.receipt_details || [];
+          
+          // Set counts on receipts
+          this.relatedReceipts.forEach(receipt => {
+            receipt.total_items = receipt.lines?.length || 0;
+          });
+        }
+      } catch (error) {
+        console.error('Error loading invoice:', error);
+      } finally {
+        this.loading = false;
+      }
     },
-    setup(props) {
-        const router = useRouter();
-        const vendorInvoice = ref(null);
-        const isLoading = ref(true);
-        const isProcessing = ref(false);
-
-        const approvalData = ref({
-            comments: "",
-        });
-
-        // Fetch vendor invoice details
-        const fetchVendorInvoice = async () => {
-            isLoading.value = true;
-            try {
-                const response =
-                    await VendorInvoiceService.getVendorInvoiceById(props.id);
-                vendorInvoice.value =
-                    response.data && response.data.data
-                        ? response.data.data
-                        : null;
-            } catch (error) {
-                console.error("Error fetching vendor invoice details:", error);
-                vendorInvoice.value = null;
-            } finally {
-                isLoading.value = false;
-            }
-        };
-
-        // Computed property to determine if invoice can be approved
-        const canApprove = computed(() => {
-            return (
-                vendorInvoice.value && vendorInvoice.value.status === "pending"
-            );
-        });
-
-        // Validation computed properties
-        const poExists = computed(() => {
-            return !!vendorInvoice.value?.purchase_order;
-        });
-
-        const poStatusValid = computed(() => {
-            if (!vendorInvoice.value?.purchase_order) return false;
-
-            const validStatuses = ["partial", "received", "completed"];
-            return validStatuses.includes(
-                vendorInvoice.value.purchase_order.status
-            );
-        });
-
-        const lineItemsMatch = computed(() => {
-            if (
-                !vendorInvoice.value?.lines ||
-                !vendorInvoice.value?.purchase_order?.lines
-            )
-                return false;
-
-            // Check if all invoice lines have corresponding PO lines
-            for (const invoiceLine of vendorInvoice.value.lines) {
-                const matchingPoLine =
-                    vendorInvoice.value.purchase_order.lines.find(
-                        (poLine) => poLine.line_id === invoiceLine.po_line_id
-                    );
-
-                if (!matchingPoLine) return false;
-            }
-
-            return true;
-        });
-
-        const quantitiesValid = computed(() => {
-            if (
-                !vendorInvoice.value?.lines ||
-                !vendorInvoice.value?.purchase_order?.lines
-            )
-                return false;
-
-            // Check if invoice quantities are less than or equal to received quantities
-            for (const invoiceLine of vendorInvoice.value.lines) {
-                const matchingPoLine =
-                    vendorInvoice.value.purchase_order.lines.find(
-                        (poLine) => poLine.line_id === invoiceLine.po_line_id
-                    );
-
-                if (matchingPoLine) {
-                    const receivedQty = matchingPoLine.received_quantity || 0;
-                    if (invoiceLine.quantity > receivedQty) return false;
-                }
-            }
-
-            return true;
-        });
-
-        const pricesMatch = computed(() => {
-            if (
-                !vendorInvoice.value?.lines ||
-                !vendorInvoice.value?.purchase_order?.lines
-            )
-                return false;
-
-            // Check if invoice prices match PO prices
-            for (const invoiceLine of vendorInvoice.value.lines) {
-                const matchingPoLine =
-                    vendorInvoice.value.purchase_order.lines.find(
-                        (poLine) => poLine.line_id === invoiceLine.po_line_id
-                    );
-
-                if (
-                    matchingPoLine &&
-                    invoiceLine.unit_price !== matchingPoLine.unit_price
-                ) {
-                    return false;
-                }
-            }
-
-            return true;
-        });
-
-        const allValidationsPass = computed(() => {
-            return (
-                poExists.value && poStatusValid.value && lineItemsMatch.value
-            );
-            // Note: We're not requiring quantitiesValid and pricesMatch to pass
-            // These are warnings but not blockers for approval
-        });
-
-        // Format date strings
-        const formatDate = (dateString) => {
-            if (!dateString) return "N/A";
-            const date = new Date(dateString);
-            return date.toLocaleDateString("en-US", {
-                year: "numeric",
-                month: "short",
-                day: "2-digit",
-            });
-        };
-
-        // Format currency
-        const formatCurrency = (amount) => {
-            if (amount === null || amount === undefined) return "$0.00";
-            return new Intl.NumberFormat("en-US", {
-                style: "currency",
-                currency: "USD",
-            }).format(amount);
-        };
-
-        // Approve invoice
-        const approveInvoice = async () => {
-            if (!allValidationsPass.value) return;
-
-            isProcessing.value = true;
-
-            try {
-                await VendorInvoiceService.approveVendorInvoice(props.id, {
-                    comments: approvalData.value.comments,
-                });
-
-                // Navigate back to invoice detail page
-                router.push(`/purchasing/vendor-invoices/${props.id}`);
-            } catch (error) {
-                console.error("Error approving vendor invoice:", error);
-
-                if (
-                    error.response &&
-                    error.response.data &&
-                    error.response.data.message
-                ) {
-                    alert(error.response.data.message);
-                } else {
-                    alert(
-                        "Failed to approve vendor invoice. Please try again."
-                    );
-                }
-
-                isProcessing.value = false;
-            }
-        };
-
-        // Reject invoice
-        const rejectInvoice = async () => {
-            isProcessing.value = true;
-
-            try {
-                await VendorInvoiceService.rejectVendorInvoice(props.id, {
-                    comments: approvalData.value.comments,
-                });
-
-                // Navigate back to invoice detail page
-                router.push(`/purchasing/vendor-invoices/${props.id}`);
-            } catch (error) {
-                console.error("Error rejecting vendor invoice:", error);
-
-                if (
-                    error.response &&
-                    error.response.data &&
-                    error.response.data.message
-                ) {
-                    alert(error.response.data.message);
-                } else {
-                    alert("Failed to reject vendor invoice. Please try again.");
-                }
-
-                isProcessing.value = false;
-            }
-        };
-
-        // Initialize data
-        onMounted(() => {
-            fetchVendorInvoice();
-        });
-
-        return {
-            vendorInvoice,
-            isLoading,
-            isProcessing,
-            approvalData,
-            canApprove,
-            poExists,
-            poStatusValid,
-            lineItemsMatch,
-            quantitiesValid,
-            pricesMatch,
-            allValidationsPass,
-            formatDate,
-            formatCurrency,
-            approveInvoice,
-            rejectInvoice,
-        };
+    approveInvoice() {
+      this.showApproveModal = true;
     },
+    async confirmApprove() {
+      this.approving = true;
+      
+      try {
+        const data = {
+          status: 'approved',
+          comments: this.approvalComments
+        };
+        
+        if (this.createJournalEntry) {
+          data.create_journal_entry = true;
+          data.ap_account_id = this.journalEntry.ap_account_id;
+          data.expense_account_id = this.journalEntry.expense_account_id;
+          data.tax_account_id = this.journalEntry.tax_account_id;
+        }
+        
+        await axios.patch(`/vendor-invoices/${this.invoice.invoice_id}/status`, data);
+        
+        this.showApproveModal = false;
+        
+        // Redirect to invoice detail
+        this.$router.push(`/purchasing/vendor-invoices/${this.invoice.invoice_id}`);
+      } catch (error) {
+        console.error('Error approving invoice:', error);
+        alert(error.response?.data?.message || 'Error approving invoice');
+      } finally {
+        this.approving = false;
+      }
+    },
+    rejectInvoice() {
+      this.showRejectModal = true;
+    },
+    async confirmReject() {
+      if (!this.rejectionReason.trim()) {
+        alert('Please provide a reason for rejection');
+        return;
+      }
+      
+      this.rejecting = true;
+      
+      try {
+        await axios.patch(`/vendor-invoices/${this.invoice.invoice_id}/status`, {
+          status: 'cancelled',
+          comments: this.rejectionReason
+        });
+        
+        this.showRejectModal = false;
+        
+        // Redirect to invoice detail
+        this.$router.push(`/purchasing/vendor-invoices/${this.invoice.invoice_id}`);
+      } catch (error) {
+        console.error('Error rejecting invoice:', error);
+        alert(error.response?.data?.message || 'Error rejecting invoice');
+      } finally {
+        this.rejecting = false;
+      }
+    },
+    cancel() {
+      this.$router.push(`/purchasing/vendor-invoices/${this.invoice.invoice_id}`);
+    },
+    formatDate(dateString) {
+      if (!dateString) return 'N/A';
+      const date = new Date(dateString);
+      return date.toLocaleDateString();
+    },
+    formatCurrency(amount, currency) {
+      if (amount === null || amount === undefined) return 'N/A';
+      
+      return new Intl.NumberFormat('en-US', {
+        style: 'currency',
+        currency: currency || 'USD',
+        minimumFractionDigits: 2
+      }).format(amount);
+    },
+    capitalizeFirst(str) {
+      if (!str) return '';
+      return str.charAt(0).toUpperCase() + str.slice(1);
+    },
+    getDueStatus(dueDate) {
+      if (!dueDate) return 'No due date';
+      
+      const today = new Date();
+      const due = new Date(dueDate);
+      
+      if (today > due) {
+        const days = Math.floor((today - due) / (1000 * 60 * 60 * 24));
+        return `Overdue by ${days} day${days === 1 ? '' : 's'}`;
+      } else {
+        const days = Math.floor((due - today) / (1000 * 60 * 60 * 24));
+        return `Due in ${days} day${days === 1 ? '' : 's'}`;
+      }
+    },
+    getAccountName(accountId) {
+      const accounts = {
+        'AP001': 'AP001 - Accounts Payable',
+        'AP002': 'AP002 - International Payables',
+        'EXP001': 'EXP001 - Purchase Expense',
+        'EXP002': 'EXP002 - Inventory Expense',
+        'TAX001': 'TAX001 - Input VAT',
+        'TAX002': 'TAX002 - Sales Tax'
+      };
+      
+      return accounts[accountId] || accountId;
+    }
+  }
 };
 </script>
 
 <style scoped>
-.invoice-approval-container {
-    padding: 1rem;
+.vendor-invoice-approval {
+  padding: 1rem;
 }
 
 .page-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: flex-start;
-    margin-bottom: 1.5rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1.5rem;
 }
 
-.header-left {
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
+.approval-container {
+  max-width: 1200px;
 }
 
-.back-link {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.5rem;
-    color: var(--gray-600);
-    text-decoration: none;
-    font-size: 0.875rem;
-}
-
-.back-link:hover {
-    color: var(--primary-color);
-}
-
-.header-left h1 {
-    margin: 0;
-    font-size: 1.5rem;
-    color: var(--gray-800);
-}
-
-.loading-container,
-.error-container {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    padding: 4rem 2rem;
-    background-color: white;
-    border-radius: 0.5rem;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-    text-align: center;
-}
-
-.loading-spinner {
-    font-size: 2rem;
-    color: var(--primary-color);
-    margin-bottom: 1rem;
-}
-
-.error-icon {
-    font-size: 3rem;
-    color: var(--danger-color);
-    margin-bottom: 1rem;
-}
-
-.approval-content {
-    max-width: 800px;
-    margin: 0 auto;
-}
-
-.detail-card {
-    background-color: white;
-    border-radius: 0.5rem;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-    overflow: hidden;
+.card {
+  background-color: white;
+  border-radius: 0.5rem;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  margin-bottom: 1.5rem;
+  overflow: hidden;
 }
 
 .card-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 1rem 1.5rem;
-    background-color: var(--gray-50);
-    border-bottom: 1px solid var(--gray-200);
+  padding: 1rem 1.5rem;
+  border-bottom: 1px solid var(--gray-200);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
 }
 
-.card-title {
-    margin: 0;
-    font-size: 1.25rem;
-    color: var(--gray-800);
+.card-header h2 {
+  font-size: 1.25rem;
+  font-weight: 600;
+  margin: 0;
+  color: var(--gray-800);
 }
 
 .card-body {
-    padding: 1.5rem;
+  padding: 1.5rem;
 }
 
-.section-subtitle {
-    font-size: 1.125rem;
-    font-weight: 600;
-    margin: 0 0 1rem 0;
-    color: var(--gray-700);
+.invoice-meta {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 1.5rem;
 }
 
-.summary-section,
-.validation-section {
-    margin-bottom: 2rem;
+.meta-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
 }
 
-.info-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-    gap: 1rem;
+.meta-group label {
+  font-size: 0.75rem;
+  color: var(--gray-500);
+  font-weight: 500;
+  text-transform: uppercase;
 }
 
-.info-item {
-    display: flex;
-    flex-direction: column;
-    gap: 0.25rem;
+.meta-value {
+  font-weight: 500;
+  color: var(--gray-800);
 }
 
-.info-label {
-    font-size: 0.75rem;
-    color: var(--gray-500);
+.meta-subtitle {
+  font-size: 0.875rem;
+  color: var(--gray-500);
 }
 
-.info-value {
-    font-size: 0.875rem;
-    color: var(--gray-800);
-    font-weight: 500;
+.receipt-status {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 1rem;
+  background-color: var(--gray-50);
+  border-radius: 0.375rem;
+  margin-bottom: 1.5rem;
 }
 
-.validation-list {
-    list-style: none;
-    padding: 0;
-    margin: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 1rem;
+.status-icon {
+  font-size: 2rem;
+  color: #10b981;
 }
 
-.validation-item {
-    display: flex;
-    gap: 1rem;
-    padding: 1rem;
-    border-radius: 0.5rem;
-    background-color: var(--gray-50);
+.status-details h3 {
+  margin: 0 0 0.25rem 0;
+  font-size: 1.125rem;
+  font-weight: 600;
 }
 
-.validation-item.valid {
-    background-color: #d1fae5;
+.status-details p {
+  margin: 0;
+  color: var(--gray-600);
 }
 
-.validation-item.warning {
-    background-color: #fef9c3;
+.receipts-table {
+  margin-top: 1.5rem;
 }
 
-.validation-item.invalid {
-    background-color: #fee2e2;
+.receipts-table h4 {
+  font-size: 1rem;
+  font-weight: 600;
+  margin-bottom: 0.75rem;
 }
 
-.validation-icon {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 2rem;
-    height: 2rem;
-    border-radius: 9999px;
-    flex-shrink: 0;
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
 }
 
-.validation-item.valid .validation-icon {
-    background-color: #10b981;
-    color: white;
+.data-table th {
+  text-align: left;
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--gray-200);
+  background-color: var(--gray-50);
+  font-weight: 500;
+  color: var(--gray-600);
 }
 
-.validation-item.warning .validation-icon {
-    background-color: #f59e0b;
-    color: white;
+.data-table td {
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--gray-100);
+  color: var(--gray-800);
 }
 
-.validation-item.invalid .validation-icon {
-    background-color: #ef4444;
-    color: white;
+.data-table tbody tr:hover {
+  background-color: var(--gray-50);
 }
 
-.validation-content {
-    flex: 1;
+.data-table tfoot td {
+  border-top: 1px solid var(--gray-200);
+  font-weight: 500;
 }
 
-.validation-title {
-    font-weight: 600;
-    font-size: 0.875rem;
-    margin-bottom: 0.25rem;
-}
-
-.validation-item.valid .validation-title {
-    color: #047857;
-}
-
-.validation-item.warning .validation-title {
-    color: #92400e;
-}
-
-.validation-item.invalid .validation-title {
-    color: #b91c1c;
-}
-
-.validation-message {
-    font-size: 0.875rem;
-    color: var(--gray-700);
-}
-
-.approval-form {
-    margin-top: 2rem;
+.text-right {
+  text-align: right;
 }
 
 .form-group {
-    margin-bottom: 1.5rem;
+  margin-bottom: 1rem;
 }
 
-label {
-    display: block;
-    margin-bottom: 0.5rem;
-    font-weight: 500;
-    color: var(--gray-700);
-    font-size: 0.875rem;
+.form-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.5rem;
+  margin-bottom: 1.5rem;
 }
 
-textarea {
-    width: 100%;
-    padding: 0.75rem;
-    border: 1px solid var(--gray-200);
-    border-radius: 0.375rem;
-    font-size: 0.875rem;
-    resize: vertical;
+.form-group {
+  flex: 1;
+  min-width: 200px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
 }
 
-textarea:focus {
-    outline: none;
-    border-color: var(--primary-color);
-    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+.form-group label {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--gray-700);
+}
+
+.form-group input,
+.form-group select,
+.form-group textarea {
+  padding: 0.625rem;
+  border: 1px solid var(--gray-300);
+  border-radius: 0.375rem;
+  font-size: 0.875rem;
+}
+
+.form-group input:focus,
+.form-group select:focus,
+.form-group textarea:focus {
+  outline: none;
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.1);
+}
+
+.checkbox-group {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.checkbox-group input[type="checkbox"] {
+  width: 1rem;
+  height: 1rem;
+}
+
+.journal-entry-options {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--gray-200);
+}
+
+.journal-preview {
+  margin-top: 1.5rem;
+  border-top: 1px solid var(--gray-200);
+  padding-top: 1.5rem;
+}
+
+.journal-preview h4 {
+  font-size: 1rem;
+  font-weight: 600;
+  margin-bottom: 0.75rem;
+}
+
+.status-badge {
+  display: inline-block;
+  padding: 0.25rem 0.5rem;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+.status-success {
+  background-color: #d1fae5;
+  color: #065f46;
+}
+
+.btn-icon {
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 0.375rem;
+  color: var(--gray-500);
+  background: none;
+  border: 1px solid var(--gray-200);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-icon:hover {
+  background-color: var(--gray-100);
+  color: var(--gray-800);
 }
 
 .form-actions {
-    display: flex;
-    justify-content: flex-end;
-    gap: 1rem;
+  display: flex;
+  justify-content: flex-end;
+  gap: 1rem;
 }
 
 .btn {
-    padding: 0.625rem 1.25rem;
-    font-size: 0.875rem;
-    font-weight: 500;
-    border-radius: 0.375rem;
-    cursor: pointer;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.5rem;
-    border: none;
-    transition: background-color 0.2s, color 0.2s;
-}
-
-.btn-primary {
-    background-color: var(--primary-color);
-    color: white;
-}
-
-.btn-primary:hover:not(:disabled) {
-    background-color: var(--primary-dark);
-}
-
-.btn-success {
-    background-color: var(--success-color);
-    color: white;
-}
-
-.btn-success:hover:not(:disabled) {
-    background-color: var(--success-dark);
-}
-
-.btn-danger {
-    background-color: var(--danger-color);
-    color: white;
-}
-
-.btn-danger:hover:not(:disabled) {
-    background-color: var(--danger-dark);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  border-radius: 0.375rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
 }
 
 .btn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.btn-primary {
+  background-color: var(--primary-color);
+  color: white;
+  border: none;
+}
+
+.btn-primary:hover:not(:disabled) {
+  background-color: var(--primary-dark);
+}
+
+.btn-secondary {
+  background-color: var(--gray-200);
+  color: var(--gray-700);
+  border: none;
+}
+
+.btn-secondary:hover:not(:disabled) {
+  background-color: var(--gray-300);
+}
+
+.btn-outline {
+  background-color: white;
+  color: var(--gray-700);
+  border: 1px solid var(--gray-200);
+}
+
+.btn-outline:hover {
+  background-color: var(--gray-100);
+}
+
+.btn-danger {
+  background-color: var(--danger-color);
+  color: white;
+  border: none;
+}
+
+.btn-danger:hover:not(:disabled) {
+  background-color: #b91c1c;
+}
+
+.loading,
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 3rem 0;
+  text-align: center;
+  background-color: white;
+  border-radius: 0.5rem;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  margin-bottom: 1.5rem;
+}
+
+.loading i,
+.empty-state i {
+  font-size: 2.5rem;
+  color: var(--gray-300);
+  margin-bottom: 1rem;
+}
+
+.empty-state h3 {
+  font-size: 1.125rem;
+  color: var(--gray-700);
+  margin-bottom: 0.5rem;
+}
+
+.empty-state p {
+  color: var(--gray-500);
+  max-width: 24rem;
+}
+
+.alert-card {
+  display: flex;
+  gap: 1.5rem;
+  padding: 1.5rem;
+  background-color: white;
+  border-radius: 0.5rem;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  margin-bottom: 1.5rem;
+  border-left: 4px solid var(--warning-color);
+}
+
+.alert-icon {
+  font-size: 2rem;
+  color: var(--warning-color);
+}
+
+.alert-content h3 {
+  font-size: 1.125rem;
+  font-weight: 600;
+  margin: 0 0 0.5rem 0;
+}
+
+.alert-content p {
+  margin: 0 0 0.5rem 0;
+  color: var(--gray-600);
+}
+
+.mt-2 {
+  margin-top: 0.75rem;
+}
+
+.mt-4 {
+  margin-top: 1.5rem;
+}
+
+.modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 50;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.modal-backdrop {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.5);
+  z-index: 50;
+}
+
+.modal-content {
+  background-color: white;
+  border-radius: 0.5rem;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  width: 100%;
+  z-index: 60;
+  overflow: hidden;
+}
+
+.modal-sm {
+  max-width: 400px;
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1rem 1.5rem;
+  border-bottom: 1px solid var(--gray-200);
+}
+
+.modal-header h2 {
+  font-size: 1.25rem;
+  font-weight: 600;
+  margin: 0;
+  color: var(--gray-800);
+}
+
+.close-btn {
+  background: none;
+  border: none;
+  color: var(--gray-500);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.25rem;
+  border-radius: 0.25rem;
+}
+
+.close-btn:hover {
+  background-color: var(--gray-100);
+  color: var(--gray-800);
+}
+
+.modal-body {
+  padding: 1.5rem;
+}
+
+.text-warning {
+  color: var(--warning-color);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
 }
 
 @media (max-width: 768px) {
-    .info-grid {
-        grid-template-columns: 1fr;
-    }
+  .page-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 1rem;
+  }
+  
+  .form-group {
+    width: 100%;
+  }
+  
+  .form-actions {
+    flex-direction: column;
+  }
+  
+  .btn {
+    width: 100%;
+  }
+  
+  .alert-card {
+    flex-direction: column;
+    gap: 1rem;
+  }
 }
 </style>

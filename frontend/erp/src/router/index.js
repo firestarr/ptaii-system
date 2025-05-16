@@ -24,9 +24,20 @@ import StockAdjustmentDetail from "../views/inventory/StockAdjustmentDetail.vue"
 import StockAdjustmentApproval from "../views/inventory/StockAdjustmentApproval.vue";
 import ItemMovementHistory from '../views/inventory/ItemMovementHistory.vue';
 import StockTransferForm from '../views/inventory/StockTransferForm.vue';
-//import StockAdjustments from "../views/inventory/StockAdjustments.vue";
+import ItemStockList from "../views/inventory/ItemStockList.vue";
+import ItemStockDetail from "../views/inventory/ItemStockDetail.vue";
+import WarehouseStock from "../views/inventory/WarehouseStock.vue";
+import StockTransfer from "../views/inventory/StockTransfer.vue";
+import StockAdjustment from "../views/inventory/StockAdjustment.vue";
+import StockReservation from "../views/inventory/StockReservation.vue";
+import NegativeStocks from "../views/inventory/NegativeStocks.vue";
 import ItemCategories from "../views/inventory/ItemCategories.vue";
 import ItemCategoriesEnhanced from "../views/inventory/ItemCategoriesEnhanced.vue";
+import CycleCountList from "../views/inventory/CycleCountList.vue";
+import CycleCountForm from "../views/inventory/CycleCountForm.vue";
+import CycleCountDetail from "../views/inventory/CycleCountDetail.vue";
+import CycleCountApproval from "../views/inventory/CycleCountApproval.vue";
+import GenerateCycleCounts from "../views/inventory/GenerateCycleCounts.vue";
 import CustomersList from "@/views/sales/CustomerList.vue";
 import CustomerDetails from "@/views/sales/CustomerDetails.vue";
 import CustomerCreate from "@/views/sales/CustomerCreate.vue";
@@ -281,11 +292,51 @@ const routes = [
                 props: true,
                 meta: { requiresAuth: true },
             },
-            // {
-            //     path: "stock-adjustments",
-            //     name: "StockAdjustments",
-            //     component: StockAdjustments,
-            // },
+            // Item Stock Management Routes
+            {
+                path: "/item-stocks",
+                name: "ItemStocks",
+                component: ItemStockList,
+                meta: { requiresAuth: true }
+            },
+            {
+                path: "/item-stocks/item/:itemId",
+                name: "ItemStockDetail",
+                component: ItemStockDetail,
+                props: true,
+                meta: { requiresAuth: true }
+            },
+            {
+                path: "/item-stocks/warehouse/:warehouseId?",
+                name: "WarehouseStock",
+                component: WarehouseStock,
+                props: true,
+                meta: { requiresAuth: true }
+            },
+            {
+                path: "/item-stocks/transfer",
+                name: "StockTransfer",
+                component: StockTransfer,
+                meta: { requiresAuth: true }
+            },
+            {
+                path: "/item-stocks/adjust",
+                name: "StockAdjustment",
+                component: StockAdjustment,
+                meta: { requiresAuth: true }
+            },
+            {
+                path: "/item-stocks/reserve",
+                name: "StockReservation",
+                component: StockReservation,
+                meta: { requiresAuth: true }
+            },
+            {
+                path: "/item-stocks/negative",
+                name: "NegativeStocks",
+                component: NegativeStocks,
+                meta: { requiresAuth: true }
+            },
             {
                 path: "stock-adjustments",
                 name: "StockAdjustments",
@@ -319,6 +370,81 @@ const routes = [
                 props: true,
                 meta: { requiresAuth: true }
               },
+            
+              {
+                path: "cycle-counts",
+                name: "CycleCountList",
+                component: CycleCountList,
+                meta: { requiresAuth: true }
+              },
+              {
+                path: "cycle-counts/create",
+                name: "CreateCycleCount",
+                component: CycleCountForm,
+                meta: { requiresAuth: true }
+              },
+              {
+                path: "cycle-counts/generate",
+                name: "GenerateCycleCounts",
+                component: GenerateCycleCounts,
+                meta: { requiresAuth: true }
+              },
+              {
+                path: "cycle-counts/:id",
+                name: "CycleCountDetail",
+                component: CycleCountDetail,
+                props: true,
+                meta: { requiresAuth: true }
+              },
+              {
+                path: "cycle-counts/:id/edit",
+                name: "EditCycleCount",
+                component: CycleCountForm,
+                props: true,
+                meta: { requiresAuth: true }
+              },
+              {
+                path: "cycle-counts/:id/approve",
+                name: "CycleCountApproval",
+                component: CycleCountApproval,
+                props: true,
+                meta: { requiresAuth: true }
+              },
+            // Item Batch Management Routes
+            {
+                path: '/items/:itemId/batches',
+                name: 'ItemBatches',
+                component: () => import('../views/inventory/BatchesList.vue'),
+                props: true,
+                meta: { requiresAuth: true }
+            },
+            {
+                path: '/items/:itemId/batches/create',
+                name: 'CreateBatch',
+                component: () => import('../views/inventory/BatchForm.vue'),
+                props: true,
+                meta: { requiresAuth: true }
+            },
+            {
+                path: '/items/:itemId/batches/:id',
+                name: 'BatchDetail',
+                component: () => import('../views/inventory/BatchDetail.vue'),
+                props: true,
+                meta: { requiresAuth: true }
+            },
+            {
+                path: '/items/:itemId/batches/:id/edit',
+                name: 'EditBatch',
+                component: () => import('../views/inventory/BatchForm.vue'),
+                props: true,
+                meta: { requiresAuth: true }
+            },
+            {
+                path: '/batches/expiry-dashboard',
+                name: 'ExpiryDashboard',
+                component: () => import('../views/inventory/ExpiryDashboard.vue'),
+                meta: { requiresAuth: true }
+            },
             {
                 path: "/sales/quotations",
                 name: "SalesQuotations",
@@ -822,52 +948,52 @@ const routes = [
             },
 
             // Vendor Invoice
-            // {
-            //     path: "/purchasing/vendor-invoices",
-            //     name: "VendorInvoiceList",
-            //     component: () =>
-            //         import("../views/purchasing/VendorInvoiceList.vue"),
-            //     meta: { requiresAuth: true },
-            // },
-            // {
-            //     path: "/purchasing/vendor-invoices/create",
-            //     name: "VendorInvoiceCreate",
-            //     component: () =>
-            //         import("../views/purchasing/VendorInvoiceCreate.vue"),
-            //     meta: { requiresAuth: true },
-            // },
-            // {
-            //     path: "/purchasing/vendor-invoices/",
-            //     name: "VendorInvoiceDetail",
-            //     component: () =>
-            //         import("../views/purchasing/VendorInvoiceDetail.vue"),
-            //     props: true,
-            //     meta: { requiresAuth: true },
-            // },
-            // {
-            //     path: "/purchasing/vendor-invoices//edit",
-            //     name: "VendorInvoiceEdit",
-            //     component: () =>
-            //         import("../views/purchasing/VendorInvoiceEdit.vue"),
-            //     props: true,
-            //     meta: { requiresAuth: true },
-            // },
-            // {
-            //     path: "/purchasing/vendor-invoices//approve",
-            //     name: "VendorInvoiceApproval",
-            //     component: () =>
-            //         import("../views/purchasing/VendorInvoiceApproval.vue"),
-            //     props: true,
-            //     meta: { requiresAuth: true },
-            // },
-            // {
-            //     path: "/purchasing/vendor-invoices//payment",
-            //     name: "VendorInvoicePayment",
-            //     component: () =>
-            //         import("../views/purchasing/VendorInvoicePayment.vue"),
-            //     props: true,
-            //     meta: { requiresAuth: true },
-            // },
+            {
+                path: "/purchasing/vendor-invoices",
+                name: "VendorInvoiceList",
+                component: () =>
+                    import("../views/purchasing/VendorInvoiceList.vue"),
+                meta: { requiresAuth: true },
+            },
+            {
+                path: "/purchasing/vendor-invoices/create",
+                name: "VendorInvoiceCreate",
+                component: () =>
+                    import("../views/purchasing/VendorInvoiceForm.vue"),
+                meta: { requiresAuth: true },
+            },
+            {
+                path: "/purchasing/vendor-invoices/:id",
+                name: "VendorInvoiceDetail",
+                component: () =>
+                    import("../views/purchasing/VendorInvoiceDetail.vue"),
+                props: true,
+                meta: { requiresAuth: true },
+            },
+            {
+                path: "/purchasing/vendor-invoices/:id/edit",
+                name: "VendorInvoiceEdit",
+                component: () =>
+                    import("../views/purchasing/VendorInvoiceForm.vue"),
+                props: true,
+                meta: { requiresAuth: true },
+            },
+            {
+                path: "/purchasing/vendor-invoices/approve",
+                name: "VendorInvoiceApproval",
+                component: () =>
+                    import("../views/purchasing/VendorInvoiceApproval.vue"),
+                props: true,
+                meta: { requiresAuth: true },
+            },
+            {
+                path: "/purchasing/vendor-invoices/payment",
+                name: "VendorInvoicePayment",
+                component: () =>
+                    import("../views/purchasing/VendorInvoicePayment.vue"),
+                props: true,
+                meta: { requiresAuth: true },
+            },
             // vendor contract service
             // {
             //     path: "/purchasing/contracts",

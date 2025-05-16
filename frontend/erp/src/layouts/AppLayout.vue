@@ -93,6 +93,7 @@
                         <i class="fas fa-warehouse"></i>
                         <span v-if="!sidebarCollapsed">Warehouses</span>
                     </router-link>
+
                     <!-- In the manufacturing submenu section -->
                     <router-link
                     to="/materials/plans"
@@ -120,6 +121,14 @@
                     <span v-if="!sidebarCollapsed">Generate PR from Plans</span>
                     </router-link>
                     <router-link
+                    to="/batches/expiry-dashboard"
+                    class="menu-item"
+                    active-class="active"
+                    >
+                    <i class="fas fa-calendar-alt"></i>
+                    <span v-if="!sidebarCollapsed">Expiry Management</span>
+                    </router-link>
+                    <router-link
                         to="/item-prices"
                         class="menu-item"
                         active-class="active"
@@ -140,6 +149,89 @@
                         <i class="fas fa-tags"></i>
                         <span v-if="!sidebarCollapsed">Item Prices Management</span>
                     </router-link>
+                </div>
+
+                <!-- Stock Management Section -->
+                <div class="menu-section">
+                <div
+                    @click="toggleMenuSection('stockManagement')"
+                    class="section-header"
+                >
+                    <div class="section-title-container">
+                    <i class="fas fa-boxes"></i>
+                    <span v-if="!sidebarCollapsed" class="section-title"
+                        >Stock Management</span
+                    >
+                    </div>
+                    <i
+                    v-if="!sidebarCollapsed"
+                    :class="
+                        menuSections.stockManagement
+                        ? 'fas fa-chevron-down'
+                        : 'fas fa-chevron-right'
+                    "
+                    class="section-icon"
+                    ></i>
+                </div>
+                </div>
+
+                <div
+                v-show="!sidebarCollapsed && menuSections.stockManagement"
+                class="submenu"
+                >
+                <router-link
+                    to="/item-stocks"
+                    class="menu-item"
+                    active-class="active"
+                >
+                    <i class="fas fa-box"></i>
+                    <span v-if="!sidebarCollapsed">Inventory Stock</span>
+                </router-link>
+
+                <router-link
+                    to="/item-stocks/warehouse"
+                    class="menu-item"
+                    active-class="active"
+                >
+                    <i class="fas fa-warehouse"></i>
+                    <span v-if="!sidebarCollapsed">Warehouse Stock</span>
+                </router-link>
+
+                <router-link
+                    to="/item-stocks/transfer"
+                    class="menu-item"
+                    active-class="active"
+                >
+                    <i class="fas fa-exchange-alt"></i>
+                    <span v-if="!sidebarCollapsed">Stock Transfer</span>
+                </router-link>
+
+                <router-link
+                    to="/item-stocks/adjust"
+                    class="menu-item"
+                    active-class="active"
+                >
+                    <i class="fas fa-sliders-h"></i>
+                    <span v-if="!sidebarCollapsed">Stock Adjustment</span>
+                </router-link>
+
+                <router-link
+                    to="/item-stocks/reserve"
+                    class="menu-item"
+                    active-class="active"
+                >
+                    <i class="fas fa-lock"></i>
+                    <span v-if="!sidebarCollapsed">Stock Reservation</span>
+                </router-link>
+
+                <router-link
+                    to="/item-stocks/negative"
+                    class="menu-item"
+                    active-class="active"
+                >
+                    <i class="fas fa-exclamation-triangle"></i>
+                    <span v-if="!sidebarCollapsed">Negative Stocks</span>
+                </router-link>
                 </div>
 
                 <!-- Stock Operations Section -->
@@ -189,13 +281,22 @@
                     </router-link>
 
                     <router-link
-                        to="/cycle-counts"
-                        class="menu-item"
-                        active-class="active"
-                    >
-                        <i class="fas fa-clipboard-check"></i>
-                        <span v-if="!sidebarCollapsed">Cycle Counting</span>
-                    </router-link>
+                to="/cycle-counts"
+                class="menu-item"
+                active-class="active"
+                >
+                <i class="fas fa-clipboard-check"></i>
+                <span v-if="!sidebarCollapsed">Cycle Counting</span>
+                </router-link>
+
+                <router-link
+                to="/cycle-counts/generate" 
+                class="menu-item"
+                active-class="active"
+                >
+                <i class="fas fa-tasks"></i>
+                <span v-if="!sidebarCollapsed">Generate Count Tasks</span>
+                </router-link>
                 </div>
                 <!-- Purchasing Section -->
                 <div class="menu-section">

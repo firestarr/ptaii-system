@@ -29,12 +29,12 @@ class StockAdjustmentController extends Controller
             $query->where('status', $request->status);
         }
         
-        // Filter by date range
-        if ($request->has('start_date')) {
+        // Filter by date range with validation
+        if ($request->has('start_date') && !empty($request->start_date) && strtotime($request->start_date) !== false) {
             $query->where('adjustment_date', '>=', $request->start_date);
         }
         
-        if ($request->has('end_date')) {
+        if ($request->has('end_date') && !empty($request->end_date) && strtotime($request->end_date) !== false) {
             $query->where('adjustment_date', '<=', $request->end_date);
         }
         
@@ -45,7 +45,18 @@ class StockAdjustmentController extends Controller
         
         return response()->json([
             'success' => true,
-            'data' => $adjustments
+            'data' => $adjustments->items(),
+            'meta' => [
+                'current_page' => $adjustments->currentPage(),
+                'from' => $adjustments->firstItem(),
+                'to' => $adjustments->lastItem(),
+                'total' => $adjustments->total(),
+                'last_page' => $adjustments->lastPage(),
+            ],
+            'links' => [
+                'prev' => $adjustments->previousPageUrl(),
+                'next' => $adjustments->nextPageUrl(),
+            ],
         ]);
     }
 

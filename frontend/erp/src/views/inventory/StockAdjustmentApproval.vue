@@ -328,7 +328,7 @@
         error.value = null;
         
         try {
-          const response = await axios.get(`/api/stock-adjustments/${adjustmentId.value}`);
+          const response = await axios.get(`/stock-adjustments/${adjustmentId.value}`);
           adjustment.value = response.data.data;
         } catch (err) {
           console.error('Error fetching adjustment:', err);
@@ -355,7 +355,7 @@
             payload.adjustment_reason = approvalForm.value.adjustment_reason;
           }
           
-          await axios.post(`/api/stock-adjustments/${adjustmentId.value}/approve`, payload);
+          await axios.post(`/stock-adjustments/${adjustmentId.value}/approve`, payload);
           
           // Navigate to detail view
           router.push(`/stock-adjustments/${adjustmentId.value}`);
@@ -379,7 +379,7 @@
         isProcessing.value = true;
         
         try {
-          await axios.post(`/api/stock-adjustments/${adjustmentId.value}/reject`, {
+          await axios.post(`/stock-adjustments/${adjustmentId.value}/reject`, {
             rejection_reason: rejectForm.value.rejection_reason
           });
           

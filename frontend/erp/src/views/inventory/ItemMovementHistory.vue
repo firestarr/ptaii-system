@@ -256,9 +256,10 @@
                       <td>
                         <div v-if="transaction.warehouse">
                           {{ transaction.warehouse.name }}
-                          <div v-if="transaction.location" class="small text-muted">
+                          <!-- Location removed because backend no longer supports location relationship -->
+                          <!-- <div v-if="transaction.location" class="small text-muted">
                             Location: {{ transaction.location.code }}
-                          </div>
+                          </div> -->
                         </div>
                         <div v-else class="text-muted">--</div>
                       </td>
@@ -453,10 +454,10 @@ export default {
         if (filters.value.warehouse_id) params.warehouse_id = filters.value.warehouse_id;
         
         const response = await axios.get(`/transactions/items/${itemId.value}/movement`, { params });
-        transactions.value = response.data.data.data;
-        totalPages.value = Math.ceil(response.data.data.total / response.data.data.per_page);
-        totalItems.value = response.data.data.total;
-        currentPage.value = response.data.data.current_page;
+        transactions.value = response.data.data.transactions.data;
+        totalPages.value = Math.ceil(response.data.data.transactions.total / response.data.data.transactions.per_page);
+        totalItems.value = response.data.data.transactions.total;
+        currentPage.value = response.data.data.transactions.current_page;
         
         // After getting transactions, render chart
         nextTick(() => {
@@ -473,7 +474,7 @@ export default {
     const fetchWarehouses = async () => {
       warehousesLoading.value = true;
       try {
-        const response = await axios.get('/api/warehouses');
+        const response = await axios.get('/warehouses');
         warehouses.value = response.data.data;
       } catch (err) {
         console.error('Error fetching warehouses:', err);
