@@ -392,7 +392,7 @@
             this.loading = false;
           });
       },
-      vendorSelected() {
+vendorSelected() {
         if (!this.receipt.vendor_id) return;
         
         this.loadingPOs = true;
@@ -409,11 +409,11 @@
         })
           .then(response => {
             const poData = response.data.data;
-            if (Array.isArray(poData)) {
-              this.purchaseOrders = poData;
+            if (poData && Array.isArray(poData.data)) {
+              this.purchaseOrders = poData.data;
             } else {
               this.purchaseOrders = [];
-              console.warn('Purchase Orders API response data.data is not an array:', poData);
+              console.warn('Purchase Orders API response data.data.data is not an array:', poData);
             }
           })
           .catch(error => {
@@ -424,45 +424,43 @@
             this.loadingPOs = false;
           });
       },
-      loadItemsFromPOs() {
+async loadItemsFromPOs() {
         if (this.selectedPOs.length === 0) return;
         
         this.loading = true;
         
-        // Fetch available items from selected POs
-        axios.get('/goods-receipts/available-items', {
-          params: {
-            po_ids: this.selectedPOs
-          }
-        })
-          .then(response => {
-            const data = response.data.data;
-            this.availableItems = data.po_lines;
-            
-            // Add all items to receipt by default
-            this.receipt.lines = this.availableItems.map(item => ({
-              po_id: item.po_id,
-              po_number: item.po_number,
-              po_line_id: item.po_line_id,
-              item_id: item.item_id,
-              item_code: item.item_code,
-              item_name: item.item_name,
-              ordered_quantity: item.ordered_quantity,
-              received_quantity: item.outstanding_quantity,
-              outstanding_quantity: item.outstanding_quantity,
-              warehouse_id: this.warehouses.length > 0 ? this.warehouses[0].warehouse_id : '',
-              batch_number: ''
-            }));
-            
-            this.itemsLoaded = true;
-          })
-          .catch(error => {
-            console.error('Error fetching available items:', error);
-            this.$toast.error('Failed to load available items');
-          })
-          .finally(() => {
-            this.loading = false;
+        try {
+          const response = await axios.get('/goods-receipts/available-items', {
+            params: {
+              po_ids: this.selectedPOs
+            }
           });
+          
+          const data = response.data.data;
+          this.availableItems = data.po_lines || [];
+          
+          // Add all items to receipt by default
+          this.receipt.lines = this.availableItems.map(item => ({
+            po_id: item.po_id,
+            po_number: item.po_number,
+            po_line_id: item.po_line_id,
+            item_id: item.item_id,
+            item_code: item.item_code,
+            item_name: item.item_name,
+            ordered_quantity: item.ordered_quantity,
+            received_quantity: item.outstanding_quantity,
+            outstanding_quantity: item.outstanding_quantity,
+            warehouse_id: this.warehouses.length > 0 ? this.warehouses[0].warehouse_id : '',
+            batch_number: ''
+          }));
+          
+          this.itemsLoaded = true;
+        } catch (error) {
+          console.error('Error fetching available items:', error);
+          this.$toast.error('Failed to load available items');
+        } finally {
+          this.loading = false;
+        }
       },
       addItemToReceipt(item) {
         this.receipt.lines.push({
