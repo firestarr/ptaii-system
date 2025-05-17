@@ -463,6 +463,7 @@ Route::get('purchase-orders/reports/outstanding-items', [PurchaseOrderController
 
     // Production Orders
     Route::apiResource('production-orders', ProductionOrderController::class);
+    Route::post('production-orders/{id}/complete', [ProductionOrderController::class, 'complete']);
     Route::apiResource('production-orders/{productionId}/consumptions', ProductionConsumptionController::class);
 
     // Maintenance Schedules

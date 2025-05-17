@@ -230,7 +230,7 @@
       this.fetchProductionOrder();
     },
     methods: {
-      async fetchProductionOrder() {
+async fetchProductionOrder() {
         this.loading = true;
         try {
           const response = await axios.get(`/production-orders/${this.productionId}`);
@@ -247,8 +247,8 @@
           this.form.actual_quantity = this.productionOrder.planned_quantity;
           
           // Get consumptions
-          if (this.productionOrder.productionConsumptions) {
-            this.consumptions = this.productionOrder.productionConsumptions;
+          if (this.productionOrder.production_consumptions) {
+            this.consumptions = this.productionOrder.production_consumptions;
             
             // Initialize form consumptions array
             this.form.consumptions = this.consumptions.map(consumption => ({
@@ -311,25 +311,40 @@
         }
       },
       
-      getAvailableStock(consumption) {
+getAvailableStock(consumption) {
         const key = `${consumption.item_id}-${consumption.warehouse_id}`;
         const stock = this.itemStocks[key];
         
         if (!stock) return 'Unknown';
         
-        return stock.quantity || 0;
+        // stock.warehouse_stocks is an array, find the warehouse stock matching warehouse_id
+        if (stock.warehouse_stocks && Array.isArray(stock.warehouse_stocks)) {
+          const warehouseStock = stock.warehouse_stocks.find(ws => ws.warehouse_id === consumption.warehouse_id);
+          if (warehouseStock) {
+            return warehouseStock.available_quantity || 0;
+          }
+        }
+        
+        return 0;
       },
       
-      isStockInsufficient(consumption, index) {
+isStockInsufficient(consumption, index) {
         const key = `${consumption.item_id}-${consumption.warehouse_id}`;
         const stock = this.itemStocks[key];
         
         if (!stock) return false;
         
-        const availableStock = parseFloat(stock.quantity) || 0;
-        const actualQuantity = parseFloat(this.form.consumptions[index].actual_quantity) || 0;
+        // stock.warehouse_stocks is an array, find the warehouse stock matching warehouse_id
+        if (stock.warehouse_stocks && Array.isArray(stock.warehouse_stocks)) {
+          const warehouseStock = stock.warehouse_stocks.find(ws => ws.warehouse_id === consumption.warehouse_id);
+          if (warehouseStock) {
+            const availableStock = parseFloat(warehouseStock.available_quantity) || 0;
+            const actualQuantity = parseFloat(this.form.consumptions[index].actual_quantity) || 0;
+            return actualQuantity > availableStock;
+          }
+        }
         
-        return actualQuantity > availableStock;
+        return false;
       },
       
       validateConsumptions() {

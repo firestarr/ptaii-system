@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\Manufacturing;
 use App\Http\Controllers\Controller;
 use App\Models\Manufacturing\ProductionOrder;
 use App\Models\Manufacturing\ProductionConsumption;
+use App\Models\Item;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Validator;
@@ -25,7 +26,7 @@ class ProductionConsumptionController extends Controller
             return response()->json(['message' => 'Production order not found'], 404);
         }
         
-        $consumptions = ProductionConsumption::with(['item', 'warehouse', 'warehouseLocation'])
+$consumptions = ProductionConsumption::with(['item', 'warehouse'])
             ->where('production_id', $productionId)
             ->get();
             
@@ -47,12 +48,12 @@ class ProductionConsumptionController extends Controller
             return response()->json(['message' => 'Production order not found'], 404);
         }
 
-        $validator = Validator::make($request->all(), [
-            'item_id' => 'required|integer|exists:Item,item_id',
+$validator = Validator::make($request->all(), [
+            'item_id' => 'required|integer|exists:items,item_id',
             'planned_quantity' => 'required|numeric',
             'actual_quantity' => 'sometimes|nullable|numeric',
-            'warehouse_id' => 'required|integer|exists:Warehouse,warehouse_id',
-            //'location_id' => 'sometimes|nullable|integer|exists:WarehouseLocation,location_id',
+            'warehouse_id' => 'required|integer|exists:warehouses,warehouse_id',
+            //'location_id' => 'sometimes|nullable|integer|exists:warehouse_locations,location_id',
         ]);
 
         if ($validator->fails()) {
@@ -72,8 +73,8 @@ class ProductionConsumptionController extends Controller
         //$consumption->location_id = $request->location_id;
         $consumption->save();
 
-        return response()->json([
-            'data' => $consumption->load(['item', 'warehouse', 'warehouseLocation']), 
+return response()->json([
+            'data' => $consumption->load(['item', 'warehouse']), 
             'message' => 'Production consumption created successfully'
         ], 201);
     }
@@ -87,7 +88,7 @@ class ProductionConsumptionController extends Controller
      */
     public function show($productionId, $id)
     {
-        $consumption = ProductionConsumption::with(['item', 'warehouse', 'warehouseLocation'])
+$consumption = ProductionConsumption::with(['item', 'warehouse'])
             ->where('production_id', $productionId)
             ->where('consumption_id', $id)
             ->first();
@@ -117,12 +118,12 @@ class ProductionConsumptionController extends Controller
             return response()->json(['message' => 'Production consumption not found'], 404);
         }
 
-        $validator = Validator::make($request->all(), [
-            'item_id' => 'sometimes|required|integer|exists:Item,item_id',
+$validator = Validator::make($request->all(), [
+            'item_id' => 'sometimes|required|integer|exists:items,item_id',
             'planned_quantity' => 'sometimes|required|numeric',
             'actual_quantity' => 'sometimes|nullable|numeric',
-            'warehouse_id' => 'sometimes|required|integer|exists:Warehouse,warehouse_id',
-            //'location_id' => 'sometimes|nullable|integer|exists:WarehouseLocation,location_id',
+            'warehouse_id' => 'sometimes|required|integer|exists:warehouses,warehouse_id',
+            //'location_id' => 'sometimes|nullable|integer|exists:warehouse_locations,location_id',
         ]);
 
         if ($validator->fails()) {
@@ -141,8 +142,8 @@ class ProductionConsumptionController extends Controller
         
         $consumption->save();
         
-        return response()->json([
-            'data' => $consumption->load(['item', 'warehouse', 'warehouseLocation']), 
+return response()->json([
+            'data' => $consumption->load(['item', 'warehouse']), 
             'message' => 'Production consumption updated successfully'
         ]);
     }

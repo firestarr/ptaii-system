@@ -263,8 +263,8 @@
           this.productionOrder = response.data.data || response.data;
           
           // Get consumptions
-          if (this.productionOrder.productionConsumptions) {
-            this.consumptions = this.productionOrder.productionConsumptions;
+          if (this.productionOrder.production_consumptions) {
+            this.consumptions = this.productionOrder.production_consumptions;
           }
           
           // Fetch work order details if we have a work order ID
@@ -277,6 +277,15 @@
         } finally {
           this.loading = false;
         }
+      },
+      
+      issueMaterial(material) {
+        // Navigate to add consumption form with prefill props
+        this.$router.push({
+          name: 'AddProductionConsumption',
+          params: { productionId: this.productionId },
+          query: { prefillItemId: material.item_id, prefillPlannedQuantity: material.planned_quantity || 0 }
+        });
       },
       
       async fetchWorkOrder(workOrderId) {

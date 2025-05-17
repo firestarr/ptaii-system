@@ -172,14 +172,24 @@
       consumptionId: {
         type: [Number, String],
         required: false
+      },
+      prefillItemId: {
+        type: [Number, String],
+        required: false,
+        default: null
+      },
+      prefillPlannedQuantity: {
+        type: Number,
+        required: false,
+        default: 0
       }
     },
     data() {
       return {
         form: {
           production_id: this.productionId,
-          item_id: '',
-          planned_quantity: 0,
+          item_id: this.prefillItemId || '',
+          planned_quantity: this.prefillPlannedQuantity || 0,
           actual_quantity: 0,
           warehouse_id: '',
           variance: 0
