@@ -151,16 +151,16 @@ export default {
       isLoading.value = true;
       
       try {
-        const response = await axios.get('/boms', {
-          params: {
-            page: currentPage.value,
-            per_page: perPage.value,
-            search: searchTerm.value,
-            status: filters.status,
-            sort_field: sortField.value,
-            sort_order: sortOrder.value
-          }
-        });
+            const response = await axios.get('/boms', {
+              params: {
+                page: currentPage.value,
+                per_page: perPage.value,
+                search: searchTerm.value,
+                status: filters.status === '' ? null : filters.status,
+                sort_field: sortField.value,
+                sort_order: sortOrder.value
+              }
+            });
         
         // Add flat item_name property for each BOM
         const bomsWithItemName = response.data.data.map(bom => ({

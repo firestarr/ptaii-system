@@ -32,18 +32,18 @@ class ProductionOrderController extends Controller
     public function store(Request $request)
     {
         $validator = Validator::make($request->all(), [
-            'wo_id' => 'required|integer|exists:WorkOrder,wo_id',
-            'production_number' => 'required|string|max:50|unique:ProductionOrder,production_number',
+            'wo_id' => 'required|integer|exists:work_orders,wo_id',
+            'production_number' => 'required|string|max:50|unique:production_orders,production_number',
             'production_date' => 'required|date',
             'planned_quantity' => 'required|numeric',
             'actual_quantity' => 'sometimes|numeric',
             'status' => 'required|string|max:50',
             'consumptions' => 'sometimes|array',
-            'consumptions.*.item_id' => 'required|integer|exists:Item,item_id',
+            'consumptions.*.item_id' => 'required|integer|exists:items,item_id',
             'consumptions.*.planned_quantity' => 'required|numeric',
             'consumptions.*.actual_quantity' => 'sometimes|nullable|numeric',
-            'consumptions.*.warehouse_id' => 'required|integer|exists:Warehouse,warehouse_id',
-            'consumptions.*.location_id' => 'sometimes|nullable|integer|exists:WarehouseLocation,location_id',
+            'consumptions.*.warehouse_id' => 'required|integer|exists:warehouses,warehouse_id',
+            'consumptions.*.location_id' => 'sometimes|nullable|integer|exists:warehouse_locations,location_id',
         ]);
 
         if ($validator->fails()) {
@@ -146,8 +146,8 @@ class ProductionOrderController extends Controller
         }
 
         $validator = Validator::make($request->all(), [
-            'wo_id' => 'sometimes|required|integer|exists:WorkOrder,wo_id',
-            'production_number' => 'sometimes|required|string|max:50|unique:ProductionOrder,production_number,' . $id . ',production_id',
+            'wo_id' => 'sometimes|required|integer|exists:work_orders,wo_id',
+            'production_number' => 'sometimes|required|string|max:50|unique:production_orders,production_number,' . $id . ',production_id',
             'production_date' => 'sometimes|required|date',
             'planned_quantity' => 'sometimes|required|numeric',
             'actual_quantity' => 'sometimes|numeric',

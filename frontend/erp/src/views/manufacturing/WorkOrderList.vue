@@ -230,7 +230,7 @@
       const columns = [
         { key: 'wo_number', label: 'WO Number', sortable: true },
         { key: 'wo_date', label: 'Date', sortable: true, template: 'wo_date' },
-        { key: 'product_name', label: 'Product', sortable: true },
+        { key: 'item_name', label: 'Item', sortable: true },
         { key: 'planned_quantity', label: 'Qty', sortable: true },
         { key: 'status', label: 'Status', sortable: true, template: 'status' },
         { key: 'progress', label: 'Progress', template: 'progress' },
@@ -274,10 +274,10 @@
             params.date_to = dateTo.value;
           }
           
-          const response = await axios.get('/api/work-orders', { params });
+          const response = await axios.get('/work-orders', { params });
           workOrders.value = response.data.data.map(wo => ({
             ...wo,
-            product_name: wo.item ? wo.item.name : 'Unknown'
+            item_name: wo.item ? wo.item.name : 'Unknown'
           }));
           
           total.value = response.data.meta.total;
@@ -428,13 +428,13 @@
           const woId = selectedItem.value.wo_id;
           
           if (modalAction.value === 'delete') {
-            await axios.delete(`/api/work-orders/${woId}`);
+            await axios.delete(`/work-orders/${woId}`);
             fetchWorkOrders();
           } else if (modalAction.value === 'release') {
-            await axios.patch(`/api/work-orders/${woId}`, { status: 'Released' });
+            await axios.patch(`/work-orders/${woId}`, { status: 'Released' });
             fetchWorkOrders();
           } else if (modalAction.value === 'start') {
-            await axios.patch(`/api/work-orders/${woId}`, { status: 'In Progress' });
+            await axios.patch(`/work-orders/${woId}`, { status: 'In Progress' });
             fetchWorkOrders();
           }
         } catch (error) {

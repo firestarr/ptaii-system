@@ -419,7 +419,7 @@ Route::get('purchase-orders/reports/outstanding-items', [PurchaseOrderController
         Route::get('/', [StockTransactionController::class, 'index']);
         Route::post('/', [StockTransactionController::class, 'store']);
         Route::get('/{id}', [StockTransactionController::class, 'show']);
-        Route::get('/item/{itemId}', [StockTransactionController::class, 'getItemTransactions']);
+    Route::get('/item/{itemId}', [StockTransactionController::class, 'itemMovement']);
         Route::get('/warehouse/{warehouseId}', [StockTransactionController::class, 'getWarehouseTransactions']);
     });
 

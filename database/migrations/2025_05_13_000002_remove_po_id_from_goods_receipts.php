@@ -15,21 +15,7 @@ class RemovePoIdFromGoodsReceipts extends Migration
     {
         // Hapus foreign key dan kolom po_id dari goods_receipts
         Schema::table('goods_receipts', function (Blueprint $table) {
-            // Identifikasi nama constraint
-            $foreignKeys = $this->listTableForeignKeys('goods_receipts');
-            $poForeignKey = null;
-            
-            foreach ($foreignKeys as $foreignKey) {
-                if (str_contains($foreignKey, 'po_id')) {
-                    $poForeignKey = $foreignKey;
-                    break;
-                }
-            }
-            
-            if ($poForeignKey) {
-                $table->dropForeign($poForeignKey);
-            }
-            
+            $table->dropForeign(['po_id']);
             $table->dropColumn('po_id');
         });
     }
@@ -69,13 +55,7 @@ class RemovePoIdFromGoodsReceipts extends Migration
      */
     private function listTableForeignKeys($table)
     {
-        $conn = Schema::getConnection()->getDoctrineSchemaManager();
-        $foreignKeys = [];
-        
-        foreach ($conn->listTableForeignKeys($table) as $foreignKey) {
-            $foreignKeys[] = $foreignKey->getName();
-        }
-        
-        return $foreignKeys;
+        // This method is no longer needed after simplifying the up method
+        return [];
     }
 }

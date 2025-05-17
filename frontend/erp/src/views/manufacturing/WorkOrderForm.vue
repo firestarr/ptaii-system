@@ -69,9 +69,9 @@
                     required
                   >
                     <option value="">Select a product</option>
-                    <option v-for="product in products" :key="product.item_id" :value="product.item_id">
-                      {{ product.name }} ({{ product.item_code }})
-                    </option>
+                  <option v-for="item in items" :key="item.item_id" :value="item.item_id">
+                    {{ item.name }} ({{ item.item_code }})
+                  </option>
                   </select>
                 </div>
               </div>
@@ -265,17 +265,17 @@
       const isSubmitting = ref(false);
       const formErrors = ref([]);
       const endDateError = ref(false);
-      const products = ref([]);
+      const items = ref([]);
       const boms = ref([]);
       const routings = ref([]);
       
       // Methods
-      const loadProducts = async () => {
+      const loadItems = async () => {
         try {
-          const response = await axios.get('/api/items', { params: { type: 'manufactureable' } });
-          products.value = response.data.data;
+          const response = await axios.get('/items', { params: { type: 'manufactureable' } });
+          items.value = response.data.data;
         } catch (error) {
-          console.error('Error loading products:', error);
+          console.error('Error loading items:', error);
         }
       };
       
@@ -288,13 +288,13 @@
         
         try {
           // Load BOMs for the selected product
-          const bomsResponse = await axios.get('/api/boms', { 
+          const bomsResponse = await axios.get('/boms', { 
             params: { item_id: workOrder.value.item_id, status: 'Active' } 
           });
           boms.value = bomsResponse.data.data;
           
           // Load routings for the selected product
-          const routingsResponse = await axios.get('/api/routings', { 
+          const routingsResponse = await axios.get('/routings', { 
             params: { item_id: workOrder.value.item_id, status: 'Active' } 
           });
           routings.value = routingsResponse.data.data;
@@ -316,7 +316,7 @@
         if (!isEditMode.value) return;
         
         try {
-          const response = await axios.get(`/api/work-orders/${route.params.id}`);
+          const response = await axios.get(`/work-orders/${route.params.id}`);
           const data = response.data.data;
           
           // Update the work order form with the retrieved data
@@ -374,11 +374,11 @@
         try {
           if (isEditMode.value) {
             // Update existing work order
-            await axios.put(`/api/work-orders/${workOrder.value.wo_id}`, workOrder.value);
+            await axios.put(`/work-orders/${workOrder.value.wo_id}`, workOrder.value);
             router.push(`/manufacturing/work-orders/${workOrder.value.wo_id}`);
           } else {
             // Create new work order
-            const response = await axios.post('/api/work-orders', workOrder.value);
+            const response = await axios.post('/work-orders', workOrder.value);
             router.push(`/manufacturing/work-orders/${response.data.data.wo_id}`);
           }
         } catch (error) {
@@ -405,7 +405,7 @@
       
       // Lifecycle hooks
       onMounted(async () => {
-        await loadProducts();
+        await loadItems();
         
         if (isEditMode.value) {
           await loadWorkOrder();
@@ -418,7 +418,7 @@
         isSubmitting,
         formErrors,
         endDateError,
-        products,
+        items,
         boms,
         routings,
         loadBOMsAndRoutings,

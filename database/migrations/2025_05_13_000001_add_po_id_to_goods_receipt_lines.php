@@ -21,10 +21,11 @@ class AddPoIdToGoodsReceiptLines extends Migration
 
         // 2. Isi nilai po_id berdasarkan informasi po_line_id
         DB::statement('
-            UPDATE goods_receipt_lines grl
-            JOIN po_lines pl ON grl.po_line_id = pl.line_id
-            SET grl.po_id = pl.po_id
-            WHERE grl.po_id IS NULL
+            UPDATE goods_receipt_lines AS grl
+            SET po_id = pl.po_id
+            FROM po_lines AS pl
+            WHERE grl.po_line_id = pl.line_id
+            AND grl.po_id IS NULL
         ');
 
         // 3. Setelah data migrasi, jadikan kolom po_id tidak boleh null

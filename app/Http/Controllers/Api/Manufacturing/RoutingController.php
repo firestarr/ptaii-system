@@ -38,7 +38,7 @@ class RoutingController extends Controller
             'effective_date' => 'required|date',
             'status' => 'required|string|max:50',
             'operations' => 'sometimes|array',
-            'operations.*.workcenter_id' => 'required|integer|exists:WorkCenter,workcenter_id',
+            'operations.*.workcenter_id' => 'required|integer|exists:work_centers,workcenter_id',
             'operations.*.operation_name' => 'required|string|max:100',
             'operations.*.sequence' => 'required|integer',
             'operations.*.setup_time' => 'required|numeric',

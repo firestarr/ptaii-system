@@ -8,6 +8,7 @@ use App\Models\Manufacturing\WorkOrderOperation;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Facades\DB;
 
 class WorkOrderController extends Controller
 {
@@ -31,11 +32,11 @@ class WorkOrderController extends Controller
     public function store(Request $request)
     {
         $validator = Validator::make($request->all(), [
-            'wo_number' => 'required|string|max:50|unique:WorkOrder,wo_number',
+            'wo_number' => 'required|string|max:50|unique:work_orders,wo_number',
             'wo_date' => 'required|date',
             'item_id' => 'required|integer|exists:items,item_id',
-            'bom_id' => 'required|integer|exists:BOM,bom_id',
-            'routing_id' => 'required|integer|exists:Routing,routing_id',
+            'bom_id' => 'required|integer|exists:boms,bom_id',
+            'routing_id' => 'required|integer|exists:routings,routing_id',
             'planned_quantity' => 'required|numeric',
             'planned_start_date' => 'required|date',
             'planned_end_date' => 'required|date|after_or_equal:planned_start_date',
@@ -56,8 +57,8 @@ class WorkOrderController extends Controller
                 WorkOrderOperation::create([
                     'wo_id' => $workOrder->wo_id,
                     'routing_operation_id' => $routingOperation->operation_id,
-                    'scheduled_start' => null,
-                    'scheduled_end' => null,
+                    'scheduled_start' => now(),
+                    'scheduled_end' => now(),
                     'actual_start' => null,
                     'actual_end' => null,
                     'actual_labor_time' => 0,
@@ -116,11 +117,11 @@ class WorkOrderController extends Controller
         }
 
         $validator = Validator::make($request->all(), [
-            'wo_number' => 'sometimes|required|string|max:50|unique:WorkOrder,wo_number,' . $id . ',wo_id',
+            'wo_number' => 'sometimes|required|string|max:50|unique:work_orders,wo_number,' . $id . ',wo_id',
             'wo_date' => 'sometimes|required|date',
             'item_id' => 'sometimes|required|integer|exists:items,item_id',
-            'bom_id' => 'sometimes|required|integer|exists:BOM,bom_id',
-            'routing_id' => 'sometimes|required|integer|exists:Routing,routing_id',
+            'bom_id' => 'sometimes|required|integer|exists:boms,bom_id',
+            'routing_id' => 'sometimes|required|integer|exists:routings,routing_id',
             'planned_quantity' => 'sometimes|required|numeric',
             'planned_start_date' => 'sometimes|required|date',
             'planned_end_date' => 'sometimes|required|date|after_or_equal:planned_start_date',

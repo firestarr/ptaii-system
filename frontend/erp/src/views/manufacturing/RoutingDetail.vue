@@ -93,19 +93,17 @@
             </button>
           </div>
           <div class="card-body p-0">
-            <DataTable
-              :columns="operationColumns"
-              :items="sortedOperations"
-              :is-loading="isLoadingOperations"
-              empty-title="Belum ada operasi"
-              empty-message="Tambahkan operasi untuk routing ini menggunakan tombol 'Tambah Operasi'"
-              initial-sort-key="sequence"
-              initial-sort-order="asc"
-            >
-              <!-- Work Center column -->
-              <template #workcenter="{ item }">
-                {{ item.workCenter ? item.workCenter.name : '-' }}
-              </template>
+          <DataTable
+            :columns="operationColumns"
+            :items="sortedOperations"
+            :is-loading="isLoadingOperations"
+            empty-title="Belum ada operasi"
+            empty-message="Tambahkan operasi untuk routing ini menggunakan tombol 'Tambah Operasi'"
+            initial-sort-key="sequence"
+            initial-sort-order="asc"
+          >
+            <!-- Work Center column -->
+            <!-- Removed scoped slot to allow default rendering of string -->
   
               <!-- Run Time column -->
               <template #run_time="{ value }">
@@ -392,7 +390,7 @@
       const operationColumns = [
         { key: 'sequence', label: 'Urutan', sortable: true },
         { key: 'operation_name', label: 'Nama Operasi', sortable: true },
-        { key: 'workcenter', label: 'Work Center' },
+        { key: 'work_center_name', label: 'Work Center' },
         { key: 'setup_time', label: 'Waktu Setup' },
         { key: 'run_time', label: 'Waktu Proses' },
         { key: 'labor_cost', label: 'Biaya Tenaga Kerja' },
@@ -436,7 +434,7 @@
       const loadRouting = async () => {
         isLoading.value = true;
         try {
-          const response = await axios.get(`/api/routings/${routingId.value}`);
+          const response = await axios.get(`/routings/${routingId.value}`);
           routing.value = response.data.data;
         } catch (error) {
           console.error('Error loading routing:', error);
@@ -450,8 +448,13 @@
       const loadOperations = async () => {
         isLoadingOperations.value = true;
         try {
-          const response = await axios.get(`/api/routings/${routingId.value}/operations`);
-          operations.value = response.data.data;
+          const response = await axios.get(`/routings/${routingId.value}/operations`);
+          console.log('Operations data:', response.data.data); // Debug log to check workCenter presence
+          // Map operations to add work_center_name property as string for DataTable column
+          operations.value = response.data.data.map(op => ({
+            ...op,
+            work_center_name: op.work_center ? op.work_center.name : '-'
+          }));
         } catch (error) {
           console.error('Error loading operations:', error);
         } finally {
@@ -462,7 +465,7 @@
       // Load work centers for dropdown
       const loadWorkCenters = async () => {
         try {
-          const response = await axios.get('/api/work-centers');
+          const response = await axios.get('/work-centers');
           workCenters.value = response.data.data;
         } catch (error) {
           console.error('Error loading work centers:', error);
@@ -472,7 +475,7 @@
       // Load units of measure for dropdown
       const loadUnitOfMeasures = async () => {
         try {
-          const response = await axios.get('/api/uoms');
+          const response = await axios.get('/uoms');
           unitOfMeasures.value = response.data.data;
         } catch (error) {
           console.error('Error loading units of measure:', error);
@@ -527,13 +530,13 @@
             if (selectedOperation.value) {
             // Update existing operation
             await axios.put(
-                `/api/routings/${routingId.value}/operations/${selectedOperation.value.operation_id}`,
+                `/routings/${routingId.value}/operations/${selectedOperation.value.operation_id}`,
                 operationForm
             );
             } else {
             // Create new operation
             await axios.post(
-                `/api/routings/${routingId.value}/operations`,
+                `/routings/${routingId.value}/operations`,
                 operationForm
             );
             }
@@ -562,7 +565,7 @@
       // Delete routing
       const deleteRouting = async () => {
         try {
-          await axios.delete(`/api/routings/${routingId.value}`);
+          await axios.delete(`/routings/${routingId.value}`);
           router.push('/manufacturing/routings');
         } catch (error) {
           console.error('Error deleting routing:', error);
@@ -587,7 +590,7 @@
       const deleteOperation = async () => {
         try {
           await axios.delete(
-            `/api/routings/${routingId.value}/operations/${selectedOperation.value.operation_id}`
+            `/routings/${routingId.value}/operations/${selectedOperation.value.operation_id}`
           );
           await loadOperations(); // Reload operations
           showDeleteOperationModal.value = false;

@@ -339,12 +339,12 @@
           const operationId = route.params.operationId;
           
           // Load work order info first to get its status
-          const workOrderResponse = await axios.get(`/api/work-orders/${workOrderId}`);
+          const workOrderResponse = await axios.get(`/work-orders/${workOrderId}`);
           workOrderNumber.value = workOrderResponse.data.data.wo_number;
           workOrderStatus.value = workOrderResponse.data.data.status;
           
           // Load operation details
-          const operationResponse = await axios.get(`/api/work-orders/${workOrderId}/operations/${operationId}`);
+          const operationResponse = await axios.get(`/work-orders/${workOrderId}/operations/${operationId}`);
           const data = operationResponse.data.data;
           
           // Map API response to our form model
@@ -417,7 +417,7 @@
             notes: operation.value.notes
           };
           
-          await axios.patch(`/api/work-orders/${workOrderId}/operations/${operationId}`, updatedData);
+          await axios.patch(`/work-orders/${workOrderId}/operations/${operationId}`, updatedData);
           
           // Redirect back to work order details
           router.push(`/manufacturing/work-orders/${workOrderId}`);
@@ -443,7 +443,7 @@
           operation.value.status = 'In Progress';
           operation.value.actual_start = new Date().toISOString().split('T')[0];
           
-          await axios.patch(`/api/work-orders/${workOrderId}/operations/${operationId}`, {
+          await axios.patch(`/work-orders/${workOrderId}/operations/${operationId}`, {
             status: 'In Progress',
             actual_start: operation.value.actual_start
           });
@@ -463,7 +463,7 @@
           operation.value.status = 'Completed';
           operation.value.actual_end = new Date().toISOString().split('T')[0];
           
-          await axios.patch(`/api/work-orders/${workOrderId}/operations/${operationId}`, {
+          await axios.patch(`/work-orders/${workOrderId}/operations/${operationId}`, {
             status: 'Completed',
             actual_end: operation.value.actual_end
           });

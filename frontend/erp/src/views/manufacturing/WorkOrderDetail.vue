@@ -320,7 +320,7 @@
                         <tr v-for="material in materials" :key="material.line_id">
                           <td>{{ material.item_code }}</td>
                           <td>{{ material.item_name }}</td>
-                          <td>{{ material.quantity }}</td>
+<td>{{ material.required_quantity }}</td>
                           <td>{{ material.uom_name }}</td>
                           <td>{{ material.issued_quantity || 0 }}</td>
                           <td>
@@ -683,7 +683,7 @@ export default {
       isLoading.value = true;
       
       try {
-        const response = await axios.get(`/api/work-orders/${route.params.id}`);
+        const response = await axios.get(`/work-orders/${route.params.id}`);
         const data = response.data.data;
         
         // Format the work order data
@@ -729,14 +729,14 @@ export default {
       }
     };
     
-    const loadOperations = async () => {
+const loadOperations = async () => {
       isLoading.value = true;
       
       try {
-        const response = await axios.get(`/api/work-orders/${route.params.id}/operations`);
+        const response = await axios.get(`/work-orders/${route.params.id}/operations`);
         operations.value = response.data.data.map(op => ({
           ...op,
-          work_center_name: op.routingOperation?.workCenter?.name || 'Unknown'
+          work_center_name: op.routing_operation?.work_center?.name || 'Unknown'
         }));
       } catch (error) {
         console.error('Error loading operations:', error);
@@ -745,21 +745,28 @@ export default {
       }
     };
     
-    const loadMaterials = async () => {
+const loadMaterials = async () => {
       isLoading.value = true;
       
       try {
-        // Assuming BOM lines are loaded from /api/boms/{bom_id}/lines
-        const response = await axios.get(`/api/boms/${workOrder.value.bom_id}/lines`);
+        // Assuming BOM lines are loaded from /boms/{bom_id}/lines
+        const response = await axios.get(`/boms/${workOrder.value.bom_id}/lines`);
+        console.log('BOM lines response:', response.data.data);
+        console.log('Work order planned quantity:', workOrder.value.planned_quantity);
         
-        // Calculate required quantities based on work order planned quantity
+        // Calculate required quantities based on work order planned quantity and yield
         materials.value = response.data.data.map(line => {
-          const requiredQty = line.quantity * workOrder.value.planned_quantity;
+let requiredQty = line.quantity * workOrder.value.planned_quantity;
+if (line.is_yield_based && line.yield_ratio > 0) {
+  requiredQty = requiredQty / line.yield_ratio;
+}
+// Round up to the nearest integer
+requiredQty = Math.ceil(requiredQty);
           return {
             ...line,
             item_code: line.item?.item_code || 'Unknown',
             item_name: line.item?.name || 'Unknown',
-            uom_name: line.unitOfMeasure?.name || 'Unknown',
+            uom_name: line.unit_of_measure?.name || 'Unknown',
             required_quantity: requiredQty,
             issued_quantity: line.issued_quantity || 0
           };
@@ -775,7 +782,7 @@ export default {
       isLoading.value = true;
       
       try {
-        const response = await axios.get(`/api/production-orders`, {
+        const response = await axios.get(`/production-orders`, {
           params: { wo_id: route.params.id }
         });
         productionOrders.value = response.data.data;
@@ -790,7 +797,7 @@ export default {
       isLoading.value = true;
       
       try {
-        const response = await axios.get(`/api/quality-inspections/by-reference/work_order/${route.params.id}`);
+        const response = await axios.get(`/quality-inspections/by-reference/work_order/${route.params.id}`);
         qualityInspections.value = response.data.data.map(inspection => {
           // Calculate summary statistics
           const totalParams = inspection.qualityParameters?.length || 0;
@@ -948,24 +955,24 @@ export default {
         const woId = route.params.id;
         
         if (modalAction.value === 'release') {
-          await axios.patch(`/api/work-orders/${woId}`, { status: 'Released' });
+          await axios.patch(`/work-orders/${woId}`, { status: 'Released' });
           workOrder.value.status = 'Released';
         } else if (modalAction.value === 'start') {
-          await axios.patch(`/api/work-orders/${woId}`, { 
+          await axios.patch(`/work-orders/${woId}`, { 
             status: 'In Progress',
             actual_start_date: new Date().toISOString().split('T')[0]
           });
           workOrder.value.status = 'In Progress';
           workOrder.value.actual_start_date = new Date().toISOString().split('T')[0];
         } else if (modalAction.value === 'complete') {
-          await axios.patch(`/api/work-orders/${woId}`, { 
+          await axios.patch(`/work-orders/${woId}`, { 
             status: 'Completed',
             actual_end_date: new Date().toISOString().split('T')[0]
           });
           workOrder.value.status = 'Completed';
           workOrder.value.actual_end_date = new Date().toISOString().split('T')[0];
         } else if (modalAction.value === 'cancel') {
-          await axios.patch(`/api/work-orders/${woId}`, { status: 'Cancelled' });
+          await axios.patch(`/work-orders/${woId}`, { status: 'Cancelled' });
           workOrder.value.status = 'Cancelled';
         }
       } catch (error) {
@@ -978,7 +985,7 @@ export default {
     // Operation methods
     const startOperation = async (operation) => {
       try {
-        await axios.patch(`/api/work-orders/${route.params.id}/operations/${operation.operation_id}`, {
+        await axios.patch(`/work-orders/${route.params.id}/operations/${operation.operation_id}`, {
           status: 'In Progress',
           actual_start: new Date().toISOString().split('T')[0]
         });
@@ -992,7 +999,7 @@ export default {
     
     const completeOperation = async (operation) => {
       try {
-        await axios.patch(`/api/work-orders/${route.params.id}/operations/${operation.operation_id}`, {
+        await axios.patch(`/work-orders/${route.params.id}/operations/${operation.operation_id}`, {
           status: 'Completed',
           actual_end: new Date().toISOString().split('T')[0]
         });
@@ -1014,7 +1021,7 @@ export default {
       
       try {
         await axios.patch(
-          `/api/work-orders/${route.params.id}/operations/${selectedOperation.value.operation_id}`, 
+          `/work-orders/${route.params.id}/operations/${selectedOperation.value.operation_id}`, 
           selectedOperation.value
         );
         

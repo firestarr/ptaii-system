@@ -10,14 +10,14 @@
             </router-link>
             <router-link
               v-if="receipt && receipt.status === 'pending'"
-              :to="`/purchasing/goods-receipts/${receiptId}/edit`"
+              :to="`/purchasing/goods-receipts/${id}/edit`"
               class="btn btn-primary"
             >
               <i class="fas fa-edit"></i> Edit
             </router-link>
             <router-link
               v-if="receipt && receipt.status === 'pending'"
-              :to="`/purchasing/goods-receipts/${receiptId}/confirm`"
+              :to="`/purchasing/goods-receipts/${id}/confirm`"
               class="btn btn-success"
             >
               <i class="fas fa-check-circle"></i> Confirm
@@ -33,162 +33,164 @@
   
           <!-- Receipt Data -->
           <div v-else>
-            <!-- Receipt Header -->
-            <div class="receipt-header">
-              <div class="receipt-info">
-                <div class="info-card">
-                  <h3>Receipt Information</h3>
-                  <div class="info-grid">
-                    <div class="info-item">
-                      <span class="label">Receipt Number:</span>
-                      <span class="value">{{ receipt.receipt_number }}</span>
-                    </div>
-                    <div class="info-item">
-                      <span class="label">Receipt Date:</span>
-                      <span class="value">{{ formatDate(receipt.receipt_date) }}</span>
-                    </div>
-                    <div class="info-item">
-                      <span class="label">Status:</span>
-                      <span class="value">
-                        <span :class="'status-badge ' + receipt.status">
-                          {{ receipt.status.charAt(0).toUpperCase() + receipt.status.slice(1) }}
+            <div v-if="receipt && Object.keys(receipt).length > 0">
+              <!-- Receipt Header -->
+              <div class="receipt-header">
+                <div class="receipt-info">
+                  <div class="info-card">
+                    <h3>Receipt Information</h3>
+                    <div class="info-grid">
+                      <div class="info-item">
+                        <span class="label">Receipt Number:</span>
+                        <span class="value">{{ receipt.receipt_number }}</span>
+                      </div>
+                      <div class="info-item">
+                        <span class="label">Receipt Date:</span>
+                        <span class="value">{{ formatDate(receipt.receipt_date) }}</span>
+                      </div>
+                      <div class="info-item">
+                        <span class="label">Status:</span>
+                        <span class="value">
+                          <span :class="'status-badge ' + receipt.status">
+                            {{ receipt.status.charAt(0).toUpperCase() + receipt.status.slice(1) }}
+                          </span>
                         </span>
-                      </span>
+                      </div>
+                    </div>
+                  </div>
+    
+                  <div class="info-card">
+                    <h3>Vendor Information</h3>
+                    <div class="info-grid">
+                      <div class="info-item">
+                        <span class="label">Vendor:</span>
+                        <span class="value">{{ receipt.vendor?.name || 'N/A' }}</span>
+                      </div>
+                      <div class="info-item">
+                        <span class="label">Contact Person:</span>
+                        <span class="value">{{ receipt.vendor?.contact_person || 'N/A' }}</span>
+                      </div>
+                      <div class="info-item">
+                        <span class="label">Email:</span>
+                        <span class="value">{{ receipt.vendor?.email || 'N/A' }}</span>
+                      </div>
+                      <div class="info-item">
+                        <span class="label">Phone:</span>
+                        <span class="value">{{ receipt.vendor?.phone || 'N/A' }}</span>
+                      </div>
                     </div>
                   </div>
                 </div>
-  
-                <div class="info-card">
-                  <h3>Vendor Information</h3>
-                  <div class="info-grid">
-                    <div class="info-item">
-                      <span class="label">Vendor:</span>
-                      <span class="value">{{ receipt.vendor.name }}</span>
-                    </div>
-                    <div class="info-item">
-                      <span class="label">Contact Person:</span>
-                      <span class="value">{{ receipt.vendor.contact_person || 'N/A' }}</span>
-                    </div>
-                    <div class="info-item">
-                      <span class="label">Email:</span>
-                      <span class="value">{{ receipt.vendor.email || 'N/A' }}</span>
-                    </div>
-                    <div class="info-item">
-                      <span class="label">Phone:</span>
-                      <span class="value">{{ receipt.vendor.phone || 'N/A' }}</span>
+    
+                <!-- PO Summary Cards -->
+                <div class="po-summary-section">
+                  <h3>Related Purchase Orders</h3>
+                  <div class="po-cards">
+                    <div v-for="po in poSummary" :key="po.po_id" class="po-card">
+                      <div class="po-header">
+                        <div class="po-title">
+                          <h4>{{ po.po_number }}</h4>
+                          <span :class="'status-badge ' + po.status">{{ po.status }}</span>
+                        </div>
+                        <router-link :to="`/purchasing/orders/${po.po_id}`" class="btn-icon view" title="View PO">
+                          <i class="fas fa-external-link-alt"></i>
+                        </router-link>
+                      </div>
+                      <div class="po-body">
+                        <div class="po-info-item">
+                          <span class="label">PO Date:</span>
+                          <span class="value">{{ formatDate(po.po_date) }}</span>
+                        </div>
+                        <div class="po-info-item">
+                          <span class="label">Ordered Qty:</span>
+                          <span class="value">{{ po.total_ordered }}</span>
+                        </div>
+                        <div class="po-info-item">
+                          <span class="label">Received Qty:</span>
+                          <span class="value">{{ po.total_received }}</span>
+                        </div>
+                        <div class="po-info-item">
+                          <span class="label">Outstanding:</span>
+                          <span class="value">{{ po.total_outstanding }}</span>
+                        </div>
+                      </div>
+                      <div class="po-footer">
+                        <div class="progress-bar">
+                          <div class="progress-fill" :style="{ width: po.progress_percentage + '%' }"></div>
+                        </div>
+                        <div class="progress-text">{{ po.progress_percentage }}% received</div>
+                      </div>
                     </div>
                   </div>
                 </div>
               </div>
-  
-              <!-- PO Summary Cards -->
-              <div class="po-summary-section">
-                <h3>Related Purchase Orders</h3>
-                <div class="po-cards">
-                  <div v-for="po in poSummary" :key="po.po_id" class="po-card">
-                    <div class="po-header">
-                      <div class="po-title">
-                        <h4>{{ po.po_number }}</h4>
-                        <span :class="'status-badge ' + po.status">{{ po.status }}</span>
-                      </div>
-                      <router-link :to="`/purchasing/orders/${po.po_id}`" class="btn-icon view" title="View PO">
-                        <i class="fas fa-external-link-alt"></i>
-                      </router-link>
-                    </div>
-                    <div class="po-body">
-                      <div class="po-info-item">
-                        <span class="label">PO Date:</span>
-                        <span class="value">{{ formatDate(po.po_date) }}</span>
-                      </div>
-                      <div class="po-info-item">
-                        <span class="label">Ordered Qty:</span>
-                        <span class="value">{{ po.total_ordered }}</span>
-                      </div>
-                      <div class="po-info-item">
-                        <span class="label">Received Qty:</span>
-                        <span class="value">{{ po.total_received }}</span>
-                      </div>
-                      <div class="po-info-item">
-                        <span class="label">Outstanding:</span>
-                        <span class="value">{{ po.total_outstanding }}</span>
-                      </div>
-                    </div>
-                    <div class="po-footer">
-                      <div class="progress-bar">
-                        <div class="progress-fill" :style="{ width: po.progress_percentage + '%' }"></div>
-                      </div>
-                      <div class="progress-text">{{ po.progress_percentage }}% received</div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-  
-            <!-- Receipt Lines -->
-            <div class="receipt-lines-section">
-              <h3>Receipt Items</h3>
-              
-              <div class="table-responsive">
-                <table class="items-table">
-                  <thead>
-                    <tr>
-                      <th>PO Number</th>
-                      <th>Item Code</th>
-                      <th>Item Name</th>
-                      <th>Ordered Qty</th>
-                      <th>Previously Received</th>
-                      <th>Received Qty</th>
-                      <th>Outstanding</th>
-                      <th>Warehouse</th>
-                      <th>Batch Number</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr v-for="line in receiptLines" :key="line.line_id">
-                      <td>{{ line.po_number }}</td>
-                      <td>{{ line.item_code }}</td>
-                      <td>{{ line.item_name }}</td>
-                      <td>{{ line.ordered_quantity }}</td>
-                      <td>{{ line.previously_received }}</td>
-                      <td>
-                        <span class="highlight">{{ line.received_quantity }}</span>
-                      </td>
-                      <td>{{ line.outstanding_quantity }}</td>
-                      <td>{{ line.warehouse_name }}</td>
-                      <td>{{ line.batch_number || 'N/A' }}</td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-            </div>
-  
-            <!-- Timeline Section (for confirmed receipts) -->
-            <div v-if="receipt.status === 'confirmed'" class="timeline-section">
-              <h3>Receipt Timeline</h3>
-              
-              <div class="timeline">
-                <div class="timeline-item">
-                  <div class="timeline-icon created">
-                    <i class="fas fa-file-alt"></i>
-                  </div>
-                  <div class="timeline-content">
-                    <h4>Receipt Created</h4>
-                    <div class="timeline-info">
-                      <p>Receipt number {{ receipt.receipt_number }} was created</p>
-                      <span class="timeline-date">{{ formatDate(receipt.created_at || receipt.receipt_date) }}</span>
-                    </div>
-                  </div>
-                </div>
+    
+              <!-- Receipt Lines -->
+              <div class="receipt-lines-section">
+                <h3>Receipt Items</h3>
                 
-                <div class="timeline-item">
-                  <div class="timeline-icon confirmed">
-                    <i class="fas fa-check-circle"></i>
+                <div class="table-responsive">
+                  <table class="items-table">
+                    <thead>
+                      <tr>
+                        <th>PO Number</th>
+                        <th>Item Code</th>
+                        <th>Item Name</th>
+                        <th>Ordered Qty</th>
+                        <th>Previously Received</th>
+                        <th>Received Qty</th>
+                        <th>Outstanding</th>
+                        <th>Warehouse</th>
+                        <th>Batch Number</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr v-for="line in receiptLines" :key="line.line_id">
+                        <td>{{ line.po_number }}</td>
+                        <td>{{ line.item_code }}</td>
+                        <td>{{ line.item_name }}</td>
+                        <td>{{ line.ordered_quantity }}</td>
+                        <td>{{ line.previously_received }}</td>
+                        <td>
+                          <span class="highlight">{{ line.received_quantity }}</span>
+                        </td>
+                        <td>{{ line.outstanding_quantity }}</td>
+                        <td>{{ line.warehouse_name }}</td>
+                        <td>{{ line.batch_number || 'N/A' }}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+    
+              <!-- Timeline Section (for confirmed receipts) -->
+              <div v-if="receipt.status === 'confirmed'" class="timeline-section">
+                <h3>Receipt Timeline</h3>
+                
+                <div class="timeline">
+                  <div class="timeline-item">
+                    <div class="timeline-icon created">
+                      <i class="fas fa-file-alt"></i>
+                    </div>
+                    <div class="timeline-content">
+                      <h4>Receipt Created</h4>
+                      <div class="timeline-info">
+                        <p>Receipt number {{ receipt.receipt_number }} was created</p>
+                        <span class="timeline-date">{{ formatDate(receipt.created_at || receipt.receipt_date) }}</span>
+                      </div>
+                    </div>
                   </div>
-                  <div class="timeline-content">
-                    <h4>Receipt Confirmed</h4>
-                    <div class="timeline-info">
-                      <p>Items were confirmed received and added to inventory</p>
-                      <span class="timeline-date">{{ formatDate(receipt.updated_at || receipt.receipt_date) }}</span>
+                  
+                  <div class="timeline-item">
+                    <div class="timeline-icon confirmed">
+                      <i class="fas fa-check-circle"></i>
+                    </div>
+                    <div class="timeline-content">
+                      <h4>Receipt Confirmed</h4>
+                      <div class="timeline-info">
+                        <p>Items were confirmed received and added to inventory</p>
+                        <span class="timeline-date">{{ formatDate(receipt.updated_at || receipt.receipt_date) }}</span>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -206,14 +208,14 @@
   export default {
     name: 'GoodsReceiptDetail',
     props: {
-      receiptId: {
+      id: {
         type: [Number, String],
         required: true
       }
     },
     data() {
       return {
-        receipt: null,
+        receipt: {},
         receiptLines: [],
         poSummary: [],
         loading: true
@@ -226,7 +228,7 @@
       fetchReceipt() {
         this.loading = true;
         
-        axios.get(`/api/goods-receipts/${this.receiptId}`)
+        axios.get(`/goods-receipts/${this.id}`)
           .then(response => {
             const data = response.data.data;
             this.receipt = data.receipt;
@@ -235,7 +237,8 @@
           })
           .catch(error => {
             console.error('Error fetching receipt details:', error);
-            this.$toast.error('Failed to load receipt details');
+            const message = error?.response?.data?.error || 'Failed to load receipt details';
+            this.$toast.error(message);
           })
           .finally(() => {
             this.loading = false;

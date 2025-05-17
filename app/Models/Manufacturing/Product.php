@@ -11,7 +11,7 @@ class Product extends Model
 {
     use HasFactory;
 
-    protected $table = 'Product';
+    protected $table = 'products';
     protected $primaryKey = 'product_id';
     public $timestamps = false;
     
@@ -22,6 +22,7 @@ class Product extends Model
         'category_id',
         'uom_id',
     ];
+
 
     /**
      * Get the category that owns the product.

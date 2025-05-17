@@ -21,6 +21,8 @@ class BOMController extends Controller
      */
     public function index(Request $request)
     {
+        \Log::debug('BOMController@index status filter:', ['status' => $request->status]);
+
         $query = BOM::with(['item', 'unitOfMeasure']);
 
         // Filtering by status

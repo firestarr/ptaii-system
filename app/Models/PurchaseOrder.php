@@ -48,7 +48,14 @@ class PurchaseOrder extends Model
 
     public function goodsReceipts()
     {
-        return $this->hasMany(GoodsReceipt::class, 'po_id');
+        return $this->hasManyThrough(
+            GoodsReceipt::class,
+            GoodsReceiptLine::class,
+            'po_id', // Foreign key on GoodsReceiptLine table...
+            'receipt_id', // Foreign key on GoodsReceipt table...
+            'po_id', // Local key on PurchaseOrder table...
+            'receipt_id' // Local key on GoodsReceiptLine table...
+        );
     }
 
     public function invoices()

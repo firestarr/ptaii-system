@@ -49,12 +49,12 @@ class RoutingOperationController extends Controller
         }
 
         $validator = Validator::make($request->all(), [
-            'workcenter_id' => 'required|integer|exists:WorkCenter,workcenter_id',
+            'workcenter_id' => 'required|integer|exists:work_centers,workcenter_id',
             'operation_name' => 'required|string|max:100',
             'sequence' => 'required|integer',
             'setup_time' => 'required|numeric',
             'run_time' => 'required|numeric',
-            'uom_id' => 'required|integer|exists:UnitOfMeasure,uom_id',
+            'uom_id' => 'required|integer|exists:unit_of_measures,uom_id',
             'labor_cost' => 'required|numeric',
             'overhead_cost' => 'required|numeric',
         ]);
@@ -121,12 +121,12 @@ class RoutingOperationController extends Controller
         }
 
         $validator = Validator::make($request->all(), [
-            'workcenter_id' => 'sometimes|required|integer|exists:WorkCenter,workcenter_id',
+            'workcenter_id' => 'sometimes|required|integer|exists:work_centers,workcenter_id',
             'operation_name' => 'sometimes|required|string|max:100',
             'sequence' => 'sometimes|required|integer',
             'setup_time' => 'sometimes|required|numeric',
             'run_time' => 'sometimes|required|numeric',
-            'uom_id' => 'sometimes|required|integer|exists:UnitOfMeasure,uom_id',
+            'uom_id' => 'sometimes|required|integer|exists:unit_of_measures,uom_id',
             'labor_cost' => 'sometimes|required|numeric',
             'overhead_cost' => 'sometimes|required|numeric',
         ]);

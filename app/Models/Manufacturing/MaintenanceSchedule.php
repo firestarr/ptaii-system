@@ -10,7 +10,7 @@ class MaintenanceSchedule extends Model
 {
     use HasFactory;
 
-    protected $table = 'MaintenanceSchedule';
+    protected $table = 'maintenance_schedules';
     protected $primaryKey = 'schedule_id';
     public $timestamps = false;
 
@@ -22,6 +22,7 @@ class MaintenanceSchedule extends Model
         'status',
         'notes',
     ];
+
 
     protected $casts = [
         'planned_date' => 'date',

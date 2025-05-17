@@ -234,6 +234,11 @@
         </div>
       </div>
 
+      <!-- Debug: Show BOM Components length -->
+      <div class="debug-info">
+        BOM Components length: {{ bomComponents.length }}
+      </div>
+
       <!-- BOM Components Card -->
       <div class="detail-card" v-if="bomComponents.length > 0">
         <div class="card-header">
