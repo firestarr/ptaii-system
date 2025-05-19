@@ -144,7 +144,6 @@ export default {
       { key: 'effective_date', label: 'Effective Date', sortable: true, template: 'effective_date' },
       { key: 'has_yield_based', label: 'Type', template: 'has_yield_based', class: 'text-center', sortable: false },
       { key: 'status', label: 'Status', sortable: true, template: 'status', class: 'text-center' },
-      { key: 'actions', label: 'Actions', template: 'actions', class: 'text-center', sortable: false }
     ];
     
     const loadBOMs = async () => {

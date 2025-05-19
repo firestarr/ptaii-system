@@ -226,6 +226,7 @@ Route::get('purchase-orders/reports/outstanding-items', [PurchaseOrderController
     });
 
     // Vendor Invoices
+    Route::get('vendor-invoices/uninvoiced-receipts', [VendorInvoiceController::class, 'getUninvoicedReceipts']);
     Route::apiResource('vendor-invoices', VendorInvoiceController::class);
     Route::post('vendor-invoices/{vendorInvoice}/approve', [VendorInvoiceController::class, 'approve']);
     Route::post('vendor-invoices/{vendorInvoice}/pay', [VendorInvoiceController::class, 'pay']);

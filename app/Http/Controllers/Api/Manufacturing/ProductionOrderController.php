@@ -11,6 +11,7 @@ use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\DB;
+use App\Models\StockTransaction;
 
 class ProductionOrderController extends Controller
 {
@@ -274,6 +275,113 @@ public function update(Request $request, $id)
         } catch (\Exception $e) {
             DB::rollBack();
             return response()->json(['message' => 'Failed to delete production order', 'error' => $e->getMessage()], 500);
+        }
+    }
+    /**
+     * Complete the production order and update inventory.
+     *
+     * @param  int  $id
+     * @return \Illuminate\Http\Response
+     */
+    public function complete(Request $request, $id)
+    {
+        $productionOrder = ProductionOrder::with(['workOrder.item', 'productionConsumptions.item'])
+            ->find($id);
+        
+        if (!$productionOrder) {
+            return response()->json(['message' => 'Production order not found'], 404);
+        }
+        
+        // Validate that we have an actual quantity
+        $validator = Validator::make($request->all(), [
+            'actual_quantity' => 'required|numeric|min:0',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json(['errors' => $validator->errors()], 422);
+        }
+        
+        DB::beginTransaction();
+        try {
+            // Update production order status
+            $productionOrder->actual_quantity = $request->actual_quantity;
+            $productionOrder->status = 'Completed';
+            $productionOrder->save();
+            
+            // Get the finished product and update inventory
+            $finishedItem = $productionOrder->workOrder->item;
+            
+            // Create stock transaction for the finished product
+            StockTransaction::create([
+                'item_id' => $finishedItem->item_id,
+                'warehouse_id' => $request->warehouse_id ?? 1, // Use provided warehouse or default
+                'transaction_type' => 'receive',
+                'quantity' => $request->actual_quantity,
+                'transaction_date' => now(),
+                'reference_document' => 'production_order',
+                'reference_number' => $productionOrder->production_number
+            ]);
+            
+            // Update item stock
+            $finishedItem->current_stock += $request->actual_quantity;
+            $finishedItem->save();
+            
+            // Process material consumptions
+            foreach ($productionOrder->productionConsumptions as $consumption) {
+                // Skip if no actual quantity was consumed
+                if (!$request->has('consumptions') || !isset($request->consumptions[$consumption->consumption_id])) {
+                    continue;
+                }
+                
+                $actualConsumption = $request->consumptions[$consumption->consumption_id];
+                
+                // Update consumption record
+                $consumption->actual_quantity = $actualConsumption;
+                $consumption->variance = $consumption->planned_quantity - $actualConsumption;
+                $consumption->save();
+                
+                // Create stock transaction for consumed material (negative quantity)
+                StockTransaction::create([
+                    'item_id' => $consumption->item_id,
+                    'warehouse_id' => $consumption->warehouse_id,
+                    'transaction_type' => 'issue',
+                    'quantity' => -$actualConsumption,
+                    'transaction_date' => now(),
+                    'reference_document' => 'production_order',
+                    'reference_number' => $productionOrder->production_number
+                ]);
+                
+                // Update material stock
+                $materialItem = $consumption->item;
+                $materialItem->current_stock -= $actualConsumption;
+                $materialItem->save();
+            }
+            
+            // Update work order progress if needed
+            $workOrder = $productionOrder->workOrder;
+            $totalProduced = $workOrder->productionOrders()
+                ->where('status', 'Completed')
+                ->sum('actual_quantity');
+                
+            if ($totalProduced >= $workOrder->planned_quantity) {
+                $workOrder->status = 'Completed';
+            } else {
+                $workOrder->status = 'In Progress';
+            }
+            $workOrder->save();
+            
+            DB::commit();
+            
+            return response()->json([
+                'message' => 'Production order completed successfully',
+                'data' => $productionOrder->fresh(['workOrder', 'productionConsumptions.item'])
+            ]);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json([
+                'message' => 'Failed to complete production order',
+                'error' => $e->getMessage()
+            ], 500);
         }
     }
 }

@@ -593,6 +593,7 @@ class GoodsReceiptController extends Controller
                 $this->stockService->increaseStock(
                     $line->item_id,
                     $line->warehouse_id,
+                    null,
                     $line->received_quantity,
                     'goods_receipt',
                     $goodsReceipt->receipt_number,

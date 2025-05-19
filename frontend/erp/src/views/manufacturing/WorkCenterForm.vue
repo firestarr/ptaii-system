@@ -118,7 +118,7 @@
             
             <div class="form-actions mt-4">
               <button type="button" class="btn btn-secondary mr-2" @click="goBack">
-                <i class="fas fa-arrow-left mr-2"></i> Cancel
+                <i class="fa-solid fa-arrow-left"></i> Cancel
               </button>
               <button type="submit" class="btn btn-primary" :disabled="isSaving">
                 <i class="fas fa-save mr-2"></i> {{ isSaving ? 'Saving...' : 'Save Work Center' }}
@@ -231,23 +231,301 @@
   </script>
   
   <style scoped>
-  .work-center-form {
-    max-width: 1000px;
-    margin: 0 auto;
-    padding: 1rem 0;
+  /* Styling keseluruhan form */
+/* Styling dasar untuk form */
+.work-center-form {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+
+/* Card styling yang lebih profesional */
+.card {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  border-radius: 6px;
+  border: none;
+  background: #fff;
+  margin-bottom: 2rem;
+}
+
+.card-header {
+  padding: 1.25rem 1.5rem;
+  background-color: #f8f9fa;
+  border-bottom: 1px solid #eaeaea;
+}
+
+.card-title {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: #333;
+}
+
+.card-body {
+  padding: 2rem 1.5rem;
+}
+
+/* Layout form yang lebih terstruktur */
+form {
+  display: flex;
+  flex-direction: column;
+  gap: 1.75rem;
+}
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  margin: 0 -0.75rem;
+  gap: 0;
+}
+
+.col-md-6 {
+  flex: 0 0 50%;
+  padding: 0 0.75rem;
+  box-sizing: border-box;
+}
+
+@media (max-width: 768px) {
+  .col-md-6 {
+    flex: 0 0 100%;
+    margin-bottom: 1.25rem;
+  }
+}
+
+/* Styling form group yang rapi */
+.form-group {
+  margin-bottom: 1.5rem;
+}
+
+/* Label yang jelas dan konsisten */
+label {
+  display: block;
+  margin-bottom: 0.5rem;
+  font-size: 0.95rem;
+  font-weight: 500;
+  color: #414141;
+}
+
+.text-danger {
+  color: #dc3545;
+  margin-left: 0.25rem;
+}
+
+/* Input yang bersih dan user-friendly */
+.form-control {
+  display: block;
+  width: 100%;
+  padding: 0.65rem 0.85rem;
+  font-size: 0.95rem;
+  line-height: 1.5;
+  color: #495057;
+  background-color: #fff;
+  background-clip: padding-box;
+  border: 1px solid #ced4da;
+  border-radius: 4px;
+  transition: border-color 0.15s ease-in-out, box-shadow 0.15s ease-in-out;
+  box-sizing: border-box;
+}
+
+.form-control:focus {
+  border-color: #80bdff;
+  outline: 0;
+  box-shadow: 0 0 0 0.2rem rgba(0, 123, 255, 0.25);
+}
+
+.form-control::placeholder {
+  color: #aab0b7;
+  opacity: 1;
+}
+
+/* Input group dengan simbol mata uang */
+.input-group {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+  width: 100%;
+}
+
+.input-group-prepend {
+  margin-right: -1px;
+  display: flex;
+}
+
+.input-group-text {
+  display: flex;
+  align-items: center;
+  padding: 0.65rem 0.75rem;
+  font-size: 0.95rem;
+  font-weight: 400;
+  line-height: 1.5;
+  color: #495057;
+  text-align: center;
+  white-space: nowrap;
+  background-color: #e9ecef;
+  border: 1px solid #ced4da;
+  border-radius: 4px 0 0 4px;
+}
+
+.input-group > .form-control {
+  position: relative;
+  flex: 1 1 auto;
+  width: 1%;
+  margin-bottom: 0;
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+}
+
+/* Styling untuk checkbox */
+.custom-control {
+  position: relative;
+  display: block;
+  min-height: 1.5rem;
+  padding-left: 1.75rem;
+  margin: 1rem 0;
+}
+
+.custom-control-input {
+  position: absolute;
+  z-index: -1;
+  opacity: 0;
+}
+
+.custom-control-label {
+  position: relative;
+  margin-bottom: 0;
+  cursor: pointer;
+}
+
+.custom-control-label::before {
+  position: absolute;
+  top: 0.25rem;
+  left: -1.75rem;
+  display: block;
+  width: 1rem;
+  height: 1rem;
+  pointer-events: none;
+  content: "";
+  background-color: #fff;
+  border: 1px solid #adb5bd;
+  border-radius: 0.25rem;
+}
+
+.custom-control-input:checked ~ .custom-control-label::before {
+  color: #fff;
+  background-color: #28a745;
+  border-color: #28a745;
+}
+
+/* Textarea dengan ukuran yang lebih baik */
+textarea.form-control {
+  min-height: 120px;
+  resize: vertical;
+}
+
+/* Styling untuk validasi */
+.is-invalid {
+  border-color: #dc3545 !important;
+}
+
+.invalid-feedback {
+  display: block;
+  width: 100%;
+  margin-top: 0.25rem;
+  font-size: 80%;
+  color: #dc3545;
+}
+
+/* Tombol yang menarik dan jelas */
+.form-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 1.5rem;
+  gap: 0.75rem;
+}
+
+.btn {
+  display: inline-block;
+  font-weight: 500;
+  text-align: center;
+  vertical-align: middle;
+  user-select: none;
+  padding: 0.65rem 1.25rem;
+  font-size: 0.95rem;
+  line-height: 1.5;
+  border-radius: 4px;
+  transition: all 0.15s ease-in-out;
+  cursor: pointer;
+  border: 1px solid transparent;
+}
+
+.btn:focus {
+  outline: 0;
+  box-shadow: 0 0 0 0.2rem rgba(0, 123, 255, 0.25);
+}
+
+.btn-primary {
+  color: #fff;
+  background-color: #007bff;
+  border-color: #007bff;
+}
+
+.btn-primary:hover {
+  background-color: #0069d9;
+  border-color: #0062cc;
+}
+
+.btn-secondary {
+  color: #fff;
+  background-color: #6c757d;
+  border-color: #6c757d;
+}
+
+.btn-secondary:hover {
+  background-color: #5a6268;
+  border-color: #545b62;
+}
+
+.mr-2 {
+  margin-right: 0.5rem;
+}
+
+/* Icon styling */
+.fas {
+  display: inline-block;
+  font-style: normal;
+  font-variant: normal;
+  font-weight: normal;
+  line-height: 1;
+}
+
+/* Loading indicator */
+.text-center {
+  text-align: center;
+}
+
+.p-5 {
+  padding: 3rem;
+}
+
+.mt-2 {
+  margin-top: 0.5rem;
+}
+
+/* Responsive adjustments */
+@media (max-width: 576px) {
+  .card-body {
+    padding: 1.5rem 1rem;
   }
   
   .form-actions {
-    display: flex;
-    justify-content: flex-end;
+    flex-direction: column;
+    gap: 0.5rem;
   }
   
-  .custom-control-input:checked ~ .custom-control-label::before {
-    background-color: var(--success-color);
-    border-color: var(--success-color);
+  .btn {
+    width: 100%;
   }
-  
-  .invalid-feedback {
-    display: block;
-  }
+}
   </style>

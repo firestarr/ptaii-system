@@ -943,7 +943,7 @@ const routes = [
                 path: "/purchasing/goods-receipts/:id/confirm",
                 name: "ConfirmGoodsReceipt",
                 component: ReceiptConfirmation,
-                props: true,
+                props: route => ({ receiptId: route.params.id }),
                 meta: { requiresAuth: true },
             },
 

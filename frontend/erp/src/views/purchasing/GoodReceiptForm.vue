@@ -381,7 +381,7 @@ export default {
             try {
                 // Fetch PO details from API
                 const response = await fetch(
-                    `/api/purchase-orders/${formData.value.po_id}`,
+                    `/purchase-orders/${formData.value.po_id}`,
                     {
                         headers: {
                             Authorization: `Bearer ${localStorage.getItem(
@@ -490,7 +490,7 @@ export default {
 
             try {
                 const response = await fetch(
-                    `/api/warehouses/${line.warehouse_id}/inventory`,
+                    `/warehouses/${line.warehouse_id}/inventory`,
                     {
                         headers: {
                             Authorization: `Bearer ${localStorage.getItem(

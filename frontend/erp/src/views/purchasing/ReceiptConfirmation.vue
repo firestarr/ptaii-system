@@ -179,7 +179,7 @@
         this.loading = true;
         this.error = null;
         
-        axios.get(`/api/goods-receipts/${this.receiptId}`)
+        axios.get(`/goods-receipts/${this.receiptId}`)
           .then(response => {
             const data = response.data.data;
             this.receipt = data.receipt;
@@ -232,7 +232,7 @@
       confirmReceipt() {
         this.confirming = true;
         
-        axios.post(`/api/goods-receipts/${this.receiptId}/confirm`)
+        axios.post(`/goods-receipts/${this.receiptId}/confirm`)
           .then(() => {
             this.$toast.success('Goods receipt confirmed successfully');
             this.$router.push(`/purchasing/goods-receipts/${this.receiptId}`);

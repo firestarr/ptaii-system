@@ -40,12 +40,18 @@ class VendorInvoiceController extends Controller
             $query->where('vendor_id', $request->vendor_id);
         }
         
-        if ($request->has('date_from')) {
-            $query->whereDate('invoice_date', '>=', $request->date_from);
+        if ($request->has('date_from') && !empty($request->date_from)) {
+            $dateFrom = $request->date_from;
+            if (strtotime($dateFrom) !== false) {
+                $query->whereDate('invoice_date', '>=', $dateFrom);
+            }
         }
         
-        if ($request->has('date_to')) {
-            $query->whereDate('invoice_date', '<=', $request->date_to);
+        if ($request->has('date_to') && !empty($request->date_to)) {
+            $dateTo = $request->date_to;
+            if (strtotime($dateTo) !== false) {
+                $query->whereDate('invoice_date', '<=', $dateTo);
+            }
         }
         
         if ($request->has('search')) {
@@ -60,9 +66,18 @@ class VendorInvoiceController extends Controller
         
         // Filter by receipt
         if ($request->has('receipt_id')) {
-            $query->whereHas('goodsReceipts', function($q) use ($request) {
-                $q->where('receipt_id', $request->receipt_id);
-            });
+            $receiptId = $request->receipt_id;
+            if (is_array($receiptId) && empty($receiptId)) {
+                // Skip applying whereHas if receiptId array is empty to avoid invalid query
+            } else {
+                $query->whereHas('goodsReceipts', function($q) use ($receiptId) {
+                    if (is_array($receiptId)) {
+                        $q->whereIn('receipt_id', $receiptId);
+                    } else {
+                        $q->where('receipt_id', $receiptId);
+                    }
+                });
+            }
         }
         
         // Apply sorting
@@ -261,12 +276,25 @@ class VendorInvoiceController extends Controller
                 $dueDate = date('Y-m-d', strtotime($invoiceDate . ' + ' . $paymentTerm . ' days'));
             }
             
+            // Determine PO ID if all receipts belong to the same PO
+            $poIds = [];
+            foreach ($receipts as $receipt) {
+                foreach ($receipt->lines as $line) {
+                    $poIds[] = $line->po_id;
+                }
+            }
+            $uniquePoIds = array_unique($poIds);
+            $poIdToSet = null;
+            if (count($uniquePoIds) === 1) {
+                $poIdToSet = $uniquePoIds[0];
+            }
+            
             // Create vendor invoice
             $vendorInvoice = VendorInvoice::create([
                 'invoice_number' => $request->invoice_number,
                 'invoice_date' => $invoiceDate,
                 'vendor_id' => $vendorId,
-                'po_id' => null, // No longer using single PO relationship
+                'po_id' => $poIdToSet,
                 'total_amount' => $totalAmount,
                 'tax_amount' => $taxTotal,
                 'due_date' => $dueDate,
@@ -372,11 +400,16 @@ class VendorInvoiceController extends Controller
         // Get additional receipt details
         $receiptDetails = [];
         foreach ($vendorInvoice->goodsReceipts as $receipt) {
-            $receiptLines = GoodsReceiptLine::where('receipt_id', $receipt->receipt_id)
-                ->where('invoice_line_id', '!=', null)
-                ->whereIn('invoice_line_id', $vendorInvoice->lines->pluck('line_id'))
-                ->with(['item', 'purchaseOrderLine.purchaseOrder'])
-                ->get();
+            $invoiceLineIds = $vendorInvoice->lines->pluck('line_id')->toArray();
+            if (empty($invoiceLineIds)) {
+                $receiptLines = collect();
+            } else {
+                $receiptLines = GoodsReceiptLine::where('receipt_id', $receipt->receipt_id)
+                    ->whereNotNull('invoice_line_id')
+                    ->whereIn('invoice_line_id', $invoiceLineIds)
+                    ->with(['item', 'purchaseOrderLine.purchaseOrder'])
+                    ->get();
+            }
                 
             $receiptDetails[] = [
                 'receipt_id' => $receipt->receipt_id,

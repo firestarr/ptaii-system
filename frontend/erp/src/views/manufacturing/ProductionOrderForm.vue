@@ -1,4 +1,4 @@
-<!-- src/views/manufacturing/ProductionOrderForm.vue -->
+ye<!-- src/views/manufacturing/ProductionOrderForm.vue -->
 <template>
   <div class="production-order-form">
     <div class="page-header">
@@ -287,7 +287,7 @@ export default {
         }
       } catch (error) {
         console.error('Error fetching initial data:', error);
-        this.$toast.error('Failed to load required data');
+        if (this.$toast) this.$toast.error('Failed to load required data');
       } finally {
         this.loading = false;
       }
@@ -324,7 +324,7 @@ export default {
         }
       } catch (error) {
         console.error('Error fetching production order:', error);
-        this.$toast.error('Failed to load production order data');
+        if (this.$toast) this.$toast.error('Failed to load production order data');
       }
     },
     
@@ -383,7 +383,7 @@ export default {
         }
       } catch (error) {
         console.error('Error loading work order details:', error);
-        this.$toast.error('Failed to load work order details');
+        if (this.$toast) this.$toast.error('Failed to load work order details');
       }
     },
     
@@ -426,7 +426,7 @@ export default {
           response = await axios.post('/production-orders', this.form);
         }
         
-        this.$toast.success(
+        if (this.$toast) this.$toast.success(
           this.isEditing 
             ? 'Production order updated successfully' 
             : 'Production order created successfully'
@@ -438,18 +438,32 @@ export default {
           : (response.data.data?.production_id || response.data.production_id);
           
         this.$router.push(`/manufacturing/production-orders/${productionId}`);
-      } catch (error) {
-        console.error('Error saving production order:', error);
-        
-        if (error.response && error.response.data && error.response.data.errors) {
-          this.errors = error.response.data.errors;
-          this.$toast.error('Please correct the errors before submitting');
-        } else {
-          this.$toast.error('Failed to save production order');
+          } catch (error) {
+          console.error('Error saving production order:', error);
+          
+          // Reset errors object
+          this.errors = {};
+          
+          if (error && error.response && error.response.data) {
+            // Handle validation errors
+            if (error.response.data.errors) {
+              this.errors = error.response.data.errors;
+              if (this.$toast) this.$toast.error('Please correct the errors before submitting');
+            } 
+            // Handle single error message
+            else {
+              // Safely extract the error message, avoiding undefined properties
+              const errorMessage = error.response.data.message || 
+                                  (error.response.data.error !== undefined ? error.response.data.error : null) || 
+                                  'Failed to save production order';
+              if (this.$toast) this.$toast.error(errorMessage);
+            }
+          } else {
+            if (this.$toast) this.$toast.error('Failed to save production order');
+          }
+        } finally {
+          this.saving = false;
         }
-      } finally {
-        this.saving = false;
-      }
     },
     
     cancel() {
@@ -463,3 +477,398 @@ export default {
   }
 };
 </script>
+<style scoped>
+/* Base container styling */
+.production-order-form {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 1.25rem;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  color: #334155;
+}
+
+/* Page header styling */
+.page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1.5rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.page-header h1 {
+  font-size: 1.75rem;
+  font-weight: 600;
+  color: #1e293b;
+  margin: 0;
+}
+
+.actions {
+  display: flex;
+  gap: 0.75rem;
+}
+
+/* Card styling */
+.card {
+  background: #ffffff;
+  border-radius: 8px;
+  box-shadow: 0 1px 8px rgba(0, 0, 0, 0.08);
+  margin-bottom: 2rem;
+  border: none;
+  overflow: hidden;
+}
+
+.card-body {
+  padding: 1.75rem;
+}
+
+.card-footer {
+  background: #f8fafc;
+  padding: 1.25rem 1.75rem;
+  border-top: 1px solid #e2e8f0;
+  display: flex;
+  justify-content: flex-end;
+  gap: 1rem;
+}
+
+/* Form section styling */
+.form-section {
+  margin-bottom: 2.5rem;
+  padding-bottom: 1.5rem;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.form-section:last-child {
+  margin-bottom: 0;
+  padding-bottom: 0;
+  border-bottom: none;
+}
+
+.form-section h2 {
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: #1e293b;
+  margin: 0 0 1.25rem 0;
+}
+
+.section-description {
+  font-size: 0.95rem;
+  color: #64748b;
+  margin-bottom: 1.25rem;
+}
+
+/* Form layout */
+.form-row {
+  display: flex;
+  flex-wrap: wrap;
+  margin: 0 -0.75rem 1.25rem -0.75rem;
+  gap: 0;
+}
+
+.form-row:last-child {
+  margin-bottom: 0;
+}
+
+.form-group {
+  flex: 1 1 calc(50% - 1.5rem);
+  margin: 0 0.75rem 1.25rem 0.75rem;
+  min-width: 250px;
+}
+
+/* Form controls */
+label {
+  display: block;
+  margin-bottom: 0.5rem;
+  font-weight: 500;
+  font-size: 0.95rem;
+  color: #475569;
+}
+
+input[type="text"],
+input[type="date"],
+input[type="number"],
+select {
+  width: 100%;
+  padding: 0.65rem 0.85rem;
+  font-size: 0.95rem;
+  line-height: 1.5;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  color: #334155;
+  background-color: #ffffff;
+  transition: border-color 0.15s ease-in-out, box-shadow 0.15s ease-in-out;
+}
+
+select {
+  appearance: none;
+  background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23475569' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e");
+  background-repeat: no-repeat;
+  background-position: right 0.75rem center;
+  background-size: 1em;
+  padding-right: 2.5rem;
+}
+
+input:focus,
+select:focus {
+  border-color: #3b82f6;
+  outline: 0;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.25);
+}
+
+input:read-only {
+  background-color: #f1f5f9;
+  cursor: not-allowed;
+}
+
+input.error,
+select.error {
+  border-color: #ef4444;
+}
+
+.error-message {
+  color: #ef4444;
+  font-size: 0.8rem;
+  margin-top: 0.35rem;
+}
+
+/* Info panel styling */
+.info-panel {
+  background-color: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  margin: 1.25rem 0 1.75rem 0;
+  overflow: hidden;
+}
+
+.info-panel-title {
+  background-color: #f1f5f9;
+  padding: 0.75rem 1.25rem;
+  font-weight: 600;
+  font-size: 0.95rem;
+  color: #334155;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.info-panel-content {
+  padding: 1rem 1.25rem;
+}
+
+.info-row {
+  display: flex;
+  padding: 0.5rem 0;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.info-row:last-child {
+  border-bottom: none;
+}
+
+.info-label {
+  flex: 0 0 130px;
+  font-weight: 500;
+  color: #64748b;
+}
+
+.info-value {
+  flex: 1;
+  color: #334155;
+}
+
+/* Table styling */
+.table-responsive {
+  overflow-x: auto;
+  margin-bottom: 1.5rem;
+  border-radius: 6px;
+  border: 1px solid #e2e8f0;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.95rem;
+}
+
+.table thead th {
+  background-color: #f1f5f9;
+  color: #475569;
+  font-weight: 600;
+  text-align: left;
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.table tbody td {
+  padding: 0.85rem 1rem;
+  border-bottom: 1px solid #e2e8f0;
+  vertical-align: middle;
+}
+
+.table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.table tbody tr:hover {
+  background-color: #f8fafc;
+}
+
+.table input,
+.table select {
+  margin: 0;
+  width: 100%;
+}
+
+.table .error-message {
+  white-space: nowrap;
+}
+
+/* Item info in table cells */
+.item-name {
+  font-weight: 500;
+  margin-bottom: 0.25rem;
+}
+
+.item-code {
+  font-size: 0.85rem;
+  color: #64748b;
+}
+
+/* Button styling */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.6rem 1.25rem;
+  font-size: 0.95rem;
+  font-weight: 500;
+  line-height: 1.5;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-decoration: none;
+}
+
+.btn-primary {
+  background-color: #3b82f6;
+  border: 1px solid #3b82f6;
+  color: white;
+}
+
+.btn-primary:hover:not(:disabled) {
+  background-color: #2563eb;
+  border-color: #2563eb;
+}
+
+.btn-primary:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+.btn-secondary {
+  background-color: #f1f5f9;
+  border: 1px solid #cbd5e1;
+  color: #475569;
+}
+
+.btn-secondary:hover {
+  background-color: #e2e8f0;
+  color: #334155;
+}
+
+/* Loading state */
+.loading-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 3rem;
+  background-color: #ffffff;
+  border-radius: 8px;
+  box-shadow: 0 1px 8px rgba(0, 0, 0, 0.08);
+}
+
+.loading-container i {
+  font-size: 2.5rem;
+  color: #3b82f6;
+  margin-bottom: 1rem;
+}
+
+.loading-container span {
+  font-size: 1rem;
+  color: #64748b;
+}
+
+.fa-spinner {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+/* Material section specific */
+.material-section {
+  margin-top: 2rem;
+}
+
+/* Responsive styling */
+@media (max-width: 768px) {
+  .page-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  
+  .page-header h1 {
+    margin-bottom: 1rem;
+  }
+  
+  .form-row {
+    flex-direction: column;
+  }
+  
+  .form-group {
+    flex: 0 0 100%;
+    margin-bottom: 1rem;
+  }
+  
+  .info-row {
+    flex-direction: column;
+  }
+  
+  .info-label {
+    margin-bottom: 0.25rem;
+  }
+  
+  .card-footer {
+    flex-direction: column;
+  }
+  
+  .btn {
+    width: 100%;
+  }
+}
+
+/* Touch device optimizations */
+@media (max-width: 576px) {
+  .card-body {
+    padding: 1.25rem;
+  }
+  
+  input,
+  select,
+  .btn {
+    padding: 0.75rem 1rem;
+  }
+  
+  .table-responsive {
+    margin-left: -1.25rem;
+    margin-right: -1.25rem;
+    width: calc(100% + 2.5rem);
+    border-left: none;
+    border-right: none;
+    border-radius: 0;
+  }
+}
+</style>
