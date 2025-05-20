@@ -340,14 +340,38 @@ Route::get('purchase-orders/reports/outstanding-items', [PurchaseOrderController
 
     // Sales Forecast routes
     Route::prefix('forecasts')->group(function () {
+        // Mendapatkan daftar semua forecast
         Route::get('/', [SalesForecastController::class, 'index']);
+        
+        // Membuat forecast baru secara manual
         Route::post('/', [SalesForecastController::class, 'store']);
+        
+        // Mendapatkan detail forecast
         Route::get('/{id}', [SalesForecastController::class, 'show']);
+        
+        // Mengupdate forecast (membuat versi baru)
         Route::put('/{id}', [SalesForecastController::class, 'update']);
+        
+        // Menghapus forecast
         Route::delete('/{id}', [SalesForecastController::class, 'destroy']);
+        
+        // Import forecast dari CSV
+        Route::post('/import', [SalesForecastController::class, 'importCustomerForecasts']);
+        
+        // Generate forecast berdasarkan data historis
         Route::post('/generate', [SalesForecastController::class, 'generateForecasts']);
+        
+        // Update nilai aktual
         Route::post('/update-actuals', [SalesForecastController::class, 'updateActuals']);
+        
+        // Mendapatkan metrik akurasi forecast
         Route::get('/accuracy', [SalesForecastController::class, 'getForecastAccuracy']);
+        
+        // Mendapatkan tampilan forecast konsolidasi 6 bulan
+        Route::get('/consolidated', [SalesForecastController::class, 'getConsolidatedForecast']);
+        
+        // Mendapatkan riwayat forecast untuk item, customer, dan periode tertentu
+        Route::get('/history', [SalesForecastController::class, 'getForecastHistory']);
     });
 
     // Routes untuk Outstanding Sales Order
