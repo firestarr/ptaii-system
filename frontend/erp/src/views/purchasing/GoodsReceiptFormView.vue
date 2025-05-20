@@ -392,7 +392,7 @@
             this.loading = false;
           });
       },
-vendorSelected() {
+      vendorSelected() {
         if (!this.receipt.vendor_id) return;
         
         this.loadingPOs = true;
@@ -409,7 +409,7 @@ vendorSelected() {
         })
           .then(response => {
             const poData = response.data.data;
-            if (poData && Array.isArray(poData.data)) {
+            if (poData && poData.data && Array.isArray(poData.data)) {
               this.purchaseOrders = poData.data;
             } else {
               this.purchaseOrders = [];
@@ -513,17 +513,31 @@ async loadItemsFromPOs() {
         
         request
           .then(response => {
-            this.$toast.success(`Goods receipt ${this.isEdit ? 'updated' : 'created'} successfully`);
-            this.$router.push(`/purchasing/goods-receipts/${response.data.data.receipt_id}`);
+            console.log('Save receipt response:', response);
+            if (response && response.data && response.data.data && response.data.data.receipt_id) {
+              if (this.$toast && typeof this.$toast.success === 'function') {
+                this.$toast.success(`Goods receipt ${this.isEdit ? 'updated' : 'created'} successfully`);
+              }
+              this.$router.push(`/purchasing/goods-receipts/${response.data.data.receipt_id}`);
+            } else {
+              if (this.$toast && typeof this.$toast.error === 'function') {
+                this.$toast.error('Unexpected response from server when saving receipt');
+              }
+              console.error('Unexpected response structure:', response);
+            }
           })
           .catch(error => {
             console.error('Error saving receipt:', error);
             
             if (error.response && error.response.status === 422) {
               this.validationErrors = error.response.data.errors || {};
-              this.$toast.error('Please correct the errors in the form');
+              if (this.$toast && typeof this.$toast.error === 'function') {
+                this.$toast.error('Please correct the errors in the form');
+              }
             } else {
-              this.$toast.error(`Failed to ${this.isEdit ? 'update' : 'create'} goods receipt: ${error.response?.data?.message || 'Unknown error'}`);
+              if (this.$toast && typeof this.$toast.error === 'function') {
+                this.$toast.error(`Failed to ${this.isEdit ? 'update' : 'create'} goods receipt: ${error.response?.data?.message || 'Unknown error'}`);
+              }
             }
           })
           .finally(() => {

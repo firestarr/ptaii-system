@@ -303,6 +303,7 @@
           };
           
           const response = await axios.get('/vendor-invoices', { params });
+          console.log('Vendor invoices API response:', response);
           this.invoices = response.data.data.data;
           this.totalPages = response.data.data.last_page;
           this.totalItems = response.data.data.total;

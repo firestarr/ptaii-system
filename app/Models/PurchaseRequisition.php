@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use app\Models\User;
 
 class PurchaseRequisition extends Model
 {
@@ -25,7 +26,7 @@ class PurchaseRequisition extends Model
 
     public function requester()
     {
-        return $this->belongsTo(User::class, 'requester_id', 'user_id');
+        return $this->belongsTo(User::class, 'requester_id', 'id');
     }
 
     public function lines()

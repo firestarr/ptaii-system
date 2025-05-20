@@ -17,6 +17,7 @@ use App\Http\Controllers\Api\Inventory\StockTransactionController;
 use App\Http\Controllers\Api\Inventory\StockAdjustmentController;
 use App\Http\Controllers\Api\Inventory\CycleCountingController;
 use App\Http\Controllers\Api\Inventory\ItemStockController;
+use App\Http\Controllers\Api\UserController;
 
 // purchase order
 use App\Http\Controllers\Api\VendorController;
@@ -85,6 +86,7 @@ Route::post('/auth/login', [AuthController::class, 'login']);
 Route::middleware('auth:sanctum')->group(function () {
     Route::post('/auth/logout', [AuthController::class, 'logout']);
     Route::get('/user', [AuthController::class, 'user']);
+    Route::get('/users', [UserController::class, 'index']);
 
     Route::prefix('items')->group(function () {
         // Existing item routes...
@@ -230,6 +232,7 @@ Route::get('purchase-orders/reports/outstanding-items', [PurchaseOrderController
     Route::apiResource('vendor-invoices', VendorInvoiceController::class);
     Route::post('vendor-invoices/{vendorInvoice}/approve', [VendorInvoiceController::class, 'approve']);
     Route::post('vendor-invoices/{vendorInvoice}/pay', [VendorInvoiceController::class, 'pay']);
+    Route::patch('vendor-invoices/{vendorInvoice}/status', [VendorInvoiceController::class, 'updateStatus']);
 
     // Vendor Contracts
     Route::apiResource('vendor-contracts', VendorContractController::class);

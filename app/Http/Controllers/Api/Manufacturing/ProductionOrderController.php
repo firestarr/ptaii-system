@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Manufacturing\ProductionOrder;
 use App\Models\Manufacturing\ProductionConsumption;
 use App\Models\Item;
+use App\Models\ItemStock;
 use App\Models\Manufacturing\WorkOrder;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
@@ -15,6 +16,9 @@ use App\Models\StockTransaction;
 
 class ProductionOrderController extends Controller
 {
+    // Define warehouse IDs as class constants for maintainability
+    const FINISHED_GOODS_WAREHOUSE_ID = 2;
+    const RAW_MATERIALS_WAREHOUSE_ID = 1;
     /**
      * Display a listing of the resource.
      *
@@ -80,35 +84,35 @@ class ProductionOrderController extends Controller
             } else {
                 // Auto-generate consumption entries from BOM if no consumptions provided or empty
                 $workOrder = WorkOrder::with('bom.bomLines')->find($request->wo_id);
-if ($workOrder && $workOrder->bom) {
-    foreach ($workOrder->bom->bomLines as $bomLine) {
-        // Calculate planned quantity considering yield and shrinkage if applicable
-        $baseQty = $bomLine->quantity * ($request->planned_quantity / $workOrder->bom->standard_quantity);
-        $plannedQty = $baseQty;
+                if ($workOrder && $workOrder->bom) {
+                    foreach ($workOrder->bom->bomLines as $bomLine) {
+                        // Calculate planned quantity considering yield and shrinkage if applicable
+                        $baseQty = $bomLine->quantity * ($request->planned_quantity / $workOrder->bom->standard_quantity);
+                        $plannedQty = $baseQty;
 
-        if ($bomLine->is_yield_based && $bomLine->yield_ratio > 0) {
-            // Adjust base quantity by dividing by yield ratio
-            $plannedQty = $baseQty / $bomLine->yield_ratio;
+                        if ($bomLine->is_yield_based && $bomLine->yield_ratio > 0) {
+                            // Adjust base quantity by dividing by yield ratio
+                            $plannedQty = $baseQty / $bomLine->yield_ratio;
 
-            // Apply shrinkage factor if defined
-            if ($bomLine->shrinkage_factor > 0) {
-                $plannedQty = $plannedQty / (1 - $bomLine->shrinkage_factor);
-            }
-        }
+                            // Apply shrinkage factor if defined
+                            if ($bomLine->shrinkage_factor > 0) {
+                                $plannedQty = $plannedQty / (1 - $bomLine->shrinkage_factor);
+                            }
+                        }
 
-        // Round up planned quantity to avoid decimals
-        $plannedQty = ceil($plannedQty);
+                        // Round up planned quantity to avoid decimals
+                        $plannedQty = ceil($plannedQty);
 
-        ProductionConsumption::create([
-            'production_id' => $productionOrder->production_id,
-            'item_id' => $bomLine->item_id,
-            'planned_quantity' => $plannedQty,
-            'actual_quantity' => 0,
-            'variance' => $plannedQty,
-            'warehouse_id' => $request->default_warehouse_id ?? 1, // Default warehouse if provided
-        ]);
-    }
-}
+                        ProductionConsumption::create([
+                            'production_id' => $productionOrder->production_id,
+                            'item_id' => $bomLine->item_id,
+                            'planned_quantity' => $plannedQty,
+                            'actual_quantity' => 0,
+                            'variance' => $plannedQty,
+                            'warehouse_id' => $request->default_warehouse_id ?? 1, // Default warehouse if provided
+                        ]);
+                    }
+                }
             }
 
             DB::commit();
@@ -151,102 +155,102 @@ if ($workOrder && $workOrder->bom) {
      * @param  int  $id
      * @return \Illuminate\Http\Response
      */
-public function update(Request $request, $id)
-{
-    $productionOrder = ProductionOrder::find($id);
-    
-    if (!$productionOrder) {
-        return response()->json(['message' => 'Production order not found'], 404);
-    }
+    public function update(Request $request, $id)
+    {
+        $productionOrder = ProductionOrder::find($id);
+        
+        if (!$productionOrder) {
+            return response()->json(['message' => 'Production order not found'], 404);
+        }
 
-    $validator = Validator::make($request->all(), [
-        'wo_id' => 'sometimes|required|integer|exists:work_orders,wo_id',
-        'production_number' => 'sometimes|required|string|max:50|unique:production_orders,production_number,' . $id . ',production_id',
-        'production_date' => 'sometimes|required|date',
-        'planned_quantity' => 'sometimes|required|numeric',
-        'actual_quantity' => 'sometimes|numeric',
-        'status' => 'sometimes|required|string|max:50',
-        'consumptions' => 'sometimes|array',
-        'consumptions.*.item_id' => 'required_with:consumptions|integer|exists:items,item_id',
-        'consumptions.*.planned_quantity' => 'required_with:consumptions|numeric',
-        'consumptions.*.actual_quantity' => 'sometimes|nullable|numeric',
-        'consumptions.*.warehouse_id' => 'required_with:consumptions|integer|exists:warehouses,warehouse_id',
-    ]);
+        $validator = Validator::make($request->all(), [
+            'wo_id' => 'sometimes|required|integer|exists:work_orders,wo_id',
+            'production_number' => 'sometimes|required|string|max:50|unique:production_orders,production_number,' . $id . ',production_id',
+            'production_date' => 'sometimes|required|date',
+            'planned_quantity' => 'sometimes|required|numeric',
+            'actual_quantity' => 'sometimes|numeric',
+            'status' => 'sometimes|required|string|max:50',
+            'consumptions' => 'sometimes|array',
+            'consumptions.*.item_id' => 'required_with:consumptions|integer|exists:items,item_id',
+            'consumptions.*.planned_quantity' => 'required_with:consumptions|numeric',
+            'consumptions.*.actual_quantity' => 'sometimes|nullable|numeric',
+            'consumptions.*.warehouse_id' => 'required_with:consumptions|integer|exists:warehouses,warehouse_id',
+        ]);
 
-    if ($validator->fails()) {
-        return response()->json(['errors' => $validator->errors()], 422);
-    }
+        if ($validator->fails()) {
+            return response()->json(['errors' => $validator->errors()], 422);
+        }
 
-    DB::beginTransaction();
-    try {
-        $productionOrder->update($request->all());
+        DB::beginTransaction();
+        try {
+            $productionOrder->update($request->all());
 
-        // Update or recreate consumption entries if provided
-        if ($request->has('consumptions') && !empty($request->consumptions)) {
-            // Delete existing consumptions
-            $productionOrder->productionConsumptions()->delete();
-
-            // Create new consumption entries from request
-            foreach ($request->consumptions as $consumption) {
-                ProductionConsumption::create([
-                    'production_id' => $productionOrder->production_id,
-                    'item_id' => $consumption['item_id'],
-                    'planned_quantity' => $consumption['planned_quantity'],
-                    'actual_quantity' => $consumption['actual_quantity'] ?? 0,
-                    'variance' => isset($consumption['actual_quantity']) 
-                        ? $consumption['planned_quantity'] - $consumption['actual_quantity'] 
-                        : 0,
-                    'warehouse_id' => $consumption['warehouse_id'],
-                ]);
-            }
-        } else {
-            // Auto-generate consumption entries from BOM if no consumptions provided or empty
-            $workOrder = WorkOrder::with('bom.bomLines')->find($productionOrder->wo_id);
-            if ($workOrder && $workOrder->bom) {
+            // Update or recreate consumption entries if provided
+            if ($request->has('consumptions') && !empty($request->consumptions)) {
                 // Delete existing consumptions
                 $productionOrder->productionConsumptions()->delete();
 
-                foreach ($workOrder->bom->bomLines as $bomLine) {
-                    // Calculate planned quantity considering yield and shrinkage if applicable
-                    $baseQty = $bomLine->quantity * ($productionOrder->planned_quantity / $workOrder->bom->standard_quantity);
-                    $plannedQty = $baseQty;
-
-                    if ($bomLine->is_yield_based && $bomLine->yield_ratio > 0) {
-                        // Adjust base quantity by dividing by yield ratio
-                        $plannedQty = $baseQty / $bomLine->yield_ratio;
-
-                        // Apply shrinkage factor if defined
-                        if ($bomLine->shrinkage_factor > 0) {
-                            $plannedQty = $plannedQty / (1 - $bomLine->shrinkage_factor);
-                        }
-                    }
-
-                    // Round up planned quantity to avoid decimals
-                    $plannedQty = ceil($plannedQty);
-
+                // Create new consumption entries from request
+                foreach ($request->consumptions as $consumption) {
                     ProductionConsumption::create([
                         'production_id' => $productionOrder->production_id,
-                        'item_id' => $bomLine->item_id,
-                        'planned_quantity' => $plannedQty,
-                        'actual_quantity' => 0,
-                        'variance' => $plannedQty,
-                        'warehouse_id' => $request->default_warehouse_id ?? 1, // Default warehouse if provided
+                        'item_id' => $consumption['item_id'],
+                        'planned_quantity' => $consumption['planned_quantity'],
+                        'actual_quantity' => $consumption['actual_quantity'] ?? 0,
+                        'variance' => isset($consumption['actual_quantity']) 
+                            ? $consumption['planned_quantity'] - $consumption['actual_quantity'] 
+                            : 0,
+                        'warehouse_id' => $consumption['warehouse_id'],
                     ]);
                 }
+            } else {
+                // Auto-generate consumption entries from BOM if no consumptions provided or empty
+                $workOrder = WorkOrder::with('bom.bomLines')->find($productionOrder->wo_id);
+                if ($workOrder && $workOrder->bom) {
+                    // Delete existing consumptions
+                    $productionOrder->productionConsumptions()->delete();
+
+                    foreach ($workOrder->bom->bomLines as $bomLine) {
+                        // Calculate planned quantity considering yield and shrinkage if applicable
+                        $baseQty = $bomLine->quantity * ($productionOrder->planned_quantity / $workOrder->bom->standard_quantity);
+                        $plannedQty = $baseQty;
+
+                        if ($bomLine->is_yield_based && $bomLine->yield_ratio > 0) {
+                            // Adjust base quantity by dividing by yield ratio
+                            $plannedQty = $baseQty / $bomLine->yield_ratio;
+
+                            // Apply shrinkage factor if defined
+                            if ($bomLine->shrinkage_factor > 0) {
+                                $plannedQty = $plannedQty / (1 - $bomLine->shrinkage_factor);
+                            }
+                        }
+
+                        // Round up planned quantity to avoid decimals
+                        $plannedQty = ceil($plannedQty);
+
+                        ProductionConsumption::create([
+                            'production_id' => $productionOrder->production_id,
+                            'item_id' => $bomLine->item_id,
+                            'planned_quantity' => $plannedQty,
+                            'actual_quantity' => 0,
+                            'variance' => $plannedQty,
+                            'warehouse_id' => $request->default_warehouse_id ?? 1, // Default warehouse if provided
+                        ]);
+                    }
+                }
             }
+
+            DB::commit();
+
+            return response()->json([
+                'data' => $productionOrder->load(['workOrder', 'productionConsumptions.item']),
+                'message' => 'Production order updated successfully'
+            ]);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json(['message' => 'Failed to update production order', 'error' => $e->getMessage()], 500);
         }
-
-        DB::commit();
-
-        return response()->json([
-            'data' => $productionOrder->load(['workOrder', 'productionConsumptions.item']),
-            'message' => 'Production order updated successfully'
-        ]);
-    } catch (\Exception $e) {
-        DB::rollBack();
-        return response()->json(['message' => 'Failed to update production order', 'error' => $e->getMessage()], 500);
     }
-}
 
     /**
      * Remove the specified resource from storage.
@@ -277,9 +281,11 @@ public function update(Request $request, $id)
             return response()->json(['message' => 'Failed to delete production order', 'error' => $e->getMessage()], 500);
         }
     }
+
     /**
      * Complete the production order and update inventory.
      *
+     * @param  \Illuminate\Http\Request  $request
      * @param  int  $id
      * @return \Illuminate\Http\Response
      */
@@ -295,6 +301,7 @@ public function update(Request $request, $id)
         // Validate that we have an actual quantity
         $validator = Validator::make($request->all(), [
             'actual_quantity' => 'required|numeric|min:0',
+            'consumptions' => 'sometimes|array',
         ]);
 
         if ($validator->fails()) {
@@ -310,11 +317,12 @@ public function update(Request $request, $id)
             
             // Get the finished product and update inventory
             $finishedItem = $productionOrder->workOrder->item;
+            $finishedGoodsWarehouseId = self::FINISHED_GOODS_WAREHOUSE_ID; // Finished goods warehouse ID
             
             // Create stock transaction for the finished product
             StockTransaction::create([
                 'item_id' => $finishedItem->item_id,
-                'warehouse_id' => $request->warehouse_id ?? 1, // Use provided warehouse or default
+                'warehouse_id' => $finishedGoodsWarehouseId,
                 'transaction_type' => 'receive',
                 'quantity' => $request->actual_quantity,
                 'transaction_date' => now(),
@@ -322,28 +330,50 @@ public function update(Request $request, $id)
                 'reference_number' => $productionOrder->production_number
             ]);
             
-            // Update item stock
+            // Update item's total stock
             $finishedItem->current_stock += $request->actual_quantity;
             $finishedItem->save();
             
+            // Update ItemStock for finished product
+            $finishedItemStock = ItemStock::firstOrNew([
+                'item_id' => $finishedItem->item_id,
+                'warehouse_id' => $finishedGoodsWarehouseId
+            ]);
+            
+            $finishedItemStock->quantity = ($finishedItemStock->quantity ?? 0) + $request->actual_quantity;
+            $finishedItemStock->save();
+            
             // Process material consumptions
+            // Convert array from frontend to associative array keyed by consumption_id
+            $consumptionsMap = [];
+            if ($request->has('consumptions') && is_array($request->consumptions)) {
+                foreach ($request->consumptions as $consumption) {
+                    if (isset($consumption['consumption_id'])) {
+                        $consumptionsMap[$consumption['consumption_id']] = $consumption['actual_quantity'];
+                    }
+                }
+            }
+            
+            $rawMaterialsWarehouseId = self::RAW_MATERIALS_WAREHOUSE_ID; // Raw materials warehouse ID
+            
             foreach ($productionOrder->productionConsumptions as $consumption) {
                 // Skip if no actual quantity was consumed
-                if (!$request->has('consumptions') || !isset($request->consumptions[$consumption->consumption_id])) {
+                if (!isset($consumptionsMap[$consumption->consumption_id])) {
                     continue;
                 }
                 
-                $actualConsumption = $request->consumptions[$consumption->consumption_id];
+                $actualConsumption = $consumptionsMap[$consumption->consumption_id];
                 
                 // Update consumption record
                 $consumption->actual_quantity = $actualConsumption;
                 $consumption->variance = $consumption->planned_quantity - $actualConsumption;
+                $consumption->warehouse_id = $rawMaterialsWarehouseId; // Set warehouse to raw materials warehouse
                 $consumption->save();
                 
                 // Create stock transaction for consumed material (negative quantity)
                 StockTransaction::create([
                     'item_id' => $consumption->item_id,
-                    'warehouse_id' => $consumption->warehouse_id,
+                    'warehouse_id' => $rawMaterialsWarehouseId,
                     'transaction_type' => 'issue',
                     'quantity' => -$actualConsumption,
                     'transaction_date' => now(),
@@ -351,10 +381,19 @@ public function update(Request $request, $id)
                     'reference_number' => $productionOrder->production_number
                 ]);
                 
-                // Update material stock
+                // Update material item's total stock
                 $materialItem = $consumption->item;
                 $materialItem->current_stock -= $actualConsumption;
                 $materialItem->save();
+                
+                // Update ItemStock for material
+                $materialItemStock = ItemStock::firstOrNew([
+                    'item_id' => $consumption->item_id,
+                    'warehouse_id' => $rawMaterialsWarehouseId
+                ]);
+                
+                $materialItemStock->quantity = max(0, ($materialItemStock->quantity ?? 0) - $actualConsumption);
+                $materialItemStock->save();
             }
             
             // Update work order progress if needed

@@ -124,17 +124,18 @@
                     <tbody>
                       <tr v-for="(line, index) in form.lines" :key="index">
                         <td>
-                          <select
-                            class="form-control"
-                            v-model="line.item_id"
-                            :class="{ 'is-invalid': lineErrors[index]?.item_id }"
-                            required
-                          >
-                            <option value="">Select Item</option>
-                            <option v-for="item in items" :key="item.item_id" :value="item.item_id">
-                              {{ item.item_code }} - {{ item.name }}
-                            </option>
-                          </select>
+<select
+  class="form-control"
+  v-model="line.item_id"
+  :class="{ 'is-invalid': lineErrors[index]?.item_id }"
+  required
+  @change="onItemChange(line)"
+>
+  <option value="">Select Item</option>
+  <option v-for="item in items" :key="item.item_id" :value="item.item_id">
+    {{ item.item_code }} - {{ item.name }}
+  </option>
+</select>
                           <div v-if="lineErrors[index]?.item_id" class="invalid-feedback">{{ lineErrors[index].item_id[0] }}</div>
                         </td>
                         <td>
@@ -257,7 +258,7 @@
         return !!this.id;
       }
     },
-    async created() {
+async created() {
       try {
         // Fetch required data
         await this.fetchDropdownData();
@@ -268,7 +269,10 @@
         } else {
           // Initialize with empty line for new PR
           this.addLine();
-          this.form.requester_id = this.getCurrentUser().id;
+        }
+        // Set requester_id to first user id if users array is not empty after fetching users
+        if (!this.isEditMode && this.users.length > 0) {
+          this.form.requester_id = this.users[0].id;
         }
       } catch (error) {
         this.showAlert('danger', 'Failed to load data. Please try again.');
@@ -277,25 +281,49 @@
         this.loading = false;
       }
     },
-    methods: {
-      async fetchDropdownData() {
-        try {
-          // Fetch users
-          const usersResponse = await axios.get('/user');
-          this.users = usersResponse.data.data || [];
-          
-          // Fetch purchasable items
-          const itemsResponse = await axios.get('/items/purchasable');
-          this.items = itemsResponse.data.data || [];
-          
-          // Fetch units of measure
-          const uomsResponse = await axios.get('/uoms');
-          this.uoms = uomsResponse.data.data || [];
-        } catch (error) {
-          console.error('Error fetching dropdown data:', error);
-          throw error;
-        }
-      },
+methods: {
+  async fetchDropdownData() {
+    try {
+      // Fetch users
+      const usersResponse = await axios.get('/user');
+      
+      // Check the structure of the response
+      if (Array.isArray(usersResponse.data)) {
+        this.users = usersResponse.data;
+      } else if (usersResponse.data && usersResponse.data.id) {
+        // Single user object
+        this.users = [usersResponse.data];
+      } else if (usersResponse.data && Array.isArray(usersResponse.data.data)) {
+        // Nested data array
+        this.users = usersResponse.data.data;
+      } else if (usersResponse.data && usersResponse.data.data && usersResponse.data.data.id) {
+        // Nested single user
+        this.users = [usersResponse.data.data];
+      } else {
+        this.users = [];
+      }
+      
+      // Fetch purchasable items
+      const itemsResponse = await axios.get('/items/purchasable');
+      this.items = itemsResponse.data.data || [];
+      
+      // Fetch units of measure
+      const uomsResponse = await axios.get('/uoms');
+      this.uoms = uomsResponse.data.data || [];
+    } catch (error) {
+      console.error('Error fetching dropdown data:', error);
+      throw error;
+    }
+  },
+
+  onItemChange(line) {
+    const selectedItem = this.items.find(item => item.item_id === line.item_id);
+    if (selectedItem && selectedItem.unitOfMeasure) {
+      line.uom_id = selectedItem.unitOfMeasure.uom_id;
+    } else {
+      line.uom_id = '';
+    }
+  },
       
       async fetchPRData() {
         try {

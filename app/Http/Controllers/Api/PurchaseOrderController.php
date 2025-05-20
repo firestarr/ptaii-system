@@ -27,9 +27,13 @@ class PurchaseOrderController extends Controller
         $query = PurchaseOrder::with(['vendor']);
         
         // Apply filters
-        if ($request->filled('status')) {
-            $query->where('status', $request->status);
-        }
+if ($request->filled('status')) {
+    if (is_array($request->status)) {
+        $query->whereIn('status', $request->status);
+    } else {
+        $query->where('status', $request->status);
+    }
+}
         
         if ($request->filled('vendor_id')) {
             $query->where('vendor_id', $request->vendor_id);

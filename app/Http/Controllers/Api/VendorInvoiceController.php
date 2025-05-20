@@ -32,35 +32,35 @@ class VendorInvoiceController extends Controller
         $query = VendorInvoice::with(['vendor', 'lines.item', 'goodsReceipts']);
         
         // Apply filters
-        if ($request->has('status')) {
+        if ($request->filled('status')) {
             $query->where('status', $request->status);
         }
         
-        if ($request->has('vendor_id')) {
+        if ($request->filled('vendor_id')) {
             $query->where('vendor_id', $request->vendor_id);
         }
         
-        if ($request->has('date_from') && !empty($request->date_from)) {
+        if ($request->filled('date_from')) {
             $dateFrom = $request->date_from;
             if (strtotime($dateFrom) !== false) {
                 $query->whereDate('invoice_date', '>=', $dateFrom);
             }
         }
         
-        if ($request->has('date_to') && !empty($request->date_to)) {
+        if ($request->filled('date_to')) {
             $dateTo = $request->date_to;
             if (strtotime($dateTo) !== false) {
                 $query->whereDate('invoice_date', '<=', $dateTo);
             }
         }
         
-        if ($request->has('search')) {
+        if ($request->filled('search')) {
             $search = $request->search;
             $query->where('invoice_number', 'like', "%{$search}%");
         }
         
         // Filter by currency
-        if ($request->has('currency_code')) {
+        if ($request->filled('currency_code')) {
             $query->where('currency_code', $request->currency_code);
         }
         
@@ -79,6 +79,10 @@ class VendorInvoiceController extends Controller
                 });
             }
         }
+
+        // Log count of invoices matching query before pagination
+        $count = $query->count();
+        \Log::info("VendorInvoiceController@index query count before pagination: {$count}");
         
         // Apply sorting
         $sortField = $request->input('sort_field', 'invoice_date');

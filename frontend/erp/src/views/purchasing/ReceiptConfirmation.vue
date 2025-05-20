@@ -234,12 +234,31 @@
         
         axios.post(`/goods-receipts/${this.receiptId}/confirm`)
           .then(() => {
-            this.$toast.success('Goods receipt confirmed successfully');
+            try {
+              this.$toast.success('Goods receipt confirmed successfully');
+            } catch (toastError) {
+              console.error('Toast success error:', toastError);
+            }
             this.$router.push(`/purchasing/goods-receipts/${this.receiptId}`);
           })
           .catch(error => {
             console.error('Error confirming receipt:', error);
-            this.$toast.error('Failed to confirm goods receipt: ' + (error.response?.data?.message || 'Unknown error'));
+            if (!error) {
+              try {
+                this.$toast.error('Failed to confirm goods receipt: Unknown error');
+              } catch (toastError) {
+                console.error('Toast error error:', toastError);
+              }
+              return;
+            }
+            const errorMessage = error.response && error.response.data && error.response.data.message
+              ? error.response.data.message
+              : 'Unknown error';
+            try {
+              this.$toast.error('Failed to confirm goods receipt: ' + errorMessage);
+            } catch (toastError) {
+              console.error('Toast error error:', toastError);
+            }
           })
           .finally(() => {
             this.confirming = false;

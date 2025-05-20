@@ -348,25 +348,45 @@ isStockInsufficient(consumption, index) {
       },
       
       validateConsumptions() {
-        this.consumptionErrors = this.consumptions.map((consumption, index) => {
-          const actualQuantity = parseFloat(this.form.consumptions[index].actual_quantity) || 0;
-          
-          // Check if actual quantity is valid
-          if (actualQuantity < 0) {
-            return 'Actual quantity cannot be negative';
+        try {
+          if (!this.consumptions || !this.form.consumptions) {
+            this.consumptionErrors = [];
+            return;
           }
-          
-          // Check stock availability
-          if (this.isStockInsufficient(consumption, index)) {
-            return 'Insufficient stock available';
-          }
-          
-          return null;
-        });
+          this.consumptionErrors = this.consumptions.map((consumption, index) => {
+            if (!this.form.consumptions[index]) {
+              return 'Invalid consumption data';
+            }
+            const actualQuantity = parseFloat(this.form.consumptions[index].actual_quantity) || 0;
+            
+            // Check if actual quantity is valid
+            if (actualQuantity < 0) {
+              return 'Actual quantity cannot be negative';
+            }
+            
+            // Check stock availability
+            if (this.isStockInsufficient(consumption, index)) {
+              return 'Insufficient stock available';
+            }
+            
+            return null;
+          });
+        } catch (error) {
+          console.error('Error validating consumptions:', error);
+          this.consumptionErrors = ['Validation error'];
+        }
       },
       
       getConsumptionError(index) {
-        return this.consumptionErrors[index];
+        try {
+          if (!this.consumptionErrors || index < 0 || index >= this.consumptionErrors.length) {
+            return null;
+          }
+          return this.consumptionErrors[index];
+        } catch (error) {
+          console.error('Error getting consumption error:', error);
+          return null;
+        }
       },
       
       formatDate(date) {
@@ -385,25 +405,25 @@ isStockInsufficient(consumption, index) {
       },
       
       async completeProduction() {
-        // Clear previous errors
-        this.errors = {};
-        this.validateConsumptions();
-        
-        // Check if there are any validation errors
-        if (this.hasValidationErrors) {
-          this.$toast.error('Please correct the errors before completing the production order');
-          return;
-        }
-        
-        // Check if there are no consumptions
-        if (this.consumptions.length === 0) {
-          this.$toast.error('Cannot complete production order without any material consumption');
-          return;
-        }
-        
-        this.saving = true;
-        
         try {
+          // Clear previous errors
+          this.errors = {};
+          this.validateConsumptions();
+          
+          // Check if there are any validation errors
+          if (this.hasValidationErrors) {
+            this.$toast.error('Please correct the errors before completing the production order');
+            return;
+          }
+          
+          // Check if there are no consumptions
+          if (this.consumptions.length === 0) {
+            this.$toast.error('Cannot complete production order without any material consumption');
+            return;
+          }
+          
+          this.saving = true;
+          
           // Update production order with completion data
           await axios.post(`/production-orders/${this.productionId}/complete`, this.form);
           
