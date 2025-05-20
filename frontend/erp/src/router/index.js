@@ -51,6 +51,13 @@ import SalesQuotationPrint from "../views/sales/SalesQuotationPrint.vue";
 import SalesForecastList from "../views/sales/SalesForecastList.vue";
 import SalesForecastDetail from "../views/sales/SalesForecastDetail.vue";
 import SalesForecastAnalytics from "../views/sales/SalesForecastAnalytics.vue";
+// Import new Sales Forecast components
+import ConsolidatedForecastView from "../views/sales/ConsolidatedForecastView.vue";
+import ImportForecastForm from "../views/sales/ImportForecastForm.vue";
+import ForecastAccuracyAnalysis from "../views/sales/ForecastAccuracyAnalysis.vue";
+import ForecastDashboard from "../views/sales/ForecastDashboard.vue";
+import UpdateActualsPage from "../views/sales/UpdateActualsPage.vue";
+import ForecastHistoryView from "../views/sales/ForecastHistoryView.vue";
 //SalesOrder
 import SalesOrderList from "../views/sales/SalesOrderList.vue";
 import SalesOrderDetail from "../views/sales/SalesOrderDetail.vue";
@@ -489,6 +496,43 @@ const routes = [
                 path: "/sales/forecasts/analytics",
                 name: "SalesForecastAnalytics",
                 component: SalesForecastAnalytics,
+            },
+            // New Sales Forecast Routes
+            {
+                path: "/sales/forecasts/consolidated",
+                name: "ConsolidatedForecastView",
+                component: ConsolidatedForecastView,
+                meta: { requiresAuth: true },
+            },
+            {
+                path: "/sales/forecasts/import",
+                name: "ImportForecastForm",
+                component: ImportForecastForm,
+                meta: { requiresAuth: true },
+            },
+            {
+                path: "/sales/forecasts/accuracy",
+                name: "ForecastAccuracyAnalysis",
+                component: ForecastAccuracyAnalysis,
+                meta: { requiresAuth: true },
+            },
+            {
+                path: "/sales/forecasts/dashboard",
+                name: "ForecastDashboard",
+                component: ForecastDashboard,
+                meta: { requiresAuth: true },
+            },
+            {
+                path: "/sales/forecasts/update-actuals",
+                name: "UpdateActualsPage",
+                component: UpdateActualsPage,
+                meta: { requiresAuth: true },
+            },
+            {
+                path: "/sales/forecasts/history",
+                name: "ForecastHistoryView",
+                component: ForecastHistoryView,
+                meta: { requiresAuth: true },
             },
             //SalesOrder
             {

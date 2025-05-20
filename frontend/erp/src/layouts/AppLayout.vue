@@ -593,6 +593,70 @@
                         <span v-if="!sidebarCollapsed">Forecasts</span>
                     </router-link>
 
+                    <!-- Forecast submenu items -->
+                    <router-link
+                        to="/sales/forecasts/dashboard"
+                        class="menu-item"
+                        active-class="active"
+                    >
+                        <i class="fas fa-tachometer-alt"></i>
+                        <span v-if="!sidebarCollapsed">Forecast Dashboard</span>
+                    </router-link>
+
+                    <router-link
+                        to="/sales/forecasts/consolidated"
+                        class="menu-item"
+                        active-class="active"
+                    >
+                        <i class="fas fa-table"></i>
+                        <span v-if="!sidebarCollapsed">Consolidated View</span>
+                    </router-link>
+
+                    <router-link
+                        to="/sales/forecasts/import"
+                        class="menu-item"
+                        active-class="active"
+                    >
+                        <i class="fas fa-file-import"></i>
+                        <span v-if="!sidebarCollapsed">Import Forecast</span>
+                    </router-link>
+
+                    <router-link
+                        to="/sales/forecasts/accuracy"
+                        class="menu-item"
+                        active-class="active"
+                    >
+                        <i class="fas fa-bullseye"></i>
+                        <span v-if="!sidebarCollapsed">Accuracy Analysis</span>
+                    </router-link>
+
+                    <router-link
+                        to="/sales/forecasts/update-actuals"
+                        class="menu-item"
+                        active-class="active"
+                    >
+                        <i class="fas fa-sync-alt"></i>
+                        <span v-if="!sidebarCollapsed">Update Actuals</span>
+                    </router-link>
+
+                    <router-link
+                        to="/sales/forecasts/history"
+                        class="menu-item"
+                        active-class="active"
+                    >
+                        <i class="fas fa-history"></i>
+                        <span v-if="!sidebarCollapsed">Version History</span>
+                    </router-link>
+
+                    <router-link
+                        to="/sales/forecasts"
+                        class="menu-item"
+                        active-class="active"
+                    >
+                        <i class="fas fa-list"></i>
+                        <span v-if="!sidebarCollapsed">All Forecasts</span>
+                    </router-link>
+
                     <router-link
                         to="/sales/orders"
                         class="menu-item"
