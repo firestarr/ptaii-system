@@ -214,7 +214,9 @@ export default {
     },
     async fetchItems() {
       try {
-        const response = await axios.get('/items');
+        const response = await axios.get('/items', {
+            params: { sellable: true }
+          });
         this.items = response.data.data || [];
       } catch (error) {
         console.error('Error fetching items:', error);

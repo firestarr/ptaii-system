@@ -31,7 +31,7 @@ class SalesCommissionController extends Controller
     public function store(Request $request)
     {
         $validator = Validator::make($request->all(), [
-            'sales_person_id' => 'required|exists:User,user_id',
+            'sales_person_id' => 'required|exists:users,id',
             'invoice_id' => 'required|exists:SalesInvoice,invoice_id',
             'commission_amount' => 'required|numeric|min:0',
             'calculation_date' => 'required|date',
@@ -80,7 +80,7 @@ class SalesCommissionController extends Controller
         }
         
         $validator = Validator::make($request->all(), [
-            'sales_person_id' => 'required|exists:User,user_id',
+            'sales_person_id' => 'required|exists:users,id',
             'invoice_id' => 'required|exists:SalesInvoice,invoice_id',
             'commission_amount' => 'required|numeric|min:0',
             'calculation_date' => 'required|date',
@@ -130,7 +130,7 @@ class SalesCommissionController extends Controller
             'start_date' => 'required|date',
             'end_date' => 'required|date|after_or_equal:start_date',
             'commission_rate' => 'required|numeric|min:0|max:100',
-            'sales_person_id' => 'nullable|exists:User,user_id'
+'sales_person_id' => 'nullable|exists:users,id'
         ]);
 
         if ($validator->fails()) {

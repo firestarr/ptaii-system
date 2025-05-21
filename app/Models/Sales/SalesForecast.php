@@ -5,14 +5,15 @@ namespace App\Models\Sales;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use App\Models\Inventory\Item;
+use App\Models\Item;
 
 class SalesForecast extends Model
 {
     use HasFactory;
 
-    protected $table = 'sales_forecasts';
+    protected $table = 'SalesForecast';
     protected $primaryKey = 'forecast_id';
+    public $timestamps = false;
     
     protected $fillable = [
         'item_id',

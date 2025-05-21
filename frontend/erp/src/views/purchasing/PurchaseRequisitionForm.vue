@@ -124,18 +124,26 @@
                     <tbody>
                       <tr v-for="(line, index) in form.lines" :key="index">
                         <td>
-<select
-  class="form-control"
-  v-model="line.item_id"
-  :class="{ 'is-invalid': lineErrors[index]?.item_id }"
-  required
-  @change="onItemChange(line)"
->
-  <option value="">Select Item</option>
-  <option v-for="item in items" :key="item.item_id" :value="item.item_id">
-    {{ item.item_code }} - {{ item.name }}
-  </option>
-</select>
+                          <div class="custom-dropdown">
+                            <input
+                              type="text"
+                              class="form-control"
+                              v-model="line.itemSearch"
+                              :class="{ 'is-invalid': lineErrors[index]?.item_id }"
+                              placeholder="Search for an item..."
+                              @focus="showDropdown(index)"
+                              @input="showDropdown(index)"
+                              @blur="hideDropdown(index)"
+                              required
+                            />
+                            <div v-show="line.showDropdown" class="custom-dropdown-menu" :style="{ minWidth: '300px', maxWidth: '450px' }">
+                              <div v-for="item in filteredItems(line.itemSearch)" :key="item.item_id" 
+                                @mousedown="selectItem(line, item)" class="dropdown-item">
+                                {{ item.item_code }} - {{ item.name }}
+                              </div>
+                              <div v-if="filteredItems(line.itemSearch).length === 0" class="dropdown-item text-muted">No items found</div>
+                            </div>
+                          </div>
                           <div v-if="lineErrors[index]?.item_id" class="invalid-feedback">{{ lineErrors[index].item_id[0] }}</div>
                         </td>
                         <td>
@@ -258,7 +266,7 @@
         return !!this.id;
       }
     },
-async created() {
+    async created() {
       try {
         // Fetch required data
         await this.fetchDropdownData();
@@ -281,49 +289,96 @@ async created() {
         this.loading = false;
       }
     },
-methods: {
-  async fetchDropdownData() {
-    try {
-      // Fetch users
-      const usersResponse = await axios.get('/user');
-      
-      // Check the structure of the response
-      if (Array.isArray(usersResponse.data)) {
-        this.users = usersResponse.data;
-      } else if (usersResponse.data && usersResponse.data.id) {
-        // Single user object
-        this.users = [usersResponse.data];
-      } else if (usersResponse.data && Array.isArray(usersResponse.data.data)) {
-        // Nested data array
-        this.users = usersResponse.data.data;
-      } else if (usersResponse.data && usersResponse.data.data && usersResponse.data.data.id) {
-        // Nested single user
-        this.users = [usersResponse.data.data];
-      } else {
-        this.users = [];
-      }
-      
-      // Fetch purchasable items
-      const itemsResponse = await axios.get('/items/purchasable');
-      this.items = itemsResponse.data.data || [];
-      
-      // Fetch units of measure
-      const uomsResponse = await axios.get('/uoms');
-      this.uoms = uomsResponse.data.data || [];
-    } catch (error) {
-      console.error('Error fetching dropdown data:', error);
-      throw error;
-    }
-  },
+    methods: {
+      // Methods for searchable dropdown
+      filteredItems(search) {
+        if (!search) {
+          return this.items;
+        }
+        return this.items.filter(item => 
+          item.name.toLowerCase().includes(search.toLowerCase()) || 
+          item.item_code.toLowerCase().includes(search.toLowerCase())
+        );
+      },
+      showDropdown(index) {
+        if (!this.form.lines[index].showDropdown) {
+          this.form.lines[index].showDropdown = true;
+        }
+      },
+      hideDropdown(index) {
+        setTimeout(() => {
+          this.form.lines[index].showDropdown = false;
+        }, 200);
+      },
+      selectItem(line, item) {
+        line.item_id = item.item_id;
+        line.itemSearch = `${item.item_code} - ${item.name}`;
+        line.showDropdown = false;
+        
+        // Auto-fill UOM based on item's default UOM
+        // Try different possible structures to find UOM
+        if (item.unitOfMeasure && item.unitOfMeasure.uom_id) {
+          line.uom_id = item.unitOfMeasure.uom_id;
+        } else if (item.uom_id) {
+          // Direct UOM ID reference
+          line.uom_id = item.uom_id;
+        } else if (item.default_uom_id) {
+          // Try another possible property name
+          line.uom_id = item.default_uom_id;
+        }
+        
+        // Debugging - remove in production
+        console.log('Selected item:', item);
+        console.log('UOM set to:', line.uom_id);
+      },
 
-  onItemChange(line) {
-    const selectedItem = this.items.find(item => item.item_id === line.item_id);
-    if (selectedItem && selectedItem.unitOfMeasure) {
-      line.uom_id = selectedItem.unitOfMeasure.uom_id;
-    } else {
-      line.uom_id = '';
-    }
-  },
+      async fetchDropdownData() {
+        try {
+          // Fetch users
+          const usersResponse = await axios.get('/user');
+          
+          // Check the structure of the response
+          if (Array.isArray(usersResponse.data)) {
+            this.users = usersResponse.data;
+          } else if (usersResponse.data && usersResponse.data.id) {
+            // Single user object
+            this.users = [usersResponse.data];
+          } else if (usersResponse.data && Array.isArray(usersResponse.data.data)) {
+            // Nested data array
+            this.users = usersResponse.data.data;
+          } else if (usersResponse.data && usersResponse.data.data && usersResponse.data.data.id) {
+            // Nested single user
+            this.users = [usersResponse.data.data];
+          } else {
+            this.users = [];
+          }
+          
+          // Fetch purchasable items
+          const itemsResponse = await axios.get('/items/purchasable');
+          this.items = itemsResponse.data.data || [];
+          
+          // Debug - examine item structure
+          if (this.items.length > 0) {
+            console.log('Item structure example:', this.items[0]);
+          }
+          
+          // Fetch units of measure
+          const uomsResponse = await axios.get('/uoms');
+          this.uoms = uomsResponse.data.data || [];
+        } catch (error) {
+          console.error('Error fetching dropdown data:', error);
+          throw error;
+        }
+      },
+
+      onItemChange(line) {
+        const selectedItem = this.items.find(item => item.item_id === line.item_id);
+        if (selectedItem && selectedItem.unitOfMeasure) {
+          line.uom_id = selectedItem.unitOfMeasure.uom_id;
+        } else {
+          line.uom_id = '';
+        }
+      },
       
       async fetchPRData() {
         try {
@@ -336,13 +391,22 @@ methods: {
             requester_id: prData.requester_id,
             status: prData.status,
             notes: prData.notes,
-            lines: prData.lines.map(line => ({
-              item_id: line.item_id,
-              quantity: parseFloat(line.quantity),
-              uom_id: line.uom_id,
-              required_date: line.required_date ? this.formatDate(line.required_date) : null,
-              notes: line.notes
-            }))
+            lines: prData.lines.map(line => {
+              // Find matching item to get its name
+              const matchedItem = this.items.find(item => item.item_id === line.item_id);
+              const itemDisplay = matchedItem ? 
+                `${matchedItem.item_code} - ${matchedItem.name}` : '';
+              
+              return {
+                item_id: line.item_id,
+                itemSearch: itemDisplay,  // Add itemSearch property for display
+                quantity: parseFloat(line.quantity),
+                uom_id: line.uom_id,
+                required_date: line.required_date ? this.formatDate(line.required_date) : null,
+                notes: line.notes,
+                showDropdown: false  // Add dropdown visibility property
+              };
+            })
           };
           
           // Store original form state for change detection
@@ -356,10 +420,12 @@ methods: {
       addLine() {
         this.form.lines.push({
           item_id: '',
+          itemSearch: '',  // Add itemSearch property
           quantity: 1,
           uom_id: '',
           required_date: '',
-          notes: ''
+          notes: '',
+          showDropdown: false  // Add dropdown visibility property
         });
       },
       
@@ -623,6 +689,15 @@ methods: {
     vertical-align: middle;
   }
   
+  /* Dropdown fix - increase z-index */
+  .table-responsive {
+    overflow: visible !important;
+  }
+  
+  .table {
+    position: relative;
+  }
+  
   .form-actions {
     display: flex;
     justify-content: flex-start;
@@ -657,6 +732,52 @@ methods: {
   
   .close:hover {
     opacity: 1;
+  }
+  
+  /* Dropdown styling */
+  .custom-dropdown {
+    position: relative;
+    width: 100%;
+  }
+  
+  .custom-dropdown-menu {
+    position: fixed; /* Use fixed instead of absolute */
+    z-index: 9999;
+    display: block;
+    width: 100%;
+    max-height: 250px;
+    overflow-y: auto;
+    padding: 0.5rem 0;
+    margin: 0.125rem 0 0;
+    background-color: #fff;
+    border: 1px solid rgba(0, 0, 0, 0.15);
+    border-radius: 0.25rem;
+    box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.175);
+  }
+  
+  /* Make dropdown appear above other elements */
+  .dropdown-item {
+    display: block;
+    width: 100%;
+    padding: 0.5rem 1rem;
+    clear: both;
+    font-weight: 400;
+    color: #212529;
+    text-align: left;
+    white-space: nowrap;
+    background-color: transparent;
+    border: 0;
+    cursor: pointer;
+  }
+  
+  .dropdown-item:hover {
+    color: #16181b;
+    text-decoration: none;
+    background-color: #f8f9fa;
+  }
+  
+  .text-muted {
+    color: #6c757d;
   }
   
   @media (max-width: 768px) {

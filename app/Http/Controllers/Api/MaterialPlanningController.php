@@ -1,8 +1,9 @@
 <?php
 // app/Http/Controllers/MaterialPlanningController.php
 
-namespace App\Http\Controllers;
+namespace App\Http\Controllers\Api;
 
+use App\Http\Controllers\Controller;
 use App\Models\MaterialPlan;
 use App\Models\Sales\SalesForecast;
 use App\Models\Item;
@@ -16,6 +17,59 @@ use Carbon\Carbon;
 
 class MaterialPlanningController extends Controller
 {
+    /**
+     * List material plans with optional filters and pagination
+     */
+    public function index(Request $request)
+    {
+        $query = MaterialPlan::with('item');
+
+        // Apply filters if present
+        if ($request->filled('search')) {
+            $search = $request->input('search');
+            $query->whereHas('item', function ($q) use ($search) {
+                $q->where('item_code', 'like', "%{$search}%")
+                  ->orWhere('name', 'like', "%{$search}%");
+            });
+        }
+
+        if ($request->filled('planningPeriod')) {
+            $query->where('planning_period', $request->input('planningPeriod'));
+        }
+
+        if ($request->filled('materialType')) {
+            $query->where('material_type', $request->input('materialType'));
+        }
+
+        if ($request->filled('status')) {
+            $query->where('status', $request->input('status'));
+        }
+
+        // Pagination parameters
+        $perPage = 10;
+        $page = $request->input('page', 1);
+
+        $plans = $query->orderBy('planning_period', 'desc')
+                       ->paginate($perPage, ['*'], 'page', $page);
+
+        return response()->json($plans);
+    }
+
+    /**
+     * Show a single material plan by id
+     */
+    public function show($id)
+    {
+        $plan = MaterialPlan::with(['item', 'bom', 'bom.bomLines', 'bom.bomLines.item', 'bom.bomLines.unitOfMeasure'])
+            ->find($id);
+
+        if (!$plan) {
+            return response()->json(['message' => 'Material plan not found'], 404);
+        }
+
+        return response()->json(['data' => $plan]);
+    }
+
     /**
      * Generate material plans based on sales forecasts for finished goods
      * and calculate raw material requirements using BOM with yield-based calculations
@@ -124,6 +178,7 @@ class MaterialPlanningController extends Controller
                 // Calculate net requirement
                 $netRequirement = $totalForecast - $availableStock - $wipStock + $bufferQty;
                 $netRequirement = max(0, $netRequirement);
+                $netRequirement = ceil($netRequirement);
                 
                 // Create or update material plan
                 $plan = MaterialPlan::updateOrCreate(
@@ -225,6 +280,7 @@ class MaterialPlanningController extends Controller
                 // Calculate net requirement
                 $netRequirement = $requiredQty - $availableStock + $bufferQty;
                 $netRequirement = max(0, $netRequirement);
+                $netRequirement = ceil($netRequirement);
                 
                 // Create or update material plan
                 $plan = MaterialPlan::updateOrCreate(
@@ -274,33 +330,33 @@ class MaterialPlanningController extends Controller
         $periodEndDate = $periodDate->copy()->endOfMonth();
 
         // 1. Get Work Orders yang sedang dalam proses untuk item ini
-        $wipFromWorkOrders = DB::table('WorkOrder')
+        $wipFromWorkOrders = DB::table('work_orders')
             ->where('item_id', $itemId)
             ->whereIn('status', ['In Progress', 'Started']) // Status WIP
             ->where('planned_end_date', '<=', $periodEndDate) // Selesai dalam periode ini
             ->sum('planned_quantity');
 
         // 2. Get Production Orders yang sedang dalam proses
-        $wipFromProductionOrders = DB::table('ProductionOrder')
-            ->where('status', 'In Process')
-            ->join('WorkOrder', 'ProductionOrder.wo_id', '=', 'WorkOrder.wo_id')
-            ->where('WorkOrder.item_id', $itemId)
-            ->where('ProductionOrder.planned_completion_date', '<=', $periodEndDate)
-            ->sum(DB::raw('ProductionOrder.planned_quantity - IFNULL(ProductionOrder.actual_quantity, 0)'));
+        $wipFromProductionOrders = DB::table('production_orders')
+            ->where('production_orders.status', 'In Process')
+            ->join('work_orders', 'production_orders.wo_id', '=', 'work_orders.wo_id')
+            ->where('work_orders.item_id', $itemId)
+            ->where('production_orders.production_date', '<=', $periodEndDate)
+            ->sum(DB::raw('production_orders.planned_quantity - COALESCE(production_orders.actual_quantity, 0)'));
 
         // 3. Hitung perkiraan WIP berdasarkan persentase penyelesaian operasi
-        $wipFromOperations = DB::table('WorkOrderOperation')
-            ->join('WorkOrder', 'WorkOrderOperation.wo_id', '=', 'WorkOrder.wo_id')
-            ->where('WorkOrder.item_id', $itemId)
-            ->whereIn('WorkOrder.status', ['In Progress', 'Started'])
-            ->where('WorkOrder.planned_end_date', '<=', $periodEndDate)
+        $wipFromOperations = DB::table('work_order_operations')
+            ->join('work_orders', 'work_order_operations.wo_id', '=', 'work_orders.wo_id')
+            ->where('work_orders.item_id', $itemId)
+            ->whereIn('work_orders.status', ['In Progress', 'Started'])
+            ->where('work_orders.planned_end_date', '<=', $periodEndDate)
             ->select(
-                'WorkOrder.wo_id',
-                'WorkOrder.planned_quantity',
-                DB::raw('COUNT(CASE WHEN WorkOrderOperation.status = "Completed" THEN 1 END) as completed_operations'),
+                'work_orders.wo_id',
+                'work_orders.planned_quantity',
+                DB::raw("COUNT(CASE WHEN work_order_operations.status = 'Completed' THEN 1 END) as completed_operations"),
                 DB::raw('COUNT(*) as total_operations')
             )
-            ->groupBy('WorkOrder.wo_id', 'WorkOrder.planned_quantity')
+            ->groupBy('work_orders.wo_id', 'work_orders.planned_quantity')
             ->get()
             ->map(function ($wo) {
                 // Hitung persentase penyelesaian

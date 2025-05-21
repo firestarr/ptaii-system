@@ -5,7 +5,7 @@ namespace App\Http\Controllers\Api\Sales;
 use App\Http\Controllers\Controller;
 use App\Models\Sales\SalesForecast;
 use App\Models\Sales\Customer;
-use App\Models\Inventory\Item;
+use App\Models\Item;
 use App\Models\Sales\SalesInvoice;
 use App\Models\Sales\SalesInvoiceLine;
 use Illuminate\Http\Request;
@@ -60,7 +60,7 @@ class SalesForecastController extends Controller
     public function store(Request $request)
     {
         $validator = Validator::make($request->all(), [
-            'item_id' => 'required|exists:Item,item_id',
+            'item_id' => 'required|exists:items,item_id',
             'customer_id' => 'required|exists:Customer,customer_id',
             'forecast_period' => 'required|date',
             'forecast_quantity' => 'required|numeric|min:0',
@@ -164,7 +164,7 @@ class SalesForecastController extends Controller
         }
         
         $validator = Validator::make($request->all(), [
-            'item_id' => 'required|exists:Item,item_id',
+            'item_id' => 'required|exists:items,item_id',
             'customer_id' => 'required|exists:Customer,customer_id',
             'forecast_period' => 'required|date',
             'forecast_quantity' => 'required|numeric|min:0',
@@ -438,7 +438,7 @@ class SalesForecastController extends Controller
             'start_period' => 'required|date',
             'end_period' => 'required|date|after:start_period',
             'customer_id' => 'nullable|exists:Customer,customer_id',
-            'item_id' => 'nullable|exists:Item,item_id',
+            'item_id' => 'nullable|exists:items,item_id',
             'method' => 'required|in:average,weighted,trend',
             'forecast_issue_date' => 'nullable|date'
         ]);
@@ -750,7 +750,7 @@ class SalesForecastController extends Controller
     {
         $validator = Validator::make($request->all(), [
             'customer_id' => 'nullable|exists:Customer,customer_id',
-            'item_id' => 'nullable|exists:Item,item_id',
+            'item_id' => 'nullable|exists:items,item_id',
             'start_period' => 'required|date',
             'end_period' => 'required|date|after:start_period',
             'forecast_source' => 'nullable|string',
@@ -941,7 +941,7 @@ class SalesForecastController extends Controller
        $validator = Validator::make($request->all(), [
            'start_month' => 'required|date',
            'customer_id' => 'nullable|exists:Customer,customer_id',
-           'item_id' => 'nullable|exists:Item,item_id',
+           'item_id' => 'nullable|exists:items,item_id',
            'issue_date' => 'nullable|date'
        ]);
 
@@ -1073,7 +1073,7 @@ class SalesForecastController extends Controller
     public function getForecastHistory(Request $request)
     {
         $validator = Validator::make($request->all(), [
-            'item_id' => 'required|exists:Item,item_id',
+            'item_id' => 'required|exists:items,item_id',
             'customer_id' => 'required|exists:Customer,customer_id',
             'forecast_period' => 'required|date'
         ]);

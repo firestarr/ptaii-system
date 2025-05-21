@@ -162,7 +162,7 @@
             </div>
   
             <!-- BOM Lines -->
-            <div v-if="plan.bom?.lines" class="mt-4">
+            <div v-if="plan.bom?.bomLines" class="mt-4">
               <h3 class="section-title">BOM Components</h3>
               <table class="bom-table">
                 <thead>
@@ -176,7 +176,7 @@
                   </tr>
                 </thead>
                 <tbody>
-                  <tr v-for="line in plan.bom.lines" :key="line.line_id">
+                  <tr v-for="line in plan.bom.bomLines" :key="line.line_id">
                     <td>{{ line.item?.item_code }}</td>
                     <td>{{ line.item?.name }}</td>
                     <td>{{ formatNumber(line.quantity) }}</td>
@@ -330,7 +330,7 @@
       async fetchPlanDetails() {
         this.isLoading = true;
         try {
-          const response = await axios.get(`/api/material-plans/${this.id}`);
+          const response = await axios.get(`/material-planning/${this.id}`);
           this.plan = response.data.data;
         } catch (error) {
           console.error('Error fetching material plan details:', error);
@@ -353,7 +353,7 @@
             lead_time_days: this.prForm.leadTimeDays
           };
           
-          const response = await axios.post('/api/material-planning/purchase-requisition', payload);
+          const response = await axios.post('/material-planning/purchase-requisition', payload);
           
           if (response.data.data) {
             // Redirect to PR detail page

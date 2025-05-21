@@ -307,7 +307,7 @@ export default {
     async fetchItemOptions() {
       this.isLoadingItems = true;
       try {
-        const response = await axios.get('/api/items');
+        const response = await axios.get('/items');
         this.itemOptions = response.data.data.map(item => ({
           value: item.item_id,
           label: `${item.item_code} - ${item.name}`,
@@ -361,7 +361,7 @@ export default {
           }
         }, 1000);
         
-        const response = await axios.post('/api/material-planning/generate', payload);
+        const response = await axios.post('/material-planning/generate', payload);
         
         clearInterval(progressInterval);
         this.progress = 100;

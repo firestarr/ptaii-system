@@ -18,6 +18,7 @@ use App\Http\Controllers\Api\Inventory\StockAdjustmentController;
 use App\Http\Controllers\Api\Inventory\CycleCountingController;
 use App\Http\Controllers\Api\Inventory\ItemStockController;
 use App\Http\Controllers\Api\UserController;
+use App\Http\Controllers\Api\MaterialPlanningController;
 
 // purchase order
 use App\Http\Controllers\Api\VendorController;
@@ -340,38 +341,22 @@ Route::get('purchase-orders/reports/outstanding-items', [PurchaseOrderController
 
     // Sales Forecast routes
     Route::prefix('forecasts')->group(function () {
-        // Mendapatkan daftar semua forecast
-        Route::get('/', [SalesForecastController::class, 'index']);
-        
-        // Membuat forecast baru secara manual
-        Route::post('/', [SalesForecastController::class, 'store']);
-        
-        // Mendapatkan detail forecast
-        Route::get('/{id}', [SalesForecastController::class, 'show']);
-        
-        // Mengupdate forecast (membuat versi baru)
-        Route::put('/{id}', [SalesForecastController::class, 'update']);
-        
-        // Menghapus forecast
-        Route::delete('/{id}', [SalesForecastController::class, 'destroy']);
-        
-        // Import forecast dari CSV
+        // First define the specific named routes
+        Route::get('/accuracy', [SalesForecastController::class, 'getForecastAccuracy']);
+        Route::get('/consolidated', [SalesForecastController::class, 'getConsolidatedForecast']);
+        Route::get('/history', [SalesForecastController::class, 'getForecastHistory']);
         Route::post('/import', [SalesForecastController::class, 'importCustomerForecasts']);
-        
-        // Generate forecast berdasarkan data historis
         Route::post('/generate', [SalesForecastController::class, 'generateForecasts']);
-        
-        // Update nilai aktual
         Route::post('/update-actuals', [SalesForecastController::class, 'updateActuals']);
         
-        // Mendapatkan metrik akurasi forecast
-        Route::get('/accuracy', [SalesForecastController::class, 'getForecastAccuracy']);
+        // Then define the generic routes
+        Route::get('/', [SalesForecastController::class, 'index']);
+        Route::post('/', [SalesForecastController::class, 'store']);
         
-        // Mendapatkan tampilan forecast konsolidasi 6 bulan
-        Route::get('/consolidated', [SalesForecastController::class, 'getConsolidatedForecast']);
-        
-        // Mendapatkan riwayat forecast untuk item, customer, dan periode tertentu
-        Route::get('/history', [SalesForecastController::class, 'getForecastHistory']);
+        // Finally define the parameter routes that will capture anything else
+        Route::get('/{id}', [SalesForecastController::class, 'show']);
+        Route::put('/{id}', [SalesForecastController::class, 'update']);
+        Route::delete('/{id}', [SalesForecastController::class, 'destroy']);
     });
 
     // Routes untuk Outstanding Sales Order
@@ -508,26 +493,12 @@ Route::get('purchase-orders/reports/outstanding-items', [PurchaseOrderController
     Route::post('/material-planning/purchase-requisition', [MaterialPlanningController::class, 'generatePurchaseRequisitions']);
     Route::post('/material-planning/max-production', [MaterialPlanningController::class, 'calculateMaximumProduction']);
     // Tambahkan route untuk list material plans jika diperlukan
-    Route::get('/material-planning', function (Request $request) {
-        // Logika untuk menampilkan material plans dalam bentuk list
-        $query = MaterialPlan::query();
-        
-        if ($request->has('period')) {
-            $query->where('planning_period', $request->period);
-        }
-        
-        if ($request->has('material_type')) {
-            $query->where('material_type', $request->material_type);
-        }
-        
-        if ($request->has('status')) {
-            $query->where('status', $request->status);
-        }
-        
-        $materialPlans = $query->with('item')->orderBy('planning_period', 'desc')->paginate(10);
-        
-        return response()->json($materialPlans);
-    });
+    Route::get('/material-planning', [MaterialPlanningController::class, 'index']);
+
+    Route::delete('/material-planning/{id}', [MaterialPlanningController::class, 'destroy']);
+
+    // Add GET route for single material plan
+    Route::get('/material-planning/{id}', [MaterialPlanningController::class, 'show']);
 
     Route::get('items/{id}/prices-in-currencies', 'App\Http\Controllers\Api\Inventory\ItemController@getPricesInCurrencies');
     Route::get('customers/{id}/transactions-in-currency', 'App\Http\Controllers\Api\Sales\CustomerController@getTransactionsInCurrency');

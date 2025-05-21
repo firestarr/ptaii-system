@@ -90,21 +90,24 @@
               <tbody>
                 <tr v-for="(line, index) in rfq.lines" :key="index">
                   <td>
-                    <div class="item-selection">
-                      <select 
-                        v-model="line.item_id" 
+                    <div class="custom-dropdown">
+                      <input
+                        type="text"
                         class="form-control"
+                        v-model="line.itemSearch"
+                        placeholder="Search for an item..."
+                        @focus="showDropdown(index)"
+                        @input="showDropdown(index)"
+                        @blur="hideDropdown(index)"
                         required
-                      >
-                        <option value="" disabled>Select Item</option>
-                        <option 
-                          v-for="item in items" 
-                          :key="item.item_id" 
-                          :value="item.item_id"
-                        >
+                      />
+                      <div v-show="line.showDropdown" class="custom-dropdown-menu" :style="{ minWidth: '300px', maxWidth: '450px' }">
+                        <div v-for="item in filteredItems(line.itemSearch)" :key="item.item_id" 
+                          @mousedown="selectItem(line, item)" class="dropdown-item">
                           {{ item.item_code }} - {{ item.name }}
-                        </option>
-                      </select>
+                        </div>
+                        <div v-if="filteredItems(line.itemSearch).length === 0" class="dropdown-item text-muted">No items found</div>
+                      </div>
                       <small v-if="line.item" class="item-description">
                         {{ line.item.description }}
                       </small>
@@ -180,49 +183,6 @@
           </button>
         </div>
       </form>
-  
-      <!-- Item Selection Modal -->
-      <div v-if="showItemModal" class="modal">
-        <div class="modal-backdrop" @click="closeItemModal"></div>
-        <div class="modal-content">
-          <div class="modal-header">
-            <h2>Select Item</h2>
-            <button class="close-btn" @click="closeItemModal">
-              <i class="fas fa-times"></i>
-            </button>
-          </div>
-          <div class="modal-body">
-            <div class="search-box">
-              <i class="fas fa-search search-icon"></i>
-              <input 
-                type="text" 
-                v-model="itemSearch" 
-                placeholder="Search items..." 
-                class="form-control"
-              />
-            </div>
-            
-            <div class="items-list">
-              <div v-if="filteredItems.length === 0" class="empty-items">
-                <p>No items found matching your search criteria.</p>
-              </div>
-              
-              <div v-else class="items-grid">
-                <div 
-                  v-for="item in filteredItems" 
-                  :key="item.item_id" 
-                  class="item-card"
-                  @click="selectItem(item)"
-                >
-                  <div class="item-code">{{ item.item_code }}</div>
-                  <div class="item-name">{{ item.name }}</div>
-                  <div class="item-description">{{ item.description }}</div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
     </div>
   </template>
   
@@ -259,14 +219,18 @@
         return !!this.id;
       },
       filteredItems() {
-        if (!this.itemSearch) return this.items;
-        
-        const search = this.itemSearch.toLowerCase();
-        return this.items.filter(item => 
-          item.item_code.toLowerCase().includes(search) || 
-          item.name.toLowerCase().includes(search) ||
-          (item.description && item.description.toLowerCase().includes(search))
-        );
+        return (search) => {
+          if (!search) {
+            return this.items;
+          }
+          
+          const searchLower = search.toLowerCase();
+          return this.items.filter(item => 
+            item.item_code.toLowerCase().includes(searchLower) || 
+            item.name.toLowerCase().includes(searchLower) ||
+            (item.description && item.description.toLowerCase().includes(searchLower))
+          );
+        }
       }
     },
     async mounted() {
@@ -279,6 +243,9 @@
         
         if (this.isEditing) {
           await this.loadRFQ();
+        } else {
+          // Add empty line for new RFQ
+          this.addLine();
         }
       } catch (error) {
         console.error('Error initializing form:', error);
@@ -288,6 +255,39 @@
       }
     },
     methods: {
+      // Methods for searchable dropdown
+      showDropdown(index) {
+        if (!this.rfq.lines[index].showDropdown) {
+          this.rfq.lines[index].showDropdown = true;
+        }
+      },
+      hideDropdown(index) {
+        setTimeout(() => {
+          this.rfq.lines[index].showDropdown = false;
+        }, 200);
+      },
+      selectItem(line, item) {
+        line.item_id = item.item_id;
+        line.itemSearch = `${item.item_code} - ${item.name}`;
+        line.item = item;
+        line.showDropdown = false;
+        
+        // Auto-fill UOM based on item's default UOM
+        if (item.unitOfMeasure && item.unitOfMeasure.uom_id) {
+          line.uom_id = item.unitOfMeasure.uom_id;
+        } else if (item.uom_id) {
+          // Direct UOM ID reference
+          line.uom_id = item.uom_id;
+        } else if (item.default_uom_id) {
+          // Try another possible property name
+          line.uom_id = item.default_uom_id;
+        }
+        
+        // For debugging - remove in production
+        console.log('Selected item:', item);
+        console.log('UOM set to:', line.uom_id);
+      },
+
       async loadItems() {
         try {
           const response = await axios.get('/items', {
@@ -328,14 +328,23 @@
               validity_date: this.formatDateForInput(rfqData.validity_date),
               status: rfqData.status,
               notes: rfqData.notes || '',
-              lines: rfqData.lines.map(line => ({
-                line_id: line.line_id,
-                item_id: line.item_id,
-                quantity: line.quantity,
-                uom_id: line.uom_id,
-                required_date: this.formatDateForInput(line.required_date),
-                item: line.item
-              }))
+              lines: rfqData.lines.map(line => {
+                // Find matching item to get its name
+                const matchedItem = this.items.find(item => item.item_id === line.item_id);
+                const itemDisplay = matchedItem ? 
+                  `${matchedItem.item_code} - ${matchedItem.name}` : '';
+                
+                return {
+                  line_id: line.line_id,
+                  item_id: line.item_id,
+                  itemSearch: itemDisplay,  // Add itemSearch property for display
+                  quantity: line.quantity,
+                  uom_id: line.uom_id,
+                  required_date: this.formatDateForInput(line.required_date),
+                  item: matchedItem,
+                  showDropdown: false  // Add dropdown visibility property
+                };
+              })
             };
           } else {
             throw new Error(response.data.message || 'Failed to load RFQ data');
@@ -355,36 +364,16 @@
       addLine() {
         this.rfq.lines.push({
           item_id: '',
+          itemSearch: '',
           quantity: 1,
           uom_id: '',
           required_date: '',
-          item: null
+          item: null,
+          showDropdown: false
         });
       },
       removeLine(index) {
         this.rfq.lines.splice(index, 1);
-      },
-      openItemModal(index) {
-        this.currentLineIndex = index;
-        this.showItemModal = true;
-      },
-      closeItemModal() {
-        this.showItemModal = false;
-        this.itemSearch = '';
-        this.currentLineIndex = null;
-      },
-      selectItem(item) {
-        if (this.currentLineIndex !== null) {
-          this.rfq.lines[this.currentLineIndex].item_id = item.item_id;
-          this.rfq.lines[this.currentLineIndex].item = item;
-          
-          // If the item has a default UOM, select it
-          if (item.uom_id) {
-            this.rfq.lines[this.currentLineIndex].uom_id = item.uom_id;
-          }
-        }
-        
-        this.closeItemModal();
       },
       async saveRFQ() {
         // Validate form
@@ -627,6 +616,47 @@
     vertical-align: middle;
   }
   
+  /* Custom Dropdown Styles - Added for searchable dropdown */
+  .custom-dropdown {
+    position: relative;
+    width: 100%;
+  }
+  
+  .custom-dropdown-menu {
+    position: fixed; /* Use fixed instead of absolute */
+    z-index: 9999;
+    display: block;
+    width: 100%;
+    max-height: 250px;
+    overflow-y: auto;
+    padding: 0.5rem 0;
+    margin: 0.125rem 0 0;
+    background-color: #fff;
+    border: 1px solid rgba(0, 0, 0, 0.15);
+    border-radius: 0.25rem;
+    box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.175);
+  }
+  
+  .dropdown-item {
+    display: block;
+    width: 100%;
+    padding: 0.5rem 1rem;
+    clear: both;
+    font-weight: 400;
+    color: #212529;
+    text-align: left;
+    white-space: nowrap;
+    background-color: transparent;
+    border: 0;
+    cursor: pointer;
+  }
+  
+  .dropdown-item:hover {
+    color: #16181b;
+    text-decoration: none;
+    background-color: #f8f9fa;
+  }
+  
   .item-selection {
     display: flex;
     flex-direction: column;
@@ -723,139 +753,13 @@
     margin-top: 1rem;
   }
   
-  /* Modal Styles */
-  .modal {
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    z-index: 50;
-    display: flex;
-    justify-content: center;
-    align-items: center;
+  /* Make dropdown appear above other elements */
+  .table-responsive {
+    overflow: visible !important;
   }
   
-  .modal-backdrop {
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background-color: rgba(0, 0, 0, 0.5);
-    z-index: 50;
-  }
-  
-  .modal-content {
-    background-color: white;
-    border-radius: 0.5rem;
-    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-    width: 100%;
-    max-width: 600px;
-    max-height: 80vh;
-    z-index: 60;
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-  }
-  
-  .modal-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 1rem 1.5rem;
-    border-bottom: 1px solid #e2e8f0;
-  }
-  
-  .modal-header h2 {
-    font-size: 1.25rem;
-    font-weight: 600;
-    margin: 0;
-    color: #1e293b;
-  }
-  
-  .close-btn {
-    background: none;
-    border: none;
-    color: #64748b;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 0.25rem;
-    border-radius: 0.25rem;
-  }
-  
-  .close-btn:hover {
-    background-color: #f1f5f9;
-    color: #0f172a;
-  }
-  
-  .modal-body {
-    padding: 1.5rem;
-    overflow-y: auto;
-    flex: 1;
-  }
-  
-  .search-box {
-    position: relative;
-    margin-bottom: 1rem;
-  }
-  
-  .search-icon {
-    position: absolute;
-    left: 0.75rem;
-    top: 50%;
-    transform: translateY(-50%);
-    color: var(--gray-500);
-  }
-  
-  .search-box input {
-    width: 100%;
-    padding: 0.625rem 2.25rem;
-  }
-  
-  .items-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
-    gap: 1rem;
-    margin-top: 1rem;
-  }
-  
-  .item-card {
-    border: 1px solid var(--gray-200);
-    border-radius: 0.375rem;
-    padding: 1rem;
-    cursor: pointer;
-    transition: all 0.2s;
-  }
-  
-  .item-card:hover {
-    border-color: var(--primary-color);
-    background-color: rgba(37, 99, 235, 0.05);
-  }
-  
-  .item-code {
-    font-weight: 600;
-    color: var(--gray-800);
-    margin-bottom: 0.25rem;
-  }
-  
-  .item-name {
-    font-size: 0.875rem;
-    color: var(--gray-700);
-    margin-bottom: 0.25rem;
-  }
-  
-  .item-description {
-    font-size: 0.75rem;
-    color: var(--gray-500);
-  }
-  
-  .empty-items {
-    text-align: center;
-    padding: 2rem 0;
-    color: var(--gray-500);
+  .text-muted {
+    color: #6c757d;
   }
   
   @media (max-width: 768px) {

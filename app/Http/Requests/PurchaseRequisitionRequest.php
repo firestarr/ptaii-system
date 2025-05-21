@@ -15,7 +15,7 @@ class PurchaseRequisitionRequest extends FormRequest
     {
         return [
             'pr_date' => 'required|date',
-            'requester_id' => 'required|exists:users,user_id',
+            'requester_id' => 'required|exists:users,id',
             'notes' => 'nullable|string',
             'lines' => 'required|array|min:1',
             'lines.*.item_id' => 'required|exists:items,item_id',

@@ -387,7 +387,9 @@ export default {
     },
     async fetchItems() {
       try {
-        const response = await axios.get('/items');
+        const response = await axios.get('/items', {
+            params: { sellable: true }
+          });
         this.items = response.data.data || [];
       } catch (error) {
         console.error('Error fetching items:', error);
@@ -414,7 +416,7 @@ export default {
         formData.append('customer_id', this.importForm.customer_id);
         formData.append('forecast_issue_date', this.importForm.forecast_issue_date);
         formData.append('csv_file', this.importForm.csv_file);
-        formData.append('fill_missing_periods', this.importForm.fill_missing_periods);
+        formData.append('fill_missing_periods', this.importForm.fill_missing_periods ? 1 : 0);
 
         const response = await axios.post('/forecasts/import', formData, {
           headers: {

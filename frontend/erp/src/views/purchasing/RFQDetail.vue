@@ -13,9 +13,9 @@
               <i class="fas fa-ellipsis-v"></i> Actions
             </button>
             <div class="dropdown-menu" v-if="showActionMenu">
-              <router-link 
+            <router-link 
                 v-if="rfq.status === 'draft'" 
-                :to="`/purchasing/rfqs/${rfqId}/edit`" 
+                :to="`/purchasing/rfqs/${id}/edit`" 
                 class="dropdown-item"
               >
                 <i class="fas fa-edit"></i> Edit RFQ
@@ -23,7 +23,7 @@
               
               <router-link 
                 v-if="rfq.status === 'draft'" 
-                :to="`/purchasing/rfqs/${rfqId}/send`" 
+                :to="`/purchasing/rfqs/${id}/send`" 
                 class="dropdown-item"
               >
                 <i class="fas fa-paper-plane"></i> Send to Vendors
@@ -31,7 +31,7 @@
               
               <router-link 
                 v-if="rfq.status === 'sent' && hasQuotations" 
-                :to="`/purchasing/rfqs/${rfqId}/compare`" 
+                :to="`/purchasing/rfqs/${id}/compare`" 
                 class="dropdown-item"
               >
                 <i class="fas fa-balance-scale"></i> Compare Quotations
@@ -197,7 +197,7 @@
               </p>
               
               <div class="empty-actions" v-if="rfq.status === 'draft'">
-                <router-link :to="`/purchasing/rfqs/${rfqId}/send`" class="btn btn-primary">
+                <router-link :to="`/purchasing/rfqs/${id}/send`" class="btn btn-primary">
                   <i class="fas fa-paper-plane"></i> Send to Vendors
                 </router-link>
               </div>
@@ -245,7 +245,7 @@
               </div>
               
               <div class="quotations-actions" v-if="hasQuotations && rfq.status === 'sent'">
-                <router-link :to="`/purchasing/rfqs/${rfqId}/compare`" class="btn btn-primary">
+                <router-link :to="`/purchasing/rfqs/${id}/compare`" class="btn btn-primary">
                   <i class="fas fa-balance-scale"></i> Compare Quotations
                 </router-link>
               </div>
@@ -318,10 +318,10 @@
   <script>
   import axios from 'axios';
   
-  export default {
+export default {
     name: 'RFQDetail',
     props: {
-      rfqId: {
+      id: {
         type: [Number, String],
         required: true
       }
@@ -356,7 +356,7 @@
         this.loading = true;
         
         try {
-          const response = await axios.get(`/request-for-quotations/${this.rfqId}`);
+          const response = await axios.get(`/request-for-quotations/${this.id}`);
           
           if (response.data.status === 'success' && response.data.data) {
             this.rfq = response.data.data;
@@ -444,7 +444,7 @@
         this.isUpdating = true;
         
         try {
-          const response = await axios.patch(`/request-for-quotations/${this.rfqId}/status`, {
+          const response = await axios.patch(`/request-for-quotations/${this.id}/status`, {
             status: this.newStatus
           });
           
@@ -474,7 +474,7 @@
       },
       async deleteRfq() {
         try {
-          const response = await axios.delete(`/request-for-quotations/${this.rfqId}`);
+          const response = await axios.delete(`/request-for-quotations/${this.id}`);
           
           if (response.data.status === 'success') {
             this.$toast.success('RFQ deleted successfully');
