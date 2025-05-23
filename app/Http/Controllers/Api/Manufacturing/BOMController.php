@@ -30,6 +30,11 @@ class BOMController extends Controller
             $query->where('status', $request->status);
         }
 
+        // Filtering by item_id
+        if ($request->has('item_id') && $request->item_id !== '') {
+            $query->where('item_id', $request->item_id);
+        }
+
         // Search by bom_code or item name
         if ($request->has('search') && $request->search !== '') {
             $search = $request->search;

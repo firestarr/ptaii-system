@@ -24,9 +24,13 @@ class ProductionOrderController extends Controller
      *
      * @return \Illuminate\Http\Response
      */
-    public function index()
+    public function index(Request $request)
     {
-        $productionOrders = ProductionOrder::with(['workOrder.item'])->get();
+        $query = ProductionOrder::with(['workOrder.item']);
+        if ($request->has('wo_id')) {
+            $query->where('wo_id', $request->wo_id);
+        }
+        $productionOrders = $query->get();
         return response()->json(['data' => $productionOrders]);
     }
 
@@ -54,6 +58,17 @@ class ProductionOrderController extends Controller
 
         if ($validator->fails()) {
             return response()->json(['errors' => $validator->errors()], 422);
+        }
+
+        // Additional validation: planned_quantity must not exceed work order planned_quantity considering existing production orders
+        $workOrder = WorkOrder::find($request->wo_id);
+        if (!$workOrder) {
+            return response()->json(['errors' => ['wo_id' => ['Work order not found']]], 422);
+        }
+        $existingPlannedQtySum = ProductionOrder::where('wo_id', $request->wo_id)->sum('planned_quantity');
+        $totalPlannedQty = $existingPlannedQtySum + $request->planned_quantity;
+        if ($totalPlannedQty > $workOrder->planned_quantity) {
+            return response()->json(['errors' => ['planned_quantity' => ['Planned quantity exceeds the remaining quantity of the work order. Remaining quantity: ' . ($workOrder->planned_quantity - $existingPlannedQtySum)]]], 422);
         }
 
         DB::beginTransaction();
@@ -179,6 +194,21 @@ class ProductionOrderController extends Controller
 
         if ($validator->fails()) {
             return response()->json(['errors' => $validator->errors()], 422);
+        }
+
+        // Additional validation: planned_quantity must not exceed work order planned_quantity considering existing production orders
+        if ($request->has('planned_quantity')) {
+            $workOrder = WorkOrder::find($productionOrder->wo_id);
+            if (!$workOrder) {
+                return response()->json(['errors' => ['wo_id' => ['Work order not found']]], 422);
+            }
+            $existingPlannedQtySum = ProductionOrder::where('wo_id', $productionOrder->wo_id)
+                ->where('production_id', '!=', $productionOrder->production_id)
+                ->sum('planned_quantity');
+            $totalPlannedQty = $existingPlannedQtySum + $request->planned_quantity;
+            if ($totalPlannedQty > $workOrder->planned_quantity) {
+                return response()->json(['errors' => ['planned_quantity' => ['Planned quantity exceeds the remaining quantity of the work order. Remaining quantity: ' . ($workOrder->planned_quantity - $existingPlannedQtySum)]]], 422);
+            }
         }
 
         DB::beginTransaction();

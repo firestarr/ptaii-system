@@ -1,870 +1,1003 @@
-<!-- src/views/sales/SalesForecastDetail.vue -->
 <template>
-    <div class="forecast-detail">
-        <div class="page-header">
-            <div class="header-left">
-                <button class="btn btn-secondary btn-sm" @click="goBack">
-                    <i class="fas fa-arrow-left"></i> Back to List
-                </button>
-                <h1 v-if="forecast">Forecast Details</h1>
-            </div>
-            <div class="header-actions" v-if="forecast">
-                <button class="btn btn-primary" @click="editForecast">
-                    <i class="fas fa-edit"></i> Edit Forecast
-                </button>
-            </div>
+  <div class="forecast-detail-container">
+    <div class="page-header">
+      <div class="header-left">
+        <button 
+          type="button" 
+          class="btn btn-secondary btn-back" 
+          @click="$router.go(-1)"
+        >
+          <i class="fas fa-arrow-left"></i>
+          Back
+        </button>
+        <div class="header-title">
+          <h1>Sales Forecast Details</h1>
+          <div class="forecast-period" v-if="forecast">
+            {{ formatPeriod(forecast.forecast_period) }}
+          </div>
         </div>
-
-        <div v-if="isLoading" class="loading-container">
-            <i class="fas fa-spinner fa-spin"></i> Loading forecast details...
-        </div>
-
-        <div v-else-if="!forecast" class="not-found">
-            <div class="not-found-icon">
-                <i class="fas fa-exclamation-triangle"></i>
-            </div>
-            <h2>Forecast Not Found</h2>
-            <p>
-                The forecast you're looking for doesn't exist or you don't have
-                permission to view it.
-            </p>
-            <button class="btn btn-primary" @click="goBack">
-                Go Back to List
-            </button>
-        </div>
-
-        <div v-else class="forecast-container">
-            <!-- Forecast Header -->
-            <div class="card forecast-info">
-                <div class="card-header">
-                    <h3>Forecast Information</h3>
-                </div>
-                <div class="card-body">
-                    <div class="info-grid">
-                        <div class="info-item">
-                            <div class="info-label">Period</div>
-                            <div class="info-value">
-                                {{
-                                    formatDate(
-                                        forecast.forecast_period,
-                                        "MMMM yyyy"
-                                    )
-                                }}
-                            </div>
-                        </div>
-                        <div class="info-item">
-                            <div class="info-label">Customer</div>
-                            <div class="info-value">
-                                {{ forecast.customer.name }}
-                            </div>
-                        </div>
-                        <div class="info-item">
-                            <div class="info-label">Item</div>
-                            <div class="info-value">
-                                {{ forecast.item.name }}
-                            </div>
-                        </div>
-                        <div class="info-item">
-                            <div class="info-label">Item Code</div>
-                            <div class="info-value">
-                                {{ forecast.item.item_code }}
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Forecast Metrics -->
-            <div class="row metrics-container">
-                <div class="card metric-card">
-                    <div class="metric-title">Forecast Quantity</div>
-                    <div class="metric-value">
-                        {{ formatNumber(forecast.forecast_quantity) }}
-                    </div>
-                    <div class="metric-label">Units</div>
-                </div>
-
-                <div class="card metric-card">
-                    <div class="metric-title">Actual Quantity</div>
-                    <div
-                        class="metric-value"
-                        :class="{
-                            'text-muted': forecast.actual_quantity === null,
-                        }"
-                    >
-                        {{
-                            forecast.actual_quantity !== null
-                                ? formatNumber(forecast.actual_quantity)
-                                : "Pending"
-                        }}
-                    </div>
-                    <div class="metric-label">Units</div>
-                </div>
-
-                <div class="card metric-card">
-                    <div class="metric-title">Variance</div>
-                    <div
-                        class="metric-value"
-                        :class="getVarianceClass(forecast.variance)"
-                    >
-                        <template v-if="forecast.actual_quantity !== null">
-                            {{ formatNumber(forecast.variance) }}
-                            <i
-                                v-if="forecast.variance > 0"
-                                class="fas fa-arrow-up"
-                            ></i>
-                            <i
-                                v-else-if="forecast.variance < 0"
-                                class="fas fa-arrow-down"
-                            ></i>
-                        </template>
-                        <template v-else>Pending</template>
-                    </div>
-                    <div class="metric-label">Units</div>
-                </div>
-
-                <div class="card metric-card">
-                    <div class="metric-title">Accuracy</div>
-                    <div
-                        class="metric-value"
-                        :class="getAccuracyClass(forecast)"
-                    >
-                        <template v-if="forecast.actual_quantity !== null">
-                            {{ calculateAccuracy(forecast) }}%
-                        </template>
-                        <template v-else>Pending</template>
-                    </div>
-                    <div class="metric-label">Percentage</div>
-                </div>
-            </div>
-
-            <!-- Historical Data Chart -->
-            <div class="card chart-container" v-if="hasHistoricalData">
-                <div class="card-header">
-                    <h3>Historical Performance</h3>
-                </div>
-                <div class="card-body">
-                    <div class="chart-wrapper">
-                        <!-- Chart will be rendered here -->
-                        <canvas ref="chartCanvas"></canvas>
-                    </div>
-                    <div class="chart-legend">
-                        <div class="legend-item">
-                            <div
-                                class="legend-color"
-                                style="background-color: rgba(37, 99, 235, 0.5)"
-                            ></div>
-                            <div>Forecast</div>
-                        </div>
-                        <div class="legend-item">
-                            <div
-                                class="legend-color"
-                                style="background-color: rgba(5, 150, 105, 0.5)"
-                            ></div>
-                            <div>Actual</div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Related Sales Data -->
-            <div class="card related-sales">
-                <div class="card-header">
-                    <h3>Related Sales</h3>
-                </div>
-                <div class="card-body">
-                    <div v-if="isLoadingSales" class="loading-indicator">
-                        <i class="fas fa-spinner fa-spin"></i> Loading sales
-                        data...
-                    </div>
-                    <div v-else-if="salesData.length === 0" class="empty-state">
-                        <p>No related sales data found for this period.</p>
-                    </div>
-                    <table v-else class="data-table">
-                        <thead>
-                            <tr>
-                                <th>Invoice #</th>
-                                <th>Date</th>
-                                <th>Quantity</th>
-                                <th>Amount</th>
-                                <th>Status</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr
-                                v-for="sale in salesData"
-                                :key="sale.invoice_id"
-                            >
-                                <td>{{ sale.invoice_number }}</td>
-                                <td>{{ formatDate(sale.invoice_date) }}</td>
-                                <td>{{ formatNumber(sale.quantity) }}</td>
-                                <td>{{ formatCurrency(sale.amount) }}</td>
-                                <td>
-                                    <span
-                                        class="status-badge"
-                                        :class="getStatusClass(sale.status)"
-                                    >
-                                        {{ sale.status }}
-                                    </span>
-                                </td>
-                            </tr>
-                        </tbody>
-                        <tfoot>
-                            <tr>
-                                <td colspan="2" class="total-label">Total</td>
-                                <td>{{ formatNumber(totalSalesQuantity) }}</td>
-                                <td>{{ formatCurrency(totalSalesAmount) }}</td>
-                                <td></td>
-                            </tr>
-                        </tfoot>
-                    </table>
-                </div>
-            </div>
-        </div>
-
-        <!-- Edit Forecast Modal -->
-        <SalesForecastFormModal
-            v-if="showEditModal"
-            :is-edit-mode="true"
-            :forecast-data="forecast"
-            :customers="[forecast.customer]"
-            :items="[forecast.item]"
-            @close="closeEditModal"
-            @save="saveForecast"
-        />
+      </div>
+      <div class="header-actions" v-if="forecast">
+        <router-link 
+          v-if="forecast.is_current_version"
+          :to="`/sales/forecasts/${forecast.forecast_id}/edit`"
+          class="btn btn-warning"
+        >
+          <i class="fas fa-edit"></i>
+          Edit Forecast
+        </router-link>
+        <button 
+          v-if="forecast.is_current_version"
+          @click="confirmDelete"
+          class="btn btn-danger"
+        >
+          <i class="fas fa-trash"></i>
+          Delete
+        </button>
+      </div>
     </div>
+
+    <div v-if="isLoading" class="loading-state">
+      <i class="fas fa-spinner fa-spin"></i>
+      Loading forecast details...
+    </div>
+
+    <div v-else-if="forecast" class="content-grid">
+      <!-- Main Forecast Information -->
+      <div class="card main-info">
+        <div class="card-header">
+          <h3>Forecast Information</h3>
+          <div class="version-badge" :class="forecast.is_current_version ? 'current' : 'old'">
+            {{ forecast.is_current_version ? 'Current Version' : 'Old Version' }}
+          </div>
+        </div>
+        <div class="card-body">
+          <div class="info-grid">
+            <div class="info-item">
+              <label>Customer</label>
+              <div class="customer-info">
+                <div class="customer-name">{{ forecast.customer?.name }}</div>
+                <div class="customer-code">{{ forecast.customer?.customer_code }}</div>
+              </div>
+            </div>
+            
+            <div class="info-item">
+              <label>Item</label>
+              <div class="item-info">
+                <div class="item-name">{{ forecast.item?.name }}</div>
+                <div class="item-code">{{ forecast.item?.item_code }}</div>
+              </div>
+            </div>
+            
+            <div class="info-item">
+              <label>Forecast Period</label>
+              <div class="forecast-period-display">
+                {{ formatPeriod(forecast.forecast_period) }}
+              </div>
+            </div>
+            
+            <div class="info-item">
+              <label>Forecast Source</label>
+              <span class="source-badge" :class="getSourceClass(forecast.forecast_source)">
+                {{ forecast.forecast_source }}
+              </span>
+            </div>
+            
+            <div class="info-item">
+              <label>Confidence Level</label>
+              <div class="confidence-display">
+                <div class="confidence-bar">
+                  <div 
+                    class="confidence-fill"
+                    :style="{ width: (forecast.confidence_level * 100) + '%' }"
+                  ></div>
+                </div>
+                <span class="confidence-text">
+                  {{ formatPercentage(forecast.confidence_level) }}
+                </span>
+              </div>
+            </div>
+            
+            <div class="info-item">
+              <label>Issue Date</label>
+              <div>{{ formatDate(forecast.forecast_issue_date) }}</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Quantity & Variance Information -->
+      <div class="card quantities-info">
+        <div class="card-header">
+          <h3>Quantities & Performance</h3>
+        </div>
+        <div class="card-body">
+          <div class="quantities-grid">
+            <div class="quantity-card forecast-qty">
+              <div class="quantity-icon">
+                <i class="fas fa-chart-line"></i>
+              </div>
+              <div class="quantity-info">
+                <div class="quantity-label">Forecast Quantity</div>
+                <div class="quantity-value">{{ formatNumber(forecast.forecast_quantity) }}</div>
+              </div>
+            </div>
+            
+            <div class="quantity-card actual-qty">
+              <div class="quantity-icon">
+                <i class="fas fa-check-circle"></i>
+              </div>
+              <div class="quantity-info">
+                <div class="quantity-label">Actual Quantity</div>
+                <div class="quantity-value">
+                  {{ forecast.actual_quantity !== null ? formatNumber(forecast.actual_quantity) : 'Not Available' }}
+                </div>
+              </div>
+            </div>
+            
+            <div class="quantity-card variance-qty" v-if="forecast.variance !== null">
+              <div class="quantity-icon" :class="getVarianceIconClass(forecast.variance)">
+                <i class="fas" :class="getVarianceIcon(forecast.variance)"></i>
+              </div>
+              <div class="quantity-info">
+                <div class="quantity-label">Variance</div>
+                <div class="quantity-value" :class="getVarianceClass(forecast.variance)">
+                  {{ formatNumber(forecast.variance) }}
+                </div>
+                <div class="quantity-percentage" :class="getVarianceClass(forecast.variance)">
+                  {{ formatVariancePercentage(forecast.variance, forecast.forecast_quantity) }}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Accuracy Assessment -->
+          <div v-if="forecast.variance !== null" class="accuracy-assessment">
+            <h4>Accuracy Assessment</h4>
+            <div class="accuracy-info">
+              <div class="accuracy-item">
+                <label>Absolute Error</label>
+                <span>{{ formatNumber(Math.abs(forecast.variance)) }}</span>
+              </div>
+              <div class="accuracy-item">
+                <label>Accuracy Rating</label>
+                <span class="accuracy-rating" :class="getAccuracyClass(forecast.variance, forecast.forecast_quantity)">
+                  {{ getAccuracyRating(forecast.variance, forecast.forecast_quantity) }}
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Version History -->
+      <div class="card version-history" v-if="versionHistory.length > 1">
+        <div class="card-header">
+          <h3>Version History</h3>
+          <button @click="loadVersionHistory" class="btn btn-sm btn-secondary">
+            <i class="fas fa-sync-alt"></i>
+            Refresh
+          </button>
+        </div>
+        <div class="card-body">
+          <div class="version-timeline">
+            <div 
+              v-for="(version, index) in versionHistory" 
+              :key="version.forecast_id"
+              class="version-item"
+              :class="{ 'current-version': version.is_current_version }"
+            >
+              <div class="version-marker">
+                <i class="fas fa-circle"></i>
+              </div>
+              <div class="version-content">
+                <div class="version-header">
+                  <span class="version-title">
+                    Version {{ versionHistory.length - index }}
+                    <span v-if="version.is_current_version" class="current-label">(Current)</span>
+                  </span>
+                  <span class="version-date">{{ formatDateTime(version.submission_date) }}</span>
+                </div>
+                <div class="version-details">
+                  <div class="version-detail">
+                    <strong>Forecast:</strong> {{ formatNumber(version.forecast_quantity) }}
+                  </div>
+                  <div class="version-detail" v-if="version.actual_quantity">
+                    <strong>Actual:</strong> {{ formatNumber(version.actual_quantity) }}
+                  </div>
+                  <div class="version-detail">
+                    <strong>Source:</strong> {{ version.forecast_source }}
+                  </div>
+                  <div class="version-detail">
+                    <strong>Confidence:</strong> {{ formatPercentage(version.confidence_level) }}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Related Information -->
+      <div class="card related-info">
+        <div class="card-header">
+          <h3>Related Information</h3>
+        </div>
+        <div class="card-body">
+          <div class="related-links">
+            <router-link 
+              :to="`/sales/customers/${forecast.customer_id}`"
+              class="related-link"
+            >
+              <i class="fas fa-user"></i>
+              View Customer Details
+            </router-link>
+            
+            <router-link 
+              :to="`/items/${forecast.item_id}`"
+              class="related-link"
+            >
+              <i class="fas fa-cube"></i>
+              View Item Details
+            </router-link>
+            
+            <router-link 
+              :to="`/sales/forecasts?customer_id=${forecast.customer_id}&item_id=${forecast.item_id}`"
+              class="related-link"
+            >
+              <i class="fas fa-chart-line"></i>
+              View All Forecasts for this Item-Customer
+            </router-link>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Delete Confirmation Modal -->
+    <ConfirmationModal
+      v-if="showDeleteModal"
+      title="Delete Forecast"
+      :message="`Are you sure you want to delete this forecast? This action cannot be undone.`"
+      confirm-button-text="Delete"
+      confirm-button-class="btn btn-danger"
+      @confirm="deleteForecast"
+      @close="showDeleteModal = false"
+    />
+  </div>
 </template>
 
 <script>
-import { ref, computed, onMounted, nextTick } from "vue";
-import { useRoute, useRouter } from "vue-router";
-import axios from "axios";
-import Chart from "chart.js/auto";
-import SalesForecastFormModal from "../sales/SalesForecastFormModal.vue";
+import axios from 'axios';
 
 export default {
-    name: "SalesForecastDetail",
-    components: {
-        SalesForecastFormModal,
+  name: 'SalesForecastDetail',
+  props: {
+    id: {
+      type: [String, Number],
+      required: true
+    }
+  },
+  data() {
+    return {
+      forecast: null,
+      versionHistory: [],
+      isLoading: false,
+      showDeleteModal: false
+    };
+  },
+  async mounted() {
+    await this.loadForecast();
+    await this.loadVersionHistory();
+  },
+  methods: {
+    async loadForecast() {
+      try {
+        this.isLoading = true;
+        const response = await axios.get(`/forecasts/${this.id}`);
+        this.forecast = response.data.data;
+      } catch (error) {
+        console.error('Error loading forecast:', error);
+        this.$toast?.error('Failed to load forecast details');
+        this.$router.go(-1);
+      } finally {
+        this.isLoading = false;
+      }
     },
-    setup() {
-        const route = useRoute();
-        const router = useRouter();
-        const forecastId = Number(route.params.id);
 
-        const forecast = ref(null);
-        const historicalData = ref([]);
-        const salesData = ref([]);
-        const isLoading = ref(true);
-        const isLoadingSales = ref(true);
-        const showEditModal = ref(false);
-        const chartCanvas = ref(null);
-        const chart = ref(null);
-
-        // Fetch forecast details
-        const fetchForecast = async () => {
-            isLoading.value = true;
-            try {
-                const response = await axios.get(
-                    `/sales-forecasts/${forecastId}`
-                );
-                forecast.value = response.data.data;
-
-                // After loading the main forecast, load the related data
-                fetchHistoricalData();
-                fetchRelatedSales();
-            } catch (error) {
-                console.error("Error fetching forecast:", error);
-                forecast.value = null;
-            } finally {
-                isLoading.value = false;
-            }
-        };
-
-        // Fetch historical forecast and actual data for the same item-customer combination
-        const fetchHistoricalData = async () => {
-            if (!forecast.value) return;
-
-            try {
-                // In a real implementation, you would have an API endpoint to get historical data
-                // This is a mockup that would be replaced with actual API call
-                const response = await axios.get(
-                    "/sales-forecasts/historical",
-                    {
-                        params: {
-                            item_id: forecast.value.item_id,
-                            customer_id: forecast.value.customer_id,
-                            end_period: forecast.value.forecast_period,
-                        },
-                    }
-                );
-
-                historicalData.value = response.data.data || [];
-
-                // After loading the historical data, render the chart
-                nextTick(() => {
-                    renderChart();
-                });
-            } catch (error) {
-                console.error("Error fetching historical data:", error);
-                historicalData.value = [];
-            }
-        };
-
-        // Fetch related sales invoices for this forecast period
-        const fetchRelatedSales = async () => {
-            if (!forecast.value) return;
-
-            isLoadingSales.value = true;
-            try {
-                // In a real implementation, you would have an API endpoint to get sales data
-                // This is a mockup that would be replaced with actual API call
-                const response = await axios.get("/sales-invoices", {
-                    params: {
-                        item_id: forecast.value.item_id,
-                        customer_id: forecast.value.customer_id,
-                        start_date: new Date(
-                            forecast.value.forecast_period
-                        ).toISOString(),
-                        end_date: new Date(
-                            new Date(forecast.value.forecast_period).setMonth(
-                                new Date(
-                                    forecast.value.forecast_period
-                                ).getMonth() + 1
-                            )
-                        ).toISOString(),
-                    },
-                });
-
-                salesData.value = response.data.data || [];
-            } catch (error) {
-                console.error("Error fetching sales data:", error);
-                salesData.value = [];
-            } finally {
-                isLoadingSales.value = false;
-            }
-        };
-
-        // Computed properties
-        const hasHistoricalData = computed(() => {
-            return historicalData.value.length > 0;
+    async loadVersionHistory() {
+      if (!this.forecast) return;
+      
+      try {
+        const response = await axios.get('/forecasts/history', {
+          params: {
+            item_id: this.forecast.item_id,
+            customer_id: this.forecast.customer_id,
+            forecast_period: this.forecast.forecast_period
+          }
         });
-
-        const totalSalesQuantity = computed(() => {
-            return salesData.value.reduce(
-                (sum, sale) => sum + sale.quantity,
-                0
-            );
-        });
-
-        const totalSalesAmount = computed(() => {
-            return salesData.value.reduce((sum, sale) => sum + sale.amount, 0);
-        });
-
-        // Chart rendering
-        const renderChart = () => {
-            if (!chartCanvas.value || !hasHistoricalData.value) return;
-
-            const ctx = chartCanvas.value.getContext("2d");
-
-            // If there's an existing chart, destroy it first
-            if (chart.value) {
-                chart.value.destroy();
-            }
-
-            // Prepare data for the chart
-            const periods = historicalData.value.map((data) =>
-                formatDate(data.forecast_period, "MMM yyyy")
-            );
-
-            const forecastData = historicalData.value.map(
-                (data) => data.forecast_quantity
-            );
-            const actualData = historicalData.value.map(
-                (data) => data.actual_quantity
-            );
-
-            // Create a new chart
-            chart.value = new Chart(ctx, {
-                type: "bar",
-                data: {
-                    labels: periods,
-                    datasets: [
-                        {
-                            label: "Forecast",
-                            data: forecastData,
-                            backgroundColor: "rgba(37, 99, 235, 0.5)",
-                            borderColor: "rgba(37, 99, 235, 1)",
-                            borderWidth: 1,
-                        },
-                        {
-                            label: "Actual",
-                            data: actualData,
-                            backgroundColor: "rgba(5, 150, 105, 0.5)",
-                            borderColor: "rgba(5, 150, 105, 1)",
-                            borderWidth: 1,
-                        },
-                    ],
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    scales: {
-                        y: {
-                            beginAtZero: true,
-                            title: {
-                                display: true,
-                                text: "Quantity",
-                            },
-                        },
-                        x: {
-                            title: {
-                                display: true,
-                                text: "Period",
-                            },
-                        },
-                    },
-                },
-            });
-        };
-
-        // Form handling
-        const editForecast = () => {
-            showEditModal.value = true;
-        };
-
-        const closeEditModal = () => {
-            showEditModal.value = false;
-        };
-
-        const saveForecast = async (updatedForecast) => {
-            try {
-                await axios.put(
-                    `/sales-forecasts/${forecastId}`,
-                    updatedForecast
-                );
-                closeEditModal();
-                fetchForecast(); // Refresh the data
-            } catch (error) {
-                console.error("Error updating forecast:", error);
-                alert("Failed to update forecast. Please try again.");
-            }
-        };
-
-        // Navigation
-        const goBack = () => {
-            router.push("/sales/forecasts");
-        };
-
-        // Formatting and display helpers
-        const formatDate = (dateString, format = "dd/MM/yyyy") => {
-            if (!dateString) return "-";
-
-            const date = new Date(dateString);
-
-            if (format === "MMMM yyyy") {
-                return date.toLocaleDateString("en-US", {
-                    month: "long",
-                    year: "numeric",
-                });
-            } else if (format === "MMM yyyy") {
-                return date.toLocaleDateString("en-US", {
-                    month: "short",
-                    year: "numeric",
-                });
-            }
-
-            return date.toLocaleDateString("en-US");
-        };
-
-        const formatNumber = (value) => {
-            if (value === null || value === undefined) return "-";
-
-            return new Intl.NumberFormat("en-US", {
-                maximumFractionDigits: 2,
-                minimumFractionDigits: 0,
-            }).format(value);
-        };
-
-        const formatCurrency = (value) => {
-            if (value === null || value === undefined) return "-";
-
-            return new Intl.NumberFormat("en-US", {
-                style: "currency",
-                currency: "USD",
-            }).format(value);
-        };
-
-        const getVarianceClass = (variance) => {
-            if (variance === null || variance === undefined) return "";
-
-            if (variance > 0) return "text-success";
-            if (variance < 0) return "text-danger";
-            return "";
-        };
-
-        const calculateAccuracy = (item) => {
-            if (item.actual_quantity === null || item.forecast_quantity === 0)
-                return "-";
-
-            const accuracy =
-                100 - (Math.abs(item.variance) / item.actual_quantity) * 100;
-            return accuracy.toFixed(1);
-        };
-
-        const getAccuracyClass = (item) => {
-            if (item.actual_quantity === null) return "";
-
-            const accuracy = calculateAccuracy(item);
-
-            if (accuracy >= 90) return "text-success";
-            if (accuracy >= 70) return "text-warning";
-            return "text-danger";
-        };
-
-        const getStatusClass = (status) => {
-            switch (status) {
-                case "Paid":
-                    return "status-success";
-                case "Pending":
-                    return "status-warning";
-                case "Overdue":
-                    return "status-danger";
-                default:
-                    return "";
-            }
-        };
-
-        onMounted(() => {
-            fetchForecast();
-        });
-
-        return {
-            forecast,
-            salesData,
-            isLoading,
-            isLoadingSales,
-            showEditModal,
-            chartCanvas,
-            hasHistoricalData,
-            totalSalesQuantity,
-            totalSalesAmount,
-            formatDate,
-            formatNumber,
-            formatCurrency,
-            getVarianceClass,
-            calculateAccuracy,
-            getAccuracyClass,
-            getStatusClass,
-            editForecast,
-            closeEditModal,
-            saveForecast,
-            goBack,
-        };
+        this.versionHistory = response.data.data || [];
+      } catch (error) {
+        console.error('Error loading version history:', error);
+        // Don't show error toast for version history as it's not critical
+        this.versionHistory = [this.forecast]; // Fallback to current forecast only
+      }
     },
+
+    confirmDelete() {
+      this.showDeleteModal = true;
+    },
+
+    async deleteForecast() {
+      try {
+        await axios.delete(`/forecasts/${this.forecast.forecast_id}`);
+        this.$toast?.success('Forecast deleted successfully');
+        this.showDeleteModal = false;
+        this.$router.push('/sales/forecasts');
+      } catch (error) {
+        console.error('Error deleting forecast:', error);
+        this.$toast?.error('Failed to delete forecast');
+      }
+    },
+
+    formatPeriod(date) {
+      if (!date) return '';
+      const d = new Date(date);
+      return d.toLocaleDateString('en-US', { year: 'numeric', month: 'long' });
+    },
+
+    formatDate(date) {
+      if (!date) return 'Not set';
+      const d = new Date(date);
+      return d.toLocaleDateString('en-US', { 
+        year: 'numeric', 
+        month: 'short', 
+        day: 'numeric' 
+      });
+    },
+
+    formatDateTime(date) {
+      if (!date) return 'Not set';
+      const d = new Date(date);
+      return d.toLocaleString('en-US', { 
+        year: 'numeric', 
+        month: 'short', 
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+    },
+
+    formatNumber(value) {
+      if (value === null || value === undefined) return '';
+      return parseFloat(value).toLocaleString('en-US', { 
+        minimumFractionDigits: 0, 
+        maximumFractionDigits: 2 
+      });
+    },
+
+    formatPercentage(value) {
+      if (value === null || value === undefined) return '';
+      return (parseFloat(value) * 100).toFixed(1) + '%';
+    },
+
+    formatVariancePercentage(variance, forecast) {
+      if (!variance || !forecast || forecast === 0) return '';
+      const percentage = (variance / forecast) * 100;
+      return `(${percentage > 0 ? '+' : ''}${percentage.toFixed(1)}%)`;
+    },
+
+    getVarianceClass(variance) {
+      if (variance > 0) return 'text-success';
+      if (variance < 0) return 'text-danger';
+      return 'text-muted';
+    },
+
+    getVarianceIcon(variance) {
+      if (variance > 0) return 'fa-arrow-up';
+      if (variance < 0) return 'fa-arrow-down';
+      return 'fa-minus';
+    },
+
+    getVarianceIconClass(variance) {
+      if (variance > 0) return 'icon-success';
+      if (variance < 0) return 'icon-danger';
+      return 'icon-muted';
+    },
+
+    getSourceClass(source) {
+      const classes = {
+        'Customer': 'source-customer',
+        'System-Manual': 'source-manual',
+        'System-Average': 'source-system',
+        'System-Weighted': 'source-system',
+        'System-Trend': 'source-system'
+      };
+      return classes[source] || 'source-other';
+    },
+
+    getAccuracyRating(variance, forecast) {
+      if (!variance || !forecast) return 'N/A';
+      
+      const percentage = Math.abs(variance / forecast) * 100;
+      
+      if (percentage <= 5) return 'Excellent';
+      if (percentage <= 10) return 'Good';
+      if (percentage <= 20) return 'Fair';
+      if (percentage <= 30) return 'Poor';
+      return 'Very Poor';
+    },
+
+    getAccuracyClass(variance, forecast) {
+      if (!variance || !forecast) return '';
+      
+      const percentage = Math.abs(variance / forecast) * 100;
+      
+      if (percentage <= 5) return 'accuracy-excellent';
+      if (percentage <= 10) return 'accuracy-good';
+      if (percentage <= 20) return 'accuracy-fair';
+      if (percentage <= 30) return 'accuracy-poor';
+      return 'accuracy-very-poor';
+    }
+  }
 };
 </script>
 
 <style scoped>
-.forecast-detail {
-    display: flex;
-    flex-direction: column;
-    gap: 1.5rem;
+.forecast-detail-container {
+  padding: 2rem;
+  max-width: 1400px;
+  margin: 0 auto;
 }
 
 .page-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 1rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 2rem;
 }
 
 .header-left {
-    display: flex;
-    align-items: center;
-    gap: 1rem;
+  display: flex;
+  align-items: flex-start;
+  gap: 1rem;
 }
 
-.page-header h1 {
-    margin: 0;
-    font-size: 1.5rem;
-    color: var(--gray-800);
+.btn-back {
+  margin-top: 0.25rem;
 }
 
-.btn-sm {
-    padding: 0.375rem 0.75rem;
-    font-size: 0.875rem;
+.header-title h1 {
+  margin: 0;
+  color: var(--gray-800);
 }
 
-.loading-container,
-.not-found {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    padding: 4rem 2rem;
-    background-color: white;
-    border-radius: 0.5rem;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-    text-align: center;
+.forecast-period {
+  color: var(--gray-600);
+  font-size: 1.125rem;
+  margin-top: 0.25rem;
 }
 
-.loading-container i {
-    font-size: 2rem;
-    color: var(--primary-color);
-    margin-bottom: 1rem;
+.header-actions {
+  display: flex;
+  gap: 1rem;
 }
 
-.not-found-icon {
-    font-size: 3rem;
-    color: var(--warning-color);
-    margin-bottom: 1rem;
+.loading-state {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 4rem 0;
+  color: var(--gray-500);
+  font-size: 1.125rem;
 }
 
-.not-found h2 {
-    margin-bottom: 1rem;
-    color: var(--gray-800);
+.loading-state i {
+  margin-right: 0.5rem;
+  font-size: 1.5rem;
 }
 
-.not-found p {
-    margin-bottom: 1.5rem;
-    color: var(--gray-600);
-}
-
-.forecast-container {
-    display: flex;
-    flex-direction: column;
-    gap: 1.5rem;
+.content-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2rem;
 }
 
 .card {
-    background-color: white;
-    border-radius: 0.5rem;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-    overflow: hidden;
+  background: white;
+  border-radius: 0.5rem;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  overflow: hidden;
 }
 
 .card-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 1rem 1.5rem;
-    background-color: var(--gray-50);
-    border-bottom: 1px solid var(--gray-200);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1.5rem 2rem;
+  background: var(--gray-50);
+  border-bottom: 1px solid var(--gray-200);
 }
 
 .card-header h3 {
-    margin: 0;
-    font-size: 1.125rem;
-    color: var(--gray-800);
+  margin: 0;
+  color: var(--gray-800);
 }
 
 .card-body {
-    padding: 1.5rem;
+  padding: 2rem;
+}
+
+.main-info {
+  grid-column: 1 / -1;
+}
+
+.version-badge {
+  padding: 0.375rem 0.75rem;
+  border-radius: 0.375rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+.version-badge.current {
+  background-color: #dcfce7;
+  color: #166534;
+}
+
+.version-badge.old {
+  background-color: var(--gray-100);
+  color: var(--gray-600);
 }
 
 .info-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-    gap: 1.5rem;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 1.5rem;
 }
 
 .info-item {
-    display: flex;
-    flex-direction: column;
-    gap: 0.25rem;
+  display: flex;
+  flex-direction: column;
 }
 
-.info-label {
-    font-size: 0.75rem;
-    font-weight: 500;
-    color: var(--gray-500);
-    text-transform: uppercase;
+.info-item label {
+  font-weight: 500;
+  color: var(--gray-600);
+  margin-bottom: 0.5rem;
+  font-size: 0.875rem;
 }
 
-.info-value {
-    font-size: 0.875rem;
-    color: var(--gray-800);
-    font-weight: 500;
+.customer-info,
+.item-info {
+  display: flex;
+  flex-direction: column;
 }
 
-.row {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 1rem;
+.customer-name,
+.item-name {
+  font-weight: 500;
+  color: var(--gray-800);
+  font-size: 1rem;
 }
 
-.metrics-container {
-    justify-content: space-between;
+.customer-code,
+.item-code {
+  font-size: 0.875rem;
+  color: var(--gray-500);
+  margin-top: 0.25rem;
 }
 
-.metric-card {
-    flex: 1;
-    padding: 1.5rem;
-    min-width: 200px;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    text-align: center;
+.forecast-period-display {
+  font-size: 1rem;
+  color: var(--gray-800);
+  font-weight: 500;
 }
 
-.metric-title {
-    font-size: 0.875rem;
-    font-weight: 500;
-    color: var(--gray-600);
-    margin-bottom: 0.5rem;
+.source-badge {
+  display: inline-block;
+  padding: 0.375rem 0.75rem;
+  border-radius: 0.375rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  width: fit-content;
 }
 
-.metric-value {
-    font-size: 2rem;
-    font-weight: 600;
-    color: var(--gray-800);
-    margin-bottom: 0.25rem;
+.source-customer {
+  background-color: #dbeafe;
+  color: #1e40af;
 }
 
-.metric-label {
-    font-size: 0.75rem;
-    color: var(--gray-500);
+.source-manual {
+  background-color: #f3e8ff;
+  color: #7c3aed;
+}
+
+.source-system {
+  background-color: #ecfdf5;
+  color: #059669;
+}
+
+.source-other {
+  background-color: var(--gray-100);
+  color: var(--gray-600);
+}
+
+.confidence-display {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.confidence-bar {
+  position: relative;
+  width: 80px;
+  height: 20px;
+  background: var(--gray-200);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.confidence-fill {
+  height: 100%;
+  background: var(--primary-color);
+  transition: width 0.3s ease;
+}
+
+.confidence-text {
+  font-weight: 500;
+  color: var(--gray-700);
+}
+
+.quantities-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1.5rem;
+  margin-bottom: 2rem;
+}
+
+.quantity-card {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 1.5rem;
+  border-radius: 0.5rem;
+  border: 1px solid var(--gray-200);
+}
+
+.forecast-qty {
+  background: linear-gradient(135deg, #dbeafe 0%, #bfdbfe 100%);
+  border-color: #93c5fd;
+}
+
+.actual-qty {
+  background: linear-gradient(135deg, #dcfce7 0%, #bbf7d0 100%);
+  border-color: #86efac;
+}
+
+.variance-qty {
+  background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+  border-color: #fcd34d;
+}
+
+.quantity-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.8);
+  color: var(--primary-color);
+  font-size: 1.5rem;
+}
+
+.quantity-icon.icon-success {
+  color: var(--success-color);
+}
+
+.quantity-icon.icon-danger {
+  color: var(--danger-color);
+}
+
+.quantity-icon.icon-muted {
+  color: var(--gray-500);
+}
+
+.quantity-info {
+  flex: 1;
+}
+
+.quantity-label {
+  font-size: 0.875rem;
+  color: var(--gray-600);
+  margin-bottom: 0.25rem;
+}
+
+.quantity-value {
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: var(--gray-800);
+}
+
+.quantity-percentage {
+  font-size: 0.875rem;
+  margin-top: 0.25rem;
+}
+
+.accuracy-assessment {
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--gray-200);
+}
+
+.accuracy-assessment h4 {
+  margin: 0 0 1rem 0;
+  color: var(--gray-700);
+}
+
+.accuracy-info {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1rem;
+}
+
+.accuracy-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.75rem;
+  background: var(--gray-50);
+  border-radius: 0.375rem;
+}
+
+.accuracy-item label {
+  font-weight: 500;
+  color: var(--gray-600);
+}
+
+.accuracy-rating {
+  font-weight: 500;
+  padding: 0.25rem 0.5rem;
+  border-radius: 0.25rem;
+}
+
+.accuracy-excellent {
+  background-color: #dcfce7;
+  color: #166534;
+}
+
+.accuracy-good {
+  background-color: #ecfdf5;
+  color: #059669;
+}
+
+.accuracy-fair {
+  background-color: #fef3c7;
+  color: #d97706;
+}
+
+.accuracy-poor {
+  background-color: #fed7d7;
+  color: #c53030;
+}
+
+.accuracy-very-poor {
+  background-color: #fecaca;
+  color: #991b1b;
+}
+
+.version-timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.version-item {
+  display: flex;
+  gap: 1rem;
+  padding: 1rem;
+  border-radius: 0.5rem;
+  border: 1px solid var(--gray-200);
+}
+
+.version-item.current-version {
+  background: var(--gray-50);
+  border-color: var(--primary-color);
+}
+
+.version-marker {
+  display: flex;
+  align-items: flex-start;
+  padding-top: 0.125rem;
+}
+
+.version-marker i {
+  color: var(--gray-400);
+  font-size: 0.75rem;
+}
+
+.current-version .version-marker i {
+  color: var(--primary-color);
+}
+
+.version-content {
+  flex: 1;
+}
+
+.version-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.5rem;
+}
+
+.version-title {
+  font-weight: 500;
+  color: var(--gray-800);
+}
+
+.current-label {
+  color: var(--primary-color);
+  font-size: 0.75rem;
+}
+
+.version-date {
+  font-size: 0.75rem;
+  color: var(--gray-500);
+}
+
+.version-details {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.version-detail {
+  font-size: 0.875rem;
+  color: var(--gray-600);
+}
+
+.related-links {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.related-link {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--gray-200);
+  border-radius: 0.375rem;
+  color: var(--gray-700);
+  text-decoration: none;
+  transition: all 0.2s;
+}
+
+.related-link:hover {
+  background: var(--gray-50);
+  border-color: var(--primary-color);
+  color: var(--primary-color);
+  text-decoration: none;
+}
+
+.related-link i {
+  color: var(--gray-400);
+}
+
+.related-link:hover i {
+  color: var(--primary-color);
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1.5rem;
+  border: 1px solid transparent;
+  border-radius: 0.375rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  text-decoration: none;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-sm {
+  padding: 0.5rem 1rem;
+  font-size: 0.75rem;
+}
+
+.btn-primary {
+  background-color: var(--primary-color);
+  color: white;
+  border-color: var(--primary-color);
+}
+
+.btn-secondary {
+  background-color: white;
+  color: var(--gray-700);
+  border-color: var(--gray-300);
+}
+
+.btn-warning {
+  background-color: #f59e0b;
+  color: white;
+  border-color: #f59e0b;
+}
+
+.btn-danger {
+  background-color: var(--danger-color);
+  color: white;
+  border-color: var(--danger-color);
+}
+
+.btn:hover {
+  opacity: 0.9;
+  transform: translateY(-1px);
 }
 
 .text-success {
-    color: var(--success-color);
-}
-
-.text-warning {
-    color: var(--warning-color);
+  color: var(--success-color);
 }
 
 .text-danger {
-    color: var(--danger-color);
+  color: var(--danger-color);
 }
 
 .text-muted {
-    color: var(--gray-500);
+  color: var(--gray-500);
 }
 
-.chart-container {
-    height: 400px;
-}
-
-.chart-wrapper {
-    width: 100%;
-    height: 300px;
-}
-
-.chart-legend {
-    display: flex;
-    gap: 2rem;
-    justify-content: center;
-    margin-top: 1rem;
-}
-
-.legend-item {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-}
-
-.legend-color {
-    width: 1rem;
-    height: 1rem;
-    border-radius: 0.25rem;
-}
-
-.data-table {
-    width: 100%;
-    border-collapse: collapse;
-}
-
-.data-table th {
-    text-align: left;
-    padding: 0.75rem 1rem;
-    background-color: var(--gray-50);
-    border-bottom: 1px solid var(--gray-200);
-    color: var(--gray-600);
-    font-weight: 500;
-    font-size: 0.875rem;
-}
-
-.data-table td {
-    padding: 0.75rem 1rem;
-    border-bottom: 1px solid var(--gray-100);
-    color: var(--gray-800);
-    font-size: 0.875rem;
-}
-
-.data-table tfoot td {
-    background-color: var(--gray-50);
-    font-weight: 500;
-}
-
-.total-label {
-    text-align: right;
-}
-
-.status-badge {
-    display: inline-block;
-    padding: 0.25rem 0.5rem;
-    border-radius: 0.25rem;
-    font-size: 0.75rem;
-    font-weight: 500;
-}
-
-.status-success {
-    background-color: var(--success-bg);
-    color: var(--success-color);
-}
-
-.status-warning {
-    background-color: var(--warning-bg);
-    color: var(--warning-color);
-}
-
-.status-danger {
-    background-color: var(--danger-bg);
-    color: var(--danger-color);
-}
-
-.loading-indicator {
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    padding: 2rem;
-    color: var(--gray-500);
-}
-
-.loading-indicator i {
-    margin-right: 0.5rem;
-}
-
-.empty-state {
-    text-align: center;
-    padding: 2rem;
-    color: var(--gray-500);
+@media (max-width: 1024px) {
+  .content-grid {
+    grid-template-columns: 1fr;
+  }
+  
+  .main-info {
+    grid-column: 1;
+  }
 }
 
 @media (max-width: 768px) {
-    .page-header {
-        flex-direction: column;
-        align-items: flex-start;
-        gap: 1rem;
-    }
+  .forecast-detail-container {
+    padding: 1rem;
+  }
 
-    .info-grid {
-        grid-template-columns: 1fr;
-    }
+  .page-header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 1rem;
+  }
 
-    .metrics-container {
-        flex-direction: column;
-    }
+  .header-left {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 1rem;
+  }
 
-    .metric-card {
-        width: 100%;
-    }
+  .header-actions {
+    justify-content: flex-end;
+  }
 
-    .chart-container {
-        height: auto;
-    }
+  .info-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .quantities-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .accuracy-info {
+    grid-template-columns: 1fr;
+  }
+
+  .version-details {
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .card-body {
+    padding: 1.5rem;
+  }
 }
 </style>

@@ -15,12 +15,78 @@ class RoutingController extends Controller
     /**
      * Display a listing of the resource.
      *
+     * @param  \Illuminate\Http\Request  $request
      * @return \Illuminate\Http\Response
      */
-    public function index()
+    public function index(Request $request)
     {
-        $routings = Routing::with(['item'])->get();
-        return response()->json(['data' => $routings]);
+        $query = Routing::with(['item']);
+
+        // Search functionality
+        if ($request->has('search') && !empty($request->search)) {
+            $searchTerm = $request->search;
+            $query->where(function ($q) use ($searchTerm) {
+                $q->where('routing_code', 'LIKE', "%{$searchTerm}%")
+                  ->orWhere('revision', 'LIKE', "%{$searchTerm}%")
+                  ->orWhere('status', 'LIKE', "%{$searchTerm}%")
+                  ->orWhereHas('item', function ($itemQuery) use ($searchTerm) {
+                      $itemQuery->where('name', 'LIKE', "%{$searchTerm}%");
+                  });
+            });
+        }
+
+        // Status filter
+        if ($request->has('status') && !empty($request->status)) {
+            $query->where('status', $request->status);
+        }
+
+        // Item filter
+        if ($request->has('item_id') && !empty($request->item_id)) {
+            $query->where('item_id', $request->item_id);
+        }
+
+        // Sorting
+        $sortField = $request->get('sort_field', 'routing_code');
+        $sortOrder = $request->get('sort_order', 'asc');
+        
+        // Validate sort order
+        $sortOrder = in_array(strtolower($sortOrder), ['asc', 'desc']) ? $sortOrder : 'asc';
+        
+        // Handle sorting for related fields
+        if ($sortField === 'item_name') {
+            $query->join('items', 'routings.item_id', '=', 'items.item_id')
+                  ->orderBy('items.name', $sortOrder)
+                  ->select('routings.*');
+        } else {
+            // Validate sort field to prevent SQL injection
+            $allowedSortFields = [
+                'routing_code', 'revision', 'effective_date', 'status', 'created_at', 'updated_at'
+            ];
+            
+            if (in_array($sortField, $allowedSortFields)) {
+                $query->orderBy($sortField, $sortOrder);
+            } else {
+                $query->orderBy('routing_code', 'asc');
+            }
+        }
+
+        // Pagination
+        $perPage = $request->get('per_page', 10);
+        $perPage = is_numeric($perPage) && $perPage > 0 && $perPage <= 100 ? $perPage : 10;
+
+        $routings = $query->paginate($perPage);
+
+        return response()->json([
+            'data' => $routings->items(),
+            'meta' => [
+                'current_page' => $routings->currentPage(),
+                'last_page' => $routings->lastPage(),
+                'per_page' => $routings->perPage(),
+                'from' => $routings->firstItem(),
+                'to' => $routings->lastItem(),
+                'total' => $routings->total(),
+            ]
+        ]);
     }
 
     /**

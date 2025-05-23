@@ -17,9 +17,13 @@ class WorkOrderController extends Controller
      *
      * @return \Illuminate\Http\Response
      */
-    public function index()
+    public function index(Request $request)
     {
-        $workOrders = WorkOrder::with(['item', 'bom', 'routing'])->get();
+        $query = WorkOrder::with(['item', 'bom', 'routing']);
+        if ($request->has('exclude_status')) {
+            $query->where('status', '!=', $request->exclude_status);
+        }
+        $workOrders = $query->get();
         return response()->json(['data' => $workOrders]);
     }
 

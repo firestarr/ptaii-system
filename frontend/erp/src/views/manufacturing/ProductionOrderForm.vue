@@ -272,9 +272,9 @@ export default {
     async fetchInitialData() {
       this.loading = true;
       try {
-        // Fetch work orders
+        // Fetch work orders excluding completed
         const [workOrdersRes, warehousesRes] = await Promise.all([
-          axios.get('/work-orders'),
+          axios.get('/work-orders', { params: { exclude_status: 'Completed' } }),
           axios.get('/warehouses')
         ]);
         

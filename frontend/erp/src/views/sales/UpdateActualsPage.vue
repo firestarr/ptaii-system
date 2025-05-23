@@ -4,7 +4,7 @@
     <div class="page-header">
       <h2>Update Forecast Actuals</h2>
       <p class="text-muted">
-        Update actuals for forecasts based on real sales data
+        Update actuals for forecasts based on real sales order data
       </p>
     </div>
 
@@ -27,6 +27,49 @@
                 />
                 <div class="form-text">
                   Actuals will be updated for all forecasts up to this period
+                </div>
+              </div>
+
+              <div class="mb-3">
+                <label class="form-label">Sales Order Status to Include</label>
+                <div class="form-check">
+                  <input
+                    type="checkbox"
+                    class="form-check-input"
+                    id="statusConfirmed"
+                    v-model="updateForm.so_status"
+                    value="Confirmed"
+                  />
+                  <label class="form-check-label" for="statusConfirmed">
+                    Confirmed
+                  </label>
+                </div>
+                <div class="form-check">
+                  <input
+                    type="checkbox"
+                    class="form-check-input"
+                    id="statusInProgress"
+                    v-model="updateForm.so_status"
+                    value="In Progress"
+                  />
+                  <label class="form-check-label" for="statusInProgress">
+                    In Progress
+                  </label>
+                </div>
+                <div class="form-check">
+                  <input
+                    type="checkbox"
+                    class="form-check-input"
+                    id="statusDelivered"
+                    v-model="updateForm.so_status"
+                    value="Delivered"
+                  />
+                  <label class="form-check-label" for="statusDelivered">
+                    Delivered
+                  </label>
+                </div>
+                <div class="form-text">
+                  Select which sales order statuses should be considered as actual demand
                 </div>
               </div>
 
@@ -87,14 +130,21 @@
             <h6>How It Works</h6>
             <p>
               The system will update actual quantities for forecasts by calculating the
-              total sales for each customer-item pair during the forecast period.
+              total sales orders for each customer-item pair during the forecast period.
             </p>
 
             <h6>Data Sources</h6>
             <ul>
-              <li>Actual quantities are calculated from completed sales invoices</li>
-              <li>Only invoices with "Paid" status are considered</li>
-              <li>Returns are automatically subtracted from the actual quantities</li>
+              <li>Actual quantities are calculated from sales orders in selected statuses</li>
+              <li>Orders are filtered by order date within the forecast period</li>
+              <li>Multiple status options allow flexibility in demand recognition</li>
+            </ul>
+
+            <h6>Sales Order Statuses</h6>
+            <ul>
+              <li><strong>Confirmed:</strong> Orders that have been confirmed by customer</li>
+              <li><strong>In Progress:</strong> Orders being processed or manufactured</li>
+              <li><strong>Delivered:</strong> Orders that have been completed and delivered</li>
             </ul>
 
             <h6>Version Control</h6>
@@ -107,7 +157,7 @@
             <div class="alert alert-info">
               <i class="fas fa-info-circle me-2"></i>
               It's recommended to update actuals at the end of each month after
-              all sales have been finalized.
+              all sales orders have been finalized.
             </div>
           </div>
         </div>
@@ -257,7 +307,7 @@
                 required
               />
               <div class="form-text">
-                Enter the actual quantity sold for this forecast
+                Enter the actual quantity ordered for this forecast (from sales orders)
               </div>
             </div>
 
@@ -297,7 +347,8 @@ export default {
       updating: false,
       updateForm: {
         end_period: this.getLastMonth(),
-        update_all: false
+        update_all: false,
+        so_status: ['Confirmed', 'In Progress', 'Delivered'] // Default all statuses
       },
       updateError: null,
       updateSuccess: null,
@@ -380,10 +431,9 @@ export default {
       this.loading = true;
       
       try {
-        // In a real application, there would be a specific API endpoint for this
-        // For this example, we'll simulate it by querying forecasts with missing actuals
+        // Get forecasts with missing actuals up to last month
         const endPeriod = new Date();
-        endPeriod.setMonth(endPeriod.getMonth() - 1); // Last month
+        endPeriod.setMonth(endPeriod.getMonth() - 1);
         
         const endPeriodStr = `${endPeriod.getFullYear()}-${String(endPeriod.getMonth() + 1).padStart(2, '0')}-01`;
         
@@ -398,6 +448,7 @@ export default {
         this.pendingForecasts = response.data.data || [];
       } catch (error) {
         console.error('Error fetching pending forecasts:', error);
+        this.updateError = 'Failed to load pending forecasts';
       } finally {
         this.loading = false;
       }
@@ -405,6 +456,11 @@ export default {
     async updateActuals() {
       if (!this.updateForm.end_period) {
         this.updateError = 'End period is required';
+        return;
+      }
+
+      if (this.updateForm.so_status.length === 0) {
+        this.updateError = 'Please select at least one Sales Order status';
         return;
       }
       
@@ -415,13 +471,20 @@ export default {
       try {
         const payload = {
           end_period: `${this.updateForm.end_period}-01`,
-          update_all: this.updateForm.update_all
+          update_all: this.updateForm.update_all,
+          so_status: this.updateForm.so_status
         };
         
         const response = await axios.post('/forecasts/update-actuals', payload);
         
         if (response.data.message) {
           this.updateSuccess = response.data.message;
+          
+          // Show additional details if available
+          if (response.data.details) {
+            const details = response.data.details;
+            this.updateSuccess += ` (Data source: ${details.data_source}, Statuses: ${details.allowed_statuses.join(', ')})`;
+          }
           
           // Refresh pending forecasts
           await this.fetchPendingForecasts();
@@ -436,7 +499,8 @@ export default {
     resetForm() {
       this.updateForm = {
         end_period: this.getLastMonth(),
-        update_all: false
+        update_all: false,
+        so_status: ['Confirmed', 'In Progress', 'Delivered']
       };
       this.updateError = null;
       this.updateSuccess = null;
@@ -460,13 +524,20 @@ export default {
         
         const payload = {
           end_period: latestPeriod,
-          update_all: false
+          update_all: false,
+          so_status: this.updateForm.so_status
         };
         
         const response = await axios.post('/forecasts/update-actuals', payload);
         
         if (response.data.message) {
           this.updateSuccess = response.data.message;
+          
+          // Show additional details if available
+          if (response.data.details) {
+            const details = response.data.details;
+            this.updateSuccess += ` (Data source: ${details.data_source})`;
+          }
           
           // Refresh pending forecasts
           await this.fetchPendingForecasts();
@@ -504,9 +575,6 @@ export default {
       this.manualUpdateError = null;
       
       try {
-        // In a real application, there would be a specific API endpoint for this
-        // For this example, we'll use the update endpoint with a custom payload
-        
         // Calculate variance
         const variance = this.manualActualQuantity - this.selectedForecast.forecast_quantity;
         
@@ -529,7 +597,7 @@ export default {
         
         // Close modal and refresh list
         this.closeModal();
-        this.updateSuccess = 'Actual quantity updated successfully';
+        this.updateSuccess = 'Actual quantity updated successfully (manual entry)';
         await this.fetchPendingForecasts();
       } catch (error) {
         console.error('Error manually updating actual:', error);
@@ -625,6 +693,7 @@ export default {
 
 .form-check {
   padding-left: 1.75rem;
+  margin-bottom: 0.5rem;
 }
 
 .form-check-input {
@@ -860,6 +929,10 @@ export default {
 
 .btn-close:hover {
   color: #343a40;
+}
+
+.btn-close::before {
+  content: "×";
 }
 
 .modal-body {

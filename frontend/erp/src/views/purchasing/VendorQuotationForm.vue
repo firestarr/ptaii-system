@@ -344,6 +344,9 @@ export default {
     
     // Get item name from its ID
     getItemName(itemId) {
+      if (!this.itemOptions || !Array.isArray(this.itemOptions)) {
+        return '';
+      }
       const item = this.itemOptions.find(item => item.item_id === itemId);
       return item ? item.name : '';
     },

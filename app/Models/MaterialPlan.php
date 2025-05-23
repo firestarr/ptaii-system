@@ -30,6 +30,13 @@ class MaterialPlan extends Model
 
     protected $casts = [
         'planning_period' => 'date',
+        'forecast_quantity' => 'float',
+        'available_stock' => 'float',
+        'wip_stock' => 'float',
+        'buffer_percentage' => 'float',
+        'buffer_quantity' => 'float',
+        'net_requirement' => 'float',
+        'planned_order_quantity' => 'float',
     ];
 
     public function item()

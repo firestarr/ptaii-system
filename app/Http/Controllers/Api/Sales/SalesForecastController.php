@@ -6,8 +6,8 @@ use App\Http\Controllers\Controller;
 use App\Models\Sales\SalesForecast;
 use App\Models\Sales\Customer;
 use App\Models\Item;
-use App\Models\Sales\SalesInvoice;
-use App\Models\Sales\SalesInvoiceLine;
+use App\Models\Sales\SalesOrder;
+use App\Models\Sales\SOLine;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\DB;
@@ -23,32 +23,68 @@ class SalesForecastController extends Controller
     public function index(Request $request)
     {
         $query = SalesForecast::query();
-        
-        // Tambahkan filter
-        if ($request->has('customer_id')) {
+
+        // Search filter
+        if ($request->filled('search')) {
+            $search = $request->search;
+            $query->where(function ($q) use ($search) {
+                $q->whereHas('customer', function ($q2) use ($search) {
+                    $q2->where('name', 'like', "%{$search}%");
+                })
+                ->orWhereHas('item', function ($q2) use ($search) {
+                    $q2->where('name', 'like', "%{$search}%");
+                });
+            });
+        }
+
+        // Filters
+        if ($request->filled('customer_id')) {
             $query->where('customer_id', $request->customer_id);
         }
-        
-        if ($request->has('item_id')) {
+
+        if ($request->filled('item_id')) {
             $query->where('item_id', $request->item_id);
         }
-        
-        if ($request->has('forecast_period')) {
+
+        if ($request->filled('forecast_period')) {
             $query->where('forecast_period', $request->forecast_period);
         }
-        
-        if ($request->has('forecast_source')) {
+
+        if ($request->filled('forecast_source')) {
             $query->where('forecast_source', $request->forecast_source);
         }
-        
-        // Secara default hanya ambil versi terbaru
-        if (!$request->has('all_versions') || $request->all_versions !== 'true') {
+
+        if ($request->filled('end_period')) {
+            $query->where('forecast_period', '<=', $request->end_period);
+        }
+
+        if ($request->filled('missing_actuals') && $request->missing_actuals === 'true') {
+            $query->whereNull('actual_quantity');
+        }
+
+        // Default only current version unless all_versions is true
+        if (!$request->filled('all_versions') || $request->all_versions !== 'true') {
             $query->where('is_current_version', true);
         }
-        
-        $forecasts = $query->with(['customer', 'item'])->get();
-        
-        return response()->json(['data' => $forecasts], 200);
+
+        // Sorting
+        $sortBy = $request->input('sort_by', 'forecast_period');
+        $sortOrder = $request->input('sort_order', 'desc');
+        $allowedSorts = ['forecast_period', 'forecast_quantity', 'actual_quantity', 'variance'];
+        if (!in_array($sortBy, $allowedSorts)) {
+            $sortBy = 'forecast_period';
+        }
+        if (!in_array(strtolower($sortOrder), ['asc', 'desc'])) {
+            $sortOrder = 'desc';
+        }
+        $query->orderBy($sortBy, $sortOrder);
+
+        // Pagination
+        $perPage = 15;
+        $page = $request->input('page', 1);
+        $forecasts = $query->with(['customer', 'item'])->paginate($perPage, ['*'], 'page', $page);
+
+        return response()->json($forecasts, 200);
     }
 
     /**
@@ -427,7 +463,7 @@ class SalesForecastController extends Controller
     }
 
     /**
-     * Generate sales forecasts based on historical data.
+     * Generate sales forecasts based on historical Sales Order data.
      *
      * @param  \Illuminate\Http\Request  $request
      * @return \Illuminate\Http\Response
@@ -440,7 +476,9 @@ class SalesForecastController extends Controller
             'customer_id' => 'nullable|exists:Customer,customer_id',
             'item_id' => 'nullable|exists:items,item_id',
             'method' => 'required|in:average,weighted,trend',
-            'forecast_issue_date' => 'nullable|date'
+            'forecast_issue_date' => 'nullable|date',
+            'so_status' => 'nullable|array',
+            'so_status.*' => 'string'
         ]);
 
         if ($validator->fails()) {
@@ -452,25 +490,28 @@ class SalesForecastController extends Controller
 
             // Use provided issue date or default to today
             $issueDate = $request->forecast_issue_date ?? now()->format('Y-m-d');
+            
+            // Default SO statuses to include
+            $allowedStatuses = $request->input('so_status', ['Confirmed', 'In Progress', 'Delivered']);
 
-            // Get historical sales data
-            $query = SalesInvoiceLine::join('SalesInvoice', 'SalesInvoiceLine.invoice_id', '=', 'SalesInvoice.invoice_id')
-                ->where('SalesInvoice.status', 'Paid')
+            // Get historical sales data from Sales Orders
+            $query = SOLine::join('SalesOrder', 'SOLine.so_id', '=', 'SalesOrder.so_id')
+                ->whereIn('SalesOrder.status', $allowedStatuses)
                 ->select(
-                    'SalesInvoiceLine.item_id',
-                    'SalesInvoice.customer_id',
-                    DB::raw('DATE_FORMAT(SalesInvoice.invoice_date, "%Y-%m-01") as period'),
-                    DB::raw('SUM(SalesInvoiceLine.quantity) as total_quantity')
+                    'SOLine.item_id',
+                    'SalesOrder.customer_id',
+                    DB::raw('DATE_FORMAT(SalesOrder.so_date, "%Y-%m-01") as period'),
+                    DB::raw('SUM(SOLine.quantity) as total_quantity')
                 )
-                ->groupBy('SalesInvoiceLine.item_id', 'SalesInvoice.customer_id', 'period');
+                ->groupBy('SOLine.item_id', 'SalesOrder.customer_id', 'period');
 
             // Apply filters if provided
             if ($request->has('customer_id')) {
-                $query->where('SalesInvoice.customer_id', $request->customer_id);
+                $query->where('SalesOrder.customer_id', $request->customer_id);
             }
 
             if ($request->has('item_id')) {
-                $query->where('SalesInvoiceLine.item_id', $request->item_id);
+                $query->where('SOLine.item_id', $request->item_id);
             }
 
             $historicalData = $query->get();
@@ -652,16 +693,24 @@ class SalesForecastController extends Controller
             
             return response()->json([
                 'data' => $forecasts, 
-                'message' => count($forecasts) . ' forecasts generated successfully'
+                'message' => count($forecasts) . ' forecasts generated successfully based on Sales Order data',
+                'details' => [
+                    'data_source' => 'Sales Orders',
+                    'allowed_statuses' => $allowedStatuses,
+                    'method' => $request->method
+                ]
             ], 201);
         } catch (\Exception $e) {
             DB::rollBack();
-            return response()->json(['message' => 'Failed to generate forecasts', 'error' => $e->getMessage()], 500);
+            return response()->json([
+                'message' => 'Failed to generate forecasts',
+                'error' => $e->getMessage()
+            ], 500);
         }
     }
 
     /**
-     * Update actual quantities in forecasts.
+     * Update actual quantities in forecasts based on Sales Orders.
      *
      * @param  \Illuminate\Http\Request  $request
      * @return \Illuminate\Http\Response
@@ -670,7 +719,9 @@ class SalesForecastController extends Controller
     {
         $validator = Validator::make($request->all(), [
             'end_period' => 'required|date',
-            'update_all' => 'required|boolean'
+            'update_all' => 'required|boolean',
+            'so_status' => 'nullable|array',
+            'so_status.*' => 'string'
         ]);
 
         if ($validator->fails()) {
@@ -679,6 +730,9 @@ class SalesForecastController extends Controller
 
         try {
             DB::beginTransaction();
+
+            // Default SO statuses to include - can be configured
+            $allowedStatuses = $request->input('so_status', ['Confirmed', 'In Progress', 'Delivered']);
 
             // Get completed period forecasts
             $query = SalesForecast::where('forecast_period', '<=', $request->end_period)
@@ -693,20 +747,20 @@ class SalesForecastController extends Controller
             $updatedCount = 0;
             
             foreach ($forecasts as $forecast) {
-                // Get actual sales quantities for the period
+                // Get actual sales quantities from Sales Orders for the period
                 $startOfMonth = new \DateTime($forecast->forecast_period);
                 $endOfMonth = clone $startOfMonth;
                 $endOfMonth->modify('last day of this month');
                 
-                $actualQuantity = SalesInvoiceLine::join('SalesInvoice', 'SalesInvoiceLine.invoice_id', '=', 'SalesInvoice.invoice_id')
-                    ->where('SalesInvoiceLine.item_id', $forecast->item_id)
-                    ->where('SalesInvoice.customer_id', $forecast->customer_id)
-                    ->whereBetween('SalesInvoice.invoice_date', [
+                $actualQuantity = SOLine::join('SalesOrder', 'SOLine.so_id', '=', 'SalesOrder.so_id')
+                    ->where('SOLine.item_id', $forecast->item_id)
+                    ->where('SalesOrder.customer_id', $forecast->customer_id)
+                    ->whereBetween('SalesOrder.so_date', [
                         $startOfMonth->format('Y-m-d'),
                         $endOfMonth->format('Y-m-d')
                     ])
-                    ->where('SalesInvoice.status', 'Paid')
-                    ->sum('SalesInvoiceLine.quantity');
+                    ->whereIn('SalesOrder.status', $allowedStatuses)
+                    ->sum('SOLine.quantity');
                 
                 // Create a new version with actuals
                 $newForecast = SalesForecast::create([
@@ -733,10 +787,20 @@ class SalesForecastController extends Controller
 
             DB::commit();
             
-            return response()->json(['message' => $updatedCount . ' forecasts updated with actual quantities'], 200);
+            return response()->json([
+                'message' => $updatedCount . ' forecasts updated with actual quantities from Sales Orders',
+                'details' => [
+                    'updated_count' => $updatedCount,
+                    'data_source' => 'Sales Orders',
+                    'allowed_statuses' => $allowedStatuses
+                ]
+            ], 200);
         } catch (\Exception $e) {
             DB::rollBack();
-            return response()->json(['message' => 'Failed to update actual quantities', 'error' => $e->getMessage()], 500);
+            return response()->json([
+                'message' => 'Failed to update actual quantities',
+                'error' => $e->getMessage()
+            ], 500);
         }
     }
 
@@ -868,50 +932,6 @@ class SalesForecastController extends Controller
                 }
             }
             
-            // Group metrics by issue date
-            $issueMetrics = [];
-            
-            if ($request->has('issue_date_start') || $request->has('issue_date_end')) {
-                $byIssueDate = $forecasts->groupBy(function($forecast) {
-                    return $forecast->forecast_issue_date->format('Y-m-d');
-                });
-                
-                foreach ($byIssueDate as $issueDate => $issueDateForecasts) {
-                    $issueTotal = count($issueDateForecasts);
-                    $issueForecastQty = $issueDateForecasts->sum('forecast_quantity');
-                    $issueActualQty = $issueDateForecasts->sum('actual_quantity');
-                    $issueAbsVar = $issueDateForecasts->sum(function($f) {
-                        return abs($f->variance);
-                    });
-                    
-                    $issueMape = 0;
-                    $validForMape = 0;
-                    
-                    foreach ($issueDateForecasts as $f) {
-                        if ($f->actual_quantity > 0) {
-                            $issueMape += abs($f->variance / $f->actual_quantity) * 100;
-                            $validForMape++;
-                        }
-                    }
-                    
-                    if ($validForMape > 0) {
-                        $issueMape = $issueMape / $validForMape;
-                    }
-                    
-                    $issueBias = $issueForecastQty > 0 ? 
-                        (($issueActualQty - $issueForecastQty) / $issueForecastQty) * 100 : 0;
-                    
-                    $issueMad = $issueTotal > 0 ? $issueAbsVar / $issueTotal : 0;
-                    
-                    $issueMetrics[$issueDate] = [
-                        'count' => $issueTotal,
-                        'mape' => round($issueMape, 2),
-                        'bias' => round($issueBias, 2),
-                        'mad' => round($issueMad, 2)
-                    ];
-                }
-            }
-            
             return response()->json([
                 'data' => [
                     'total_forecasts' => $totalForecasts,
@@ -921,12 +941,15 @@ class SalesForecastController extends Controller
                     'bias_percentage' => round($bias, 2),
                     'mean_absolute_deviation' => round($mad, 2),
                     'by_source' => $sourceMetrics,
-                    'by_issue_date' => $issueMetrics,
+                    'data_source' => 'Sales Orders',
                     'forecasts' => $forecasts
                 ]
             ], 200);
         } catch (\Exception $e) {
-            return response()->json(['message' => 'Failed to get forecast accuracy', 'error' => $e->getMessage()], 500);
+            return response()->json([
+                'message' => 'Failed to get forecast accuracy',
+                'error' => $e->getMessage()
+            ], 500);
         }
     }
     
@@ -1137,11 +1160,11 @@ class SalesForecastController extends Controller
             ->pluck('item_id')
             ->toArray();
             
-        $purchasedItems = DB::table('SalesInvoiceLine')
-            ->join('SalesInvoice', 'SalesInvoiceLine.invoice_id', '=', 'SalesInvoice.invoice_id')
-            ->where('SalesInvoice.customer_id', $customerId)
+        $purchasedItems = DB::table('SOLine')
+            ->join('SalesOrder', 'SOLine.so_id', '=', 'SalesOrder.so_id')
+            ->where('SalesOrder.customer_id', $customerId)
             ->distinct()
-            ->pluck('SalesInvoiceLine.item_id')
+            ->pluck('SOLine.item_id')
             ->toArray();
             
         $allItems = array_unique(array_merge($customerItems, $purchasedItems));
@@ -1206,23 +1229,8 @@ class SalesForecastController extends Controller
      */
     private function createInitialForecast($customerId, $itemId, $method)
     {
-        // Get historical sales data
-        $historicalData = SalesInvoiceLine::join('SalesInvoice', 'SalesInvoiceLine.invoice_id', '=', 'SalesInvoice.invoice_id')
-            ->where('SalesInvoice.customer_id', $customerId)
-            ->where('SalesInvoiceLine.item_id', $itemId)
-            ->where('SalesInvoice.status', 'Paid')
-            ->select(
-                DB::raw('DATE_FORMAT(SalesInvoice.invoice_date, "%Y-%m-01") as period'),
-                DB::raw('SUM(SalesInvoiceLine.quantity) as total_quantity')
-            )
-            ->groupBy('period')
-            ->orderBy('period')
-            ->get()
-            ->keyBy('period')
-            ->map(function ($item) {
-                return $item->total_quantity;
-            })
-            ->toArray();
+        // Get historical sales data from Sales Orders
+        $historicalData = $this->getHistoricalDataFromSalesOrders($customerId, $itemId, now()->format('Y-m-d'));
         
         if (empty($historicalData)) {
             return; // No historical data to base forecast on
@@ -1286,7 +1294,7 @@ class SalesForecastController extends Controller
    {
        // Get historical data if not provided
        if ($historicalData === null) {
-           $historicalData = $this->getHistoricalData($customerId, $itemId, $forecastPeriod);
+           $historicalData = $this->getHistoricalDataFromSalesOrders($customerId, $itemId, $forecastPeriod);
        }
        
        $forecastQuantity = 0;
@@ -1390,30 +1398,34 @@ class SalesForecastController extends Controller
    }
    
    /**
-    * Get historical sales data for a customer-item pair
+    * Get historical sales data for a customer-item pair from Sales Orders
     *
     * @param  int  $customerId
     * @param  int  $itemId
     * @param  string  $beforeDate
+    * @param  array  $allowedStatuses
     * @return array
     */
-   private function getHistoricalData($customerId, $itemId, $beforeDate)
+   private function getHistoricalDataFromSalesOrders($customerId, $itemId, $beforeDate, $allowedStatuses = null)
    {
+       // Default statuses if not provided
+       $allowedStatuses = $allowedStatuses ?? ['Confirmed', 'In Progress', 'Delivered'];
+       
        // Get sales from last 12 months
        $beforePeriod = Carbon::parse($beforeDate)->startOfMonth();
        $fromPeriod = $beforePeriod->copy()->subMonths(12);
        
-       $historicalSales = SalesInvoiceLine::join('SalesInvoice', 'SalesInvoiceLine.invoice_id', '=', 'SalesInvoice.invoice_id')
-           ->where('SalesInvoice.customer_id', $customerId)
-           ->where('SalesInvoiceLine.item_id', $itemId)
-           ->whereBetween('SalesInvoice.invoice_date', [
+       $historicalSales = SOLine::join('SalesOrder', 'SOLine.so_id', '=', 'SalesOrder.so_id')
+           ->where('SalesOrder.customer_id', $customerId)
+           ->where('SOLine.item_id', $itemId)
+           ->whereBetween('SalesOrder.so_date', [
                $fromPeriod->format('Y-m-d'),
                $beforePeriod->format('Y-m-d')
            ])
-           ->where('SalesInvoice.status', 'Paid')
+           ->whereIn('SalesOrder.status', $allowedStatuses)
            ->select(
-               DB::raw('DATE_FORMAT(SalesInvoice.invoice_date, "%Y-%m-01") as period'),
-               DB::raw('SUM(SalesInvoiceLine.quantity) as total_quantity')
+               DB::raw('DATE_FORMAT(SalesOrder.so_date, "%Y-%m-01") as period'),
+               DB::raw('SUM(SOLine.quantity) as total_quantity')
            )
            ->groupBy('period')
            ->orderBy('period')

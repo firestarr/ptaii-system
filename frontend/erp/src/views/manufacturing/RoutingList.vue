@@ -164,6 +164,7 @@
         { key: 'revision', label: 'Revisi', sortable: true },
         { key: 'effective_date', label: 'Tanggal Efektif', sortable: true },
         { key: 'status', label: 'Status', sortable: true },
+        { key: 'actions', label: 'Aksi', sortable: false, width: '120px' }
       ];
   
       // Format date to local format
@@ -178,72 +179,71 @@
       };
   
       // Load routings data from API
-        const loadRoutings = async () => {
+      const loadRoutings = async () => {
         isLoading.value = true;
         try {
-            const response = await axios.get('/routings', {
+          const response = await axios.get('/routings', {
             params: {
-                page: pagination.currentPage,
-                per_page: pagination.perPage,
-                sort_field: sorting.field,
-                sort_order: sorting.order,
-                search: searchQuery.value,
-                status: filters.status,
-                item_id: filters.itemId,
+              page: pagination.currentPage,
+              per_page: pagination.perPage,
+              sort_field: sorting.field,
+              sort_order: sorting.order,
+              search: searchQuery.value,
+              status: filters.status,
+              item_id: filters.itemId,
             },
-            });
+          });
 
-            console.log('Routings data:', response.data.data);
+          console.log('Routings data:', response.data);
 
-            // Check if response has the expected structure
-            if (response.data && response.data.data) {
+          // Check if response has the expected structure
+          if (response.data && response.data.data) {
             // Add flat item_name property for each routing
             const routingsWithItemName = response.data.data.map(routing => ({
-                ...routing,
-                item_name: routing.item ? routing.item.name : '',
+              ...routing,
+              item_name: routing.item ? routing.item.name : 'N/A',
             }));
 
             routings.value = routingsWithItemName;
             filteredRoutings.value = routingsWithItemName;
 
-            // Update pagination if meta is available
+            // Update pagination from meta
             if (response.data.meta) {
-                pagination.currentPage = response.data.meta.current_page;
-                pagination.totalPages = response.data.meta.last_page;
-                pagination.from = response.data.meta.from || 0;
-                pagination.to = response.data.meta.to || 0;
-                pagination.total = response.data.meta.total;
-            } else {
-                // Alternative pagination structure (adjust based on your API)
-                pagination.currentPage = response.data.current_page || 1;
-                pagination.totalPages = response.data.last_page || 1;
-                pagination.from = response.data.from || 0;
-                pagination.to = response.data.to || 0;
-                pagination.total = response.data.total || 0;
+              pagination.currentPage = response.data.meta.current_page;
+              pagination.totalPages = response.data.meta.last_page;
+              pagination.from = response.data.meta.from || 0;
+              pagination.to = response.data.meta.to || 0;
+              pagination.total = response.data.meta.total;
+              pagination.perPage = response.data.meta.per_page;
             }
-            } else {
+          } else {
             console.error('Unexpected API response format:', response);
             routings.value = [];
             filteredRoutings.value = [];
-            }
+          }
         } catch (error) {
-            console.error('Error loading routings:', error);
-            routings.value = [];
-            filteredRoutings.value = [];
+          console.error('Error loading routings:', error);
+          if (error.response) {
+            console.error('Error response:', error.response.data);
+          }
+          routings.value = [];
+          filteredRoutings.value = [];
         } finally {
-            isLoading.value = false;
+          isLoading.value = false;
         }
-        };
+      };
   
       // Load all available items for the filter dropdown
       const loadItems = async () => {
         try {
           const response = await axios.get('/items');
-          items.value = response.data.data;
+          items.value = response.data.data || response.data;
         } catch (error) {
           console.error('Error loading items:', error);
         }
       };
+
+      
   
       // Handler for search
       const handleSearch = () => {

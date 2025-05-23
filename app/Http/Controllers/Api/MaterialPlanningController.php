@@ -47,7 +47,10 @@ class MaterialPlanningController extends Controller
 
         // Pagination parameters
         $perPage = 10;
-        $page = $request->input('page', 1);
+        $page = (int) $request->input('page', 1);
+        if ($page < 1) {
+            $page = 1;
+        }
 
         $plans = $query->orderBy('planning_period', 'desc')
                        ->paginate($perPage, ['*'], 'page', $page);
@@ -134,6 +137,7 @@ class MaterialPlanningController extends Controller
             $startPeriod->format('Y-m-d'),
             $endPeriod->format('Y-m-d')
         ])
+        ->where('is_current_version', true)
         ->with('item');
         
         // Filter by items if specified

@@ -497,6 +497,19 @@ const routes = [
                 name: "SalesForecastAnalytics",
                 component: SalesForecastAnalytics,
             },
+            {
+                path: "/sales/forecasts/create",
+                name: "CreateSalesForecast",
+                component: () => import("../views/sales/SalesForecastForm.vue"),
+                meta: { requiresAuth: true },
+            },
+            {
+                path: "/sales/forecasts/:id/edit",
+                name: "EditSalesForecast",
+                component: () => import("../views/sales/SalesForecastForm.vue"),
+                props: true,
+                meta: { requiresAuth: true },
+            },
             // New Sales Forecast Routes
             {
                 path: "/sales/forecasts/consolidated",
