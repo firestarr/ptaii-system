@@ -1,4 +1,4 @@
-ye<!-- src/views/manufacturing/ProductionOrderForm.vue -->
+<!-- src/views/manufacturing/ProductionOrderForm.vue -->
 <template>
   <div class="production-order-form">
     <div class="page-header">
@@ -106,8 +106,14 @@ ye<!-- src/views/manufacturing/ProductionOrderForm.vue -->
                 <div class="info-value">{{ workOrderDetails.routing?.routing_code || 'N/A' }}</div>
               </div>
               <div class="info-row">
-                <div class="info-label">Planned Quantity:</div>
+                <div class="info-label">Total Planned Quantity:</div>
                 <div class="info-value">{{ workOrderDetails.planned_quantity }}</div>
+              </div>
+              <div class="info-row">
+                <div class="info-label">Remaining Quantity:</div>
+                <div class="info-value" :class="getRemainingQuantityClass()">
+                  {{ getRemainingQuantity() }}
+                </div>
               </div>
               <div class="info-row">
                 <div class="info-label">Planned Start:</div>
@@ -128,12 +134,16 @@ ye<!-- src/views/manufacturing/ProductionOrderForm.vue -->
                 id="planned_quantity" 
                 v-model="form.planned_quantity"
                 :class="{ 'error': errors && errors.planned_quantity }"
+                :max="getRemainingQuantity()"
                 min="0" 
                 step="0.01" 
                 required
               >
               <div v-if="errors && errors.planned_quantity" class="error-message">
                 {{ errors.planned_quantity }}
+              </div>
+              <div v-if="workOrderDetails" class="input-hint">
+                Maximum available: {{ getRemainingQuantity() }}
               </div>
             </div>
 
@@ -252,6 +262,7 @@ export default {
       },
       workOrders: [],
       workOrderDetails: null,
+      existingProductionOrders: [],
       warehouses: [],
       items: {},
       bomComponents: [],
@@ -333,17 +344,29 @@ export default {
         this.workOrderDetails = null;
         this.bomComponents = [];
         this.form.consumptions = [];
+        this.existingProductionOrders = [];
         return;
       }
       
       try {
-        // Fetch work order details
-        const response = await axios.get(`/work-orders/${this.form.wo_id}`);
-        this.workOrderDetails = response.data.data || response.data;
+        // Fetch work order details and existing production orders
+        const [workOrderResponse, productionOrdersResponse] = await Promise.all([
+          axios.get(`/work-orders/${this.form.wo_id}`),
+          axios.get('/production-orders', { 
+            params: { wo_id: this.form.wo_id } 
+          })
+        ]);
         
-        // Set default production quantity from work order
+        this.workOrderDetails = workOrderResponse.data.data || workOrderResponse.data;
+        
+        // Filter out current production order if editing
+        this.existingProductionOrders = (productionOrdersResponse.data.data || productionOrdersResponse.data)
+          .filter(po => this.isEditing ? po.production_id !== parseInt(this.id) : true);
+        
+        // Set default production quantity from remaining quantity
+        const remainingQuantity = this.getRemainingQuantity();
         if (!this.isEditing || this.form.planned_quantity === 0) {
-          this.form.planned_quantity = this.workOrderDetails.planned_quantity;
+          this.form.planned_quantity = Math.min(remainingQuantity, this.workOrderDetails.planned_quantity);
         }
         
         // Fetch BOM components
@@ -385,6 +408,22 @@ export default {
         console.error('Error loading work order details:', error);
         if (this.$toast) this.$toast.error('Failed to load work order details');
       }
+    },
+    
+    getRemainingQuantity() {
+      if (!this.workOrderDetails) return 0;
+      
+      const existingPlannedQtySum = this.existingProductionOrders
+        .reduce((sum, po) => sum + parseFloat(po.planned_quantity || 0), 0);
+      
+      return this.workOrderDetails.planned_quantity - existingPlannedQtySum;
+    },
+    
+    getRemainingQuantityClass() {
+      const remaining = this.getRemainingQuantity();
+      if (remaining <= 0) return 'text-danger';
+      if (remaining < this.workOrderDetails.planned_quantity * 0.2) return 'text-warning';
+      return 'text-success';
     },
     
     getDefaultWarehouse() {
@@ -438,32 +477,32 @@ export default {
           : (response.data.data?.production_id || response.data.production_id);
           
         this.$router.push(`/manufacturing/production-orders/${productionId}`);
-          } catch (error) {
-          console.error('Error saving production order:', error);
-          
-          // Reset errors object
-          this.errors = {};
-          
-          if (error && error.response && error.response.data) {
-            // Handle validation errors
-            if (error.response.data.errors) {
-              this.errors = error.response.data.errors;
-              if (this.$toast) this.$toast.error('Please correct the errors before submitting');
-            } 
-            // Handle single error message
-            else {
-              // Safely extract the error message, avoiding undefined properties
-              const errorMessage = error.response.data.message || 
-                                  (error.response.data.error !== undefined ? error.response.data.error : null) || 
-                                  'Failed to save production order';
-              if (this.$toast) this.$toast.error(errorMessage);
-            }
-          } else {
-            if (this.$toast) this.$toast.error('Failed to save production order');
+      } catch (error) {
+        console.error('Error saving production order:', error);
+        
+        // Reset errors object
+        this.errors = {};
+        
+        if (error && error.response && error.response.data) {
+          // Handle validation errors
+          if (error.response.data.errors) {
+            this.errors = error.response.data.errors;
+            if (this.$toast) this.$toast.error('Please correct the errors before submitting');
+          } 
+          // Handle single error message
+          else {
+            // Safely extract the error message, avoiding undefined properties
+            const errorMessage = error.response.data.message || 
+                                (error.response.data.error !== undefined ? error.response.data.error : null) || 
+                                'Failed to save production order';
+            if (this.$toast) this.$toast.error(errorMessage);
           }
-        } finally {
-          this.saving = false;
+        } else {
+          if (this.$toast) this.$toast.error('Failed to save production order');
         }
+      } finally {
+        this.saving = false;
+      }
     },
     
     cancel() {
@@ -474,10 +513,51 @@ export default {
         this.$router.push('/manufacturing/production-orders');
       }
     }
+  },
+  
+  watch: {
+    'form.planned_quantity'() {
+      // Recalculate consumption quantities when planned quantity changes
+      if (this.bomComponents.length > 0 && this.workOrderDetails?.bom) {
+        const ratio = this.form.planned_quantity / this.workOrderDetails.bom.standard_quantity;
+        
+        this.form.consumptions.forEach((consumption, index) => {
+          const bomLine = this.bomComponents[index];
+          if (bomLine) {
+            consumption.planned_quantity = parseFloat((bomLine.quantity * ratio).toFixed(4));
+          }
+        });
+      }
+    }
   }
 };
 </script>
+
 <style scoped>
+/* Existing styles remain the same - adding new classes for remaining quantity */
+
+.text-success {
+  color: #059669 !important;
+  font-weight: 600;
+}
+
+.text-warning {
+  color: #d97706 !important;
+  font-weight: 600;
+}
+
+.text-danger {
+  color: #dc2626 !important;
+  font-weight: 600;
+}
+
+.input-hint {
+  font-size: 0.75rem;
+  color: #64748b;
+  margin-top: 0.25rem;
+  font-style: italic;
+}
+
 /* Base container styling */
 .production-order-form {
   max-width: 1200px;
@@ -665,7 +745,7 @@ select.error {
 }
 
 .info-label {
-  flex: 0 0 130px;
+  flex: 0 0 150px;
   font-weight: 500;
   color: #64748b;
 }

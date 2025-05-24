@@ -105,15 +105,16 @@
                   id="actual_quantity" 
                   v-model="form.actual_quantity"
                   :class="{ 'error': errors.actual_quantity }"
-                  min="0" 
+                  min="0.01" 
                   step="0.01" 
                   required
+                  @input="validateActualQuantity"
                 >
                 <div v-if="errors.actual_quantity" class="error-message">
                   {{ errors.actual_quantity }}
                 </div>
                 <div class="input-hint">
-                  Enter the actual quantity of {{ workOrder?.product?.name || 'product' }} produced
+                  Enter the actual quantity of {{ workOrder?.product?.name || 'product' }} produced (must be greater than 0)
                 </div>
               </div>
             </div>
@@ -160,6 +161,7 @@
                           min="0" 
                           step="0.01"
                           :class="{ 'error': getConsumptionError(index) }"
+                          @input="validateConsumptions"
                         >
                         <div v-if="getConsumptionError(index)" class="error-message">
                           {{ getConsumptionError(index) }}
@@ -197,7 +199,7 @@
             <button 
               type="submit" 
               class="btn btn-success" 
-              :disabled="saving || hasValidationErrors || consumptions.length === 0"
+              :disabled="saving || hasValidationErrors || consumptions.length === 0 || !isActualQuantityValid"
             >
               <i v-if="saving" class="fas fa-spinner fa-spin"></i>
               {{ saving ? 'Completing...' : 'Complete Production Order' }}
@@ -246,6 +248,11 @@ export default {
         Object.keys(this.errors).length > 0 ||
         this.consumptionErrors.some(err => err !== null)
       );
+    },
+    
+    isActualQuantityValid() {
+      const actualQty = parseFloat(this.form.actual_quantity) || 0;
+      return actualQty > 0;
     }
   },
   created() {
@@ -303,6 +310,16 @@ export default {
       this.showToast(msg, 'info');
     },
 
+    validateActualQuantity() {
+      const actualQty = parseFloat(this.form.actual_quantity) || 0;
+      
+      if (actualQty <= 0) {
+        this.errors.actual_quantity = 'Actual quantity must be greater than 0';
+      } else {
+        delete this.errors.actual_quantity;
+      }
+    },
+
     async fetchProductionOrder() {
       this.loading = true;
       try {
@@ -318,6 +335,7 @@ export default {
         }
 
         this.form.actual_quantity = this.productionOrder.planned_quantity;
+        this.validateActualQuantity();
 
         if (this.productionOrder.production_consumptions) {
           this.consumptions = this.productionOrder.production_consumptions;
@@ -436,12 +454,20 @@ export default {
     async completeProduction() {
       try {
         this.errors = {};
+        this.validateActualQuantity();
         this.validateConsumptions();
+
+        // Validasi actual quantity tidak boleh 0
+        if (!this.isActualQuantityValid) {
+          this.showError('Actual quantity must be greater than 0');
+          return;
+        }
 
         if (this.hasValidationErrors) {
           this.showError('Please correct the errors before completing the production order');
           return;
         }
+        
         if (this.consumptions.length === 0) {
           this.showError('Cannot complete production order without any material consumption');
           return;
@@ -498,6 +524,10 @@ export default {
         this.validateConsumptions();
       },
       deep: true
+    },
+    
+    'form.actual_quantity'() {
+      this.validateActualQuantity();
     }
   }
 };

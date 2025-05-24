@@ -476,6 +476,7 @@ Route::get('purchase-orders/reports/outstanding-items', [PurchaseOrderController
 
     // Production Orders
     Route::apiResource('production-orders', ProductionOrderController::class);
+    Route::patch('production-orders/{id}/status', [ProductionOrderController::class, 'updateStatus']); // ← NEW ROUTE
     Route::post('production-orders/{id}/complete', [ProductionOrderController::class, 'complete']);
     Route::apiResource('production-orders/{productionId}/consumptions', ProductionConsumptionController::class);
 

@@ -1,27 +1,82 @@
 <!-- src/views/manufacturing/ProductionOrderDetail.vue -->
 <template>
     <div class="production-order-detail">
+      <!-- Toast Notifications -->
+      <div class="toast-container">
+        <div 
+          v-for="toast in toasts" 
+          :key="toast.id"
+          :class="['toast', `toast-${toast.type}`]"
+          @click="removeToast(toast.id)"
+        >
+          <i :class="getToastIcon(toast.type)"></i>
+          <span>{{ toast.message }}</span>
+          <button class="toast-close" @click.stop="removeToast(toast.id)">
+            <i class="fas fa-times"></i>
+          </button>
+        </div>
+      </div>
+
       <div class="page-header">
         <h1>Production Order Details</h1>
         <div class="actions">
           <router-link to="/manufacturing/production-orders" class="btn btn-secondary">
             <i class="fas fa-arrow-left"></i> Back to List
           </router-link>
-          <router-link v-if="productionOrder && productionOrder.status === 'Draft'" 
-            :to="`/manufacturing/production-orders/${productionId}/edit`" 
-            class="btn btn-primary">
-            <i class="fas fa-edit"></i> Edit
-          </router-link>
-          <router-link v-if="productionOrder && productionOrder.status === 'In Progress'" 
-            :to="`/manufacturing/production-orders/${productionId}/complete`" 
-            class="btn btn-success">
-            <i class="fas fa-check"></i> Complete
-          </router-link>
-          <button v-if="productionOrder && productionOrder.status === 'Draft'" 
-            @click="confirmDelete" 
-            class="btn btn-danger">
-            <i class="fas fa-trash"></i> Delete
-          </button>
+          
+          <!-- Status-based Action Buttons -->
+          <template v-if="productionOrder">
+            <!-- Draft Status Actions -->
+            <template v-if="productionOrder.status === 'Draft'">
+              <router-link 
+                :to="`/manufacturing/production-orders/${productionId}/edit`" 
+                class="btn btn-primary">
+                <i class="fas fa-edit"></i> Edit
+              </router-link>
+              <button 
+                @click="confirmStartProduction" 
+                class="btn btn-success">
+                <i class="fas fa-play"></i> Start Production
+              </button>
+              <button 
+                @click="confirmDelete" 
+                class="btn btn-danger">
+                <i class="fas fa-trash"></i> Delete
+              </button>
+            </template>
+            
+            <!-- In Progress Status Actions -->
+            <template v-if="productionOrder.status === 'In Progress'">
+              <router-link 
+                :to="`/manufacturing/production-orders/${productionId}/complete`" 
+                class="btn btn-success">
+                <i class="fas fa-check"></i> Complete Production
+              </router-link>
+              <button 
+                @click="confirmCancelProduction" 
+                class="btn btn-warning">
+                <i class="fas fa-times"></i> Cancel Production
+              </button>
+            </template>
+            
+            <!-- Completed Status Actions -->
+            <template v-if="productionOrder.status === 'Completed'">
+              <button 
+                @click="printProductionOrder" 
+                class="btn btn-info">
+                <i class="fas fa-print"></i> Print
+              </button>
+            </template>
+            
+            <!-- Cancelled Status Actions -->
+            <template v-if="productionOrder.status === 'Cancelled'">
+              <button 
+                @click="confirmReactivate" 
+                class="btn btn-primary">
+                <i class="fas fa-undo"></i> Reactivate
+              </button>
+            </template>
+          </template>
         </div>
       </div>
   
@@ -192,6 +247,9 @@
             <div class="empty-state">
               <i class="fas fa-box-open"></i>
               <p>No material consumption records found.</p>
+              <p v-if="productionOrder.status === 'In Progress'">
+                Add materials to track consumption during production.
+              </p>
             </div>
           </div>
         </div>
@@ -219,7 +277,29 @@
         </div>
       </div>
   
-      <!-- Confirmation Modal -->
+      <!-- Start Production Confirmation Modal -->
+      <ConfirmationModal
+        v-if="showStartModal"
+        title="Start Production"
+        :message="`Are you sure you want to start production for <strong>${productionOrder?.production_number}</strong>?<br><br>This will change the status to 'In Progress' and you will be able to record material consumption and production activities.`"
+        confirm-button-text="Start Production"
+        confirm-button-class="btn btn-success"
+        @confirm="startProduction"
+        @close="cancelStart"
+      />
+  
+      <!-- Cancel Production Confirmation Modal -->
+      <ConfirmationModal
+        v-if="showCancelModal"
+        title="Cancel Production"
+        :message="`Are you sure you want to cancel production for <strong>${productionOrder?.production_number}</strong>?<br><br>This will change the status to 'Cancelled' and stop all production activities.`"
+        confirm-button-text="Cancel Production"
+        confirm-button-class="btn btn-warning"
+        @confirm="cancelProduction"
+        @close="cancelCancelAction"
+      />
+  
+      <!-- Delete Confirmation Modal -->
       <ConfirmationModal
         v-if="showDeleteModal"
         title="Delete Production Order"
@@ -228,6 +308,17 @@
         confirm-button-class="btn btn-danger"
         @confirm="deleteProductionOrder"
         @close="cancelDelete"
+      />
+  
+      <!-- Reactivate Confirmation Modal -->
+      <ConfirmationModal
+        v-if="showReactivateModal"
+        title="Reactivate Production Order"
+        :message="`Are you sure you want to reactivate production order <strong>${productionOrder?.production_number}</strong>?<br><br>This will change the status back to 'Draft'.`"
+        confirm-button-text="Reactivate"
+        confirm-button-class="btn btn-primary"
+        @confirm="reactivateProduction"
+        @close="cancelReactivate"
       />
     </div>
   </template>
@@ -249,13 +340,70 @@
         workOrder: null,
         consumptions: [],
         loading: true,
-        showDeleteModal: false
+        showStartModal: false,
+        showCancelModal: false,
+        showDeleteModal: false,
+        showReactivateModal: false,
+        // Toast system
+        toasts: [],
+        toastIdCounter: 0
       };
     },
     created() {
       this.fetchProductionOrder();
     },
     methods: {
+      // Toast Methods
+      showToast(message, type = 'info', duration = 5000) {
+        const toast = {
+          id: this.toastIdCounter++,
+          message,
+          type,
+          duration
+        };
+        
+        this.toasts.push(toast);
+        
+        // Auto remove after duration
+        setTimeout(() => {
+          this.removeToast(toast.id);
+        }, duration);
+      },
+
+      removeToast(id) {
+        this.toasts = this.toasts.filter(toast => toast.id !== id);
+      },
+
+      getToastIcon(type) {
+        switch (type) {
+          case 'success':
+            return 'fas fa-check-circle';
+          case 'error':
+            return 'fas fa-exclamation-circle';
+          case 'warning':
+            return 'fas fa-exclamation-triangle';
+          default:
+            return 'fas fa-info-circle';
+        }
+      },
+
+      // Helper methods for toast
+      showError(msg) {
+        this.showToast(msg, 'error');
+      },
+      
+      showSuccess(msg) {
+        this.showToast(msg, 'success');
+      },
+
+      showWarning(msg) {
+        this.showToast(msg, 'warning');
+      },
+
+      showInfo(msg) {
+        this.showToast(msg, 'info');
+      },
+
       async fetchProductionOrder() {
         this.loading = true;
         try {
@@ -273,19 +421,10 @@
           }
         } catch (error) {
           console.error('Error fetching production order:', error);
-          this.$toast.error('Failed to load production order');
+          this.showError('Failed to load production order');
         } finally {
           this.loading = false;
         }
-      },
-      
-      issueMaterial(material) {
-        // Navigate to add consumption form with prefill props
-        this.$router.push({
-          name: 'AddProductionConsumption',
-          params: { productionId: this.productionId },
-          query: { prefillItemId: material.item_id, prefillPlannedQuantity: material.planned_quantity || 0 }
-        });
       },
       
       async fetchWorkOrder(workOrderId) {
@@ -294,10 +433,84 @@
           this.workOrder = response.data.data || response.data;
         } catch (error) {
           console.error('Error fetching work order:', error);
-          this.$toast.error('Failed to load work order details');
+          this.showError('Failed to load work order details');
         }
       },
       
+      // Status Transition Methods
+      confirmStartProduction() {
+        this.showStartModal = true;
+      },
+      
+      async startProduction() {
+        try {
+          await axios.patch(`/production-orders/${this.productionId}/status`, {
+            status: 'In Progress'
+          });
+          
+          this.showSuccess('Production started successfully');
+          this.fetchProductionOrder(); // Refresh data
+        } catch (error) {
+          console.error('Error starting production:', error);
+          this.showError('Failed to start production');
+        } finally {
+          this.showStartModal = false;
+        }
+      },
+      
+      cancelStart() {
+        this.showStartModal = false;
+      },
+      
+      confirmCancelProduction() {
+        this.showCancelModal = true;
+      },
+      
+      async cancelProduction() {
+        try {
+          await axios.patch(`/production-orders/${this.productionId}/status`, {
+            status: 'Cancelled'
+          });
+          
+          this.showSuccess('Production cancelled successfully');
+          this.fetchProductionOrder(); // Refresh data
+        } catch (error) {
+          console.error('Error cancelling production:', error);
+          this.showError('Failed to cancel production');
+        } finally {
+          this.showCancelModal = false;
+        }
+      },
+      
+      cancelCancelAction() {
+        this.showCancelModal = false;
+      },
+      
+      confirmReactivate() {
+        this.showReactivateModal = true;
+      },
+      
+      async reactivateProduction() {
+        try {
+          await axios.patch(`/production-orders/${this.productionId}/status`, {
+            status: 'Draft'
+          });
+          
+          this.showSuccess('Production order reactivated successfully');
+          this.fetchProductionOrder(); // Refresh data
+        } catch (error) {
+          console.error('Error reactivating production:', error);
+          this.showError('Failed to reactivate production order');
+        } finally {
+          this.showReactivateModal = false;
+        }
+      },
+      
+      cancelReactivate() {
+        this.showReactivateModal = false;
+      },
+      
+      // Existing Methods
       formatDate(date) {
         if (!date) return 'N/A';
         return new Date(date).toLocaleDateString();
@@ -366,6 +579,11 @@
         return utilization.toFixed(2);
       },
       
+      printProductionOrder() {
+        // Implement print functionality
+        window.print();
+      },
+      
       confirmDelete() {
         this.showDeleteModal = true;
       },
@@ -373,11 +591,11 @@
       async deleteProductionOrder() {
         try {
           await axios.delete(`/production-orders/${this.productionId}`);
-          this.$toast.success('Production order deleted successfully');
+          this.showSuccess('Production order deleted successfully');
           this.$router.push('/manufacturing/production-orders');
         } catch (error) {
           console.error('Error deleting production order:', error);
-          this.$toast.error('Failed to delete production order');
+          this.showError('Failed to delete production order');
         } finally {
           this.showDeleteModal = false;
         }
@@ -391,6 +609,89 @@
   </script>
   
   <style scoped>
+  /* Toast Styles */
+  .toast-container {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    z-index: 9999;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    max-width: 400px;
+  }
+
+  .toast {
+    display: flex;
+    align-items: center;
+    padding: 12px 16px;
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    cursor: pointer;
+    animation: toastSlideIn 0.3s ease-out;
+    position: relative;
+    word-wrap: break-word;
+  }
+
+  .toast i {
+    margin-right: 12px;
+    font-size: 18px;
+    flex-shrink: 0;
+  }
+
+  .toast span {
+    flex-grow: 1;
+    font-weight: 500;
+  }
+
+  .toast-close {
+    background: none;
+    border: none;
+    margin-left: 12px;
+    cursor: pointer;
+    opacity: 0.7;
+    padding: 4px;
+    border-radius: 4px;
+    transition: opacity 0.2s;
+  }
+
+  .toast-close:hover {
+    opacity: 1;
+    background-color: rgba(0, 0, 0, 0.1);
+  }
+
+  .toast-success {
+    background-color: #10b981;
+    color: white;
+  }
+
+  .toast-error {
+    background-color: #ef4444;
+    color: white;
+  }
+
+  .toast-warning {
+    background-color: #f59e0b;
+    color: white;
+  }
+
+  .toast-info {
+    background-color: #3b82f6;
+    color: white;
+  }
+
+  @keyframes toastSlideIn {
+    from {
+      transform: translateX(100%);
+      opacity: 0;
+    }
+    to {
+      transform: translateX(0);
+      opacity: 1;
+    }
+  }
+
+  /* Existing Styles */
   .production-order-detail {
     padding: 1rem;
   }
@@ -405,6 +706,7 @@
   .actions {
     display: flex;
     gap: 0.5rem;
+    flex-wrap: wrap;
   }
   
   .loading-container,
@@ -566,6 +868,7 @@
     align-items: center;
     padding: 2rem;
     color: var(--gray-500);
+    text-align: center;
   }
   
   .empty-state i {
@@ -599,7 +902,87 @@
     color: var(--primary-color);
   }
   
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    padding: 0.5rem 1rem;
+    border-radius: 0.375rem;
+    font-weight: 500;
+    text-decoration: none;
+    border: none;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  
+  .btn-sm {
+    padding: 0.25rem 0.5rem;
+    font-size: 0.875rem;
+  }
+  
+  .btn-primary {
+    background-color: var(--primary-color);
+    color: white;
+  }
+  
+  .btn-primary:hover {
+    background-color: var(--primary-dark);
+  }
+  
+  .btn-secondary {
+    background-color: var(--gray-200);
+    color: var(--gray-800);
+  }
+  
+  .btn-secondary:hover {
+    background-color: var(--gray-300);
+  }
+  
+  .btn-success {
+    background-color: var(--success-color);
+    color: white;
+  }
+  
+  .btn-success:hover {
+    background-color: #047857;
+  }
+  
+  .btn-warning {
+    background-color: var(--warning-color);
+    color: white;
+  }
+  
+  .btn-warning:hover {
+    background-color: #b45309;
+  }
+  
+  .btn-danger {
+    background-color: var(--danger-color);
+    color: white;
+  }
+  
+  .btn-danger:hover {
+    background-color: #b91c1c;
+  }
+  
+  .btn-info {
+    background-color: #3b82f6;
+    color: white;
+  }
+  
+  .btn-info:hover {
+    background-color: #2563eb;
+  }
+  
   @media (max-width: 768px) {
+    .toast-container {
+      top: 10px;
+      right: 10px;
+      left: 10px;
+      max-width: none;
+    }
+    
     .page-header {
       flex-direction: column;
       align-items: flex-start;
@@ -609,7 +992,6 @@
     .actions {
       width: 100%;
       justify-content: flex-start;
-      flex-wrap: wrap;
     }
     
     .detail-grid {
@@ -618,6 +1000,10 @@
     
     .table-responsive {
       overflow-x: auto;
+    }
+    
+    .summary-stats {
+      grid-template-columns: 1fr;
     }
   }
   </style>
