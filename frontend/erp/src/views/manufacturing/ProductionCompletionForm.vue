@@ -432,18 +432,28 @@ isStockInsufficient(consumption, index) {
           // Redirect to production order detail
           this.$router.push(`/manufacturing/production-orders/${this.productionId}`);
         } catch (error) {
-          console.error('Error completing production order:', error);
-          
-          if (error.response && error.response.data && error.response.data.errors) {
-            this.errors = error.response.data.errors;
-            this.$toast.error('Please correct the errors before completing');
-          } else {
+        console.error('Error completing production order:', error);
+        
+        if (error.response && error.response.data) {
+            // Handle stock validation errors
+            if (error.response.data.errors && error.response.data.errors.stock) {
+                // Display each stock error
+                error.response.data.errors.stock.forEach(stockError => {
+                    this.$toast.error(stockError);
+                });
+            } else if (error.response.data.errors) {
+                this.errors = error.response.data.errors;
+                this.$toast.error('Please correct the errors before completing');
+            } else {
+                this.$toast.error(error.response.data.message || 'Failed to complete production order');
+            }
+        } else {
             this.$toast.error('Failed to complete production order');
-          }
-        } finally {
-          this.saving = false;
         }
-      },
+    } finally {
+        this.saving = false;
+    }
+},
       
       cancel() {
         // Go back to production order detail

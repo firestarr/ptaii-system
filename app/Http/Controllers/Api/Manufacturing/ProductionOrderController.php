@@ -332,10 +332,58 @@ class ProductionOrderController extends Controller
         $validator = Validator::make($request->all(), [
             'actual_quantity' => 'required|numeric|min:0',
             'consumptions' => 'sometimes|array',
+            'consumptions.*.consumption_id' => 'required|integer',
+            'consumptions.*.actual_quantity' => 'required|numeric|min:0',
         ]);
 
         if ($validator->fails()) {
             return response()->json(['errors' => $validator->errors()], 422);
+        }
+        
+        // Validate stock availability before processing
+        $stockErrors = [];
+        $consumptionsMap = [];
+        
+        if ($request->has('consumptions') && is_array($request->consumptions)) {
+            foreach ($request->consumptions as $consumption) {
+                if (isset($consumption['consumption_id'])) {
+                    $consumptionsMap[$consumption['consumption_id']] = $consumption['actual_quantity'];
+                }
+            }
+        }
+        
+        // Check stock availability for each consumption
+        foreach ($productionOrder->productionConsumptions as $consumption) {
+            if (!isset($consumptionsMap[$consumption->consumption_id])) {
+                continue;
+            }
+            
+            $actualConsumption = $consumptionsMap[$consumption->consumption_id];
+            
+            // Get current stock for the item in the specified warehouse
+            $itemStock = ItemStock::where('item_id', $consumption->item_id)
+                ->where('warehouse_id', $consumption->warehouse_id)
+                ->first();
+            
+            $availableStock = $itemStock ? $itemStock->quantity : 0;
+            
+            if ($actualConsumption > $availableStock) {
+                $item = Item::find($consumption->item_id);
+                $stockErrors[] = sprintf(
+                    'Insufficient stock for %s. Required: %s, Available: %s',
+                    $item->name,
+                    $actualConsumption,
+                    $availableStock
+                );
+            }
+        }
+        
+        // Return validation errors if stock is insufficient
+        if (!empty($stockErrors)) {
+            return response()->json([
+                'message' => 'Stock validation failed',
+                'errors' => ['stock' => $stockErrors]
+            ], 422);
         }
         
         DB::beginTransaction();
@@ -347,7 +395,7 @@ class ProductionOrderController extends Controller
             
             // Get the finished product and update inventory
             $finishedItem = $productionOrder->workOrder->item;
-            $finishedGoodsWarehouseId = self::FINISHED_GOODS_WAREHOUSE_ID; // Finished goods warehouse ID
+            $finishedGoodsWarehouseId = self::FINISHED_GOODS_WAREHOUSE_ID;
             
             // Create stock transaction for the finished product
             StockTransaction::create([
@@ -374,17 +422,7 @@ class ProductionOrderController extends Controller
             $finishedItemStock->save();
             
             // Process material consumptions
-            // Convert array from frontend to associative array keyed by consumption_id
-            $consumptionsMap = [];
-            if ($request->has('consumptions') && is_array($request->consumptions)) {
-                foreach ($request->consumptions as $consumption) {
-                    if (isset($consumption['consumption_id'])) {
-                        $consumptionsMap[$consumption['consumption_id']] = $consumption['actual_quantity'];
-                    }
-                }
-            }
-            
-            $rawMaterialsWarehouseId = self::RAW_MATERIALS_WAREHOUSE_ID; // Raw materials warehouse ID
+            $rawMaterialsWarehouseId = self::RAW_MATERIALS_WAREHOUSE_ID;
             
             foreach ($productionOrder->productionConsumptions as $consumption) {
                 // Skip if no actual quantity was consumed
@@ -397,13 +435,13 @@ class ProductionOrderController extends Controller
                 // Update consumption record
                 $consumption->actual_quantity = $actualConsumption;
                 $consumption->variance = $consumption->planned_quantity - $actualConsumption;
-                $consumption->warehouse_id = $rawMaterialsWarehouseId; // Set warehouse to raw materials warehouse
+                $consumption->warehouse_id = $consumption->warehouse_id ?: $rawMaterialsWarehouseId;
                 $consumption->save();
                 
                 // Create stock transaction for consumed material (negative quantity)
                 StockTransaction::create([
                     'item_id' => $consumption->item_id,
-                    'warehouse_id' => $rawMaterialsWarehouseId,
+                    'warehouse_id' => $consumption->warehouse_id,
                     'transaction_type' => 'issue',
                     'quantity' => -$actualConsumption,
                     'transaction_date' => now(),
@@ -417,13 +455,14 @@ class ProductionOrderController extends Controller
                 $materialItem->save();
                 
                 // Update ItemStock for material
-                $materialItemStock = ItemStock::firstOrNew([
-                    'item_id' => $consumption->item_id,
-                    'warehouse_id' => $rawMaterialsWarehouseId
-                ]);
+                $materialItemStock = ItemStock::where('item_id', $consumption->item_id)
+                    ->where('warehouse_id', $consumption->warehouse_id)
+                    ->first();
                 
-                $materialItemStock->quantity = max(0, ($materialItemStock->quantity ?? 0) - $actualConsumption);
-                $materialItemStock->save();
+                if ($materialItemStock) {
+                    $materialItemStock->quantity = max(0, $materialItemStock->quantity - $actualConsumption);
+                    $materialItemStock->save();
+                }
             }
             
             // Update work order progress if needed
