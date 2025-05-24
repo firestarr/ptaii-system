@@ -23,14 +23,14 @@
                   type="month"
                   v-model="filters.startPeriod"
                   class="form-control"
-                  @change="fetchPlans"
+                  @change="handleFilterChange"
                 />
               </div>
             </div>
             <div class="col-md-3">
               <div class="form-group">
                 <label class="form-label">Material Type</label>
-                <select v-model="filters.materialType" class="form-control" @change="fetchPlans">
+                <select v-model="filters.materialType" class="form-control" @change="handleFilterChange">
                   <option value="">All Types</option>
                   <option value="FG">Finished Goods</option>
                   <option value="RM">Raw Materials</option>
@@ -40,7 +40,7 @@
             <div class="col-md-3">
               <div class="form-group">
                 <label class="form-label">Status</label>
-                <select v-model="filters.status" class="form-control" @change="fetchPlans">
+                <select v-model="filters.status" class="form-control" @change="handleFilterChange">
                   <option value="">All Status</option>
                   <option value="Draft">Draft</option>
                   <option value="Requisitioned">Requisitioned</option>
@@ -58,7 +58,7 @@
                     class="form-control"
                     placeholder="Search material plans..."
                   />
-                  <button class="btn btn-outline-primary" @click="fetchPlans">
+                  <button class="btn btn-outline-primary" @click="handleFilterChange">
                     <i class="fas fa-search"></i>
                   </button>
                 </div>
@@ -351,6 +351,8 @@ export default {
   data() {
     return {
       plans: [],
+      allFilteredPlans: [], // Add this line
+      allGroupedPlans: [], // Add this line
       groupedPlans: [],
       periodRange: [],
       isLoading: false,
@@ -403,63 +405,114 @@ export default {
       const month = (date.getMonth() + 1).toString().padStart(2, '0');
       return `${year}-${month}`;
     },
-    async fetchPlans(page = this.currentPage) {
+    async fetchPlans(page = 1) {
       this.isLoading = true;
       try {
-        // First, generate the period range
         const periodRange = this.generateSixMonthPeriodRange(this.filters.startPeriod);
-        
-        // Create an array to store all fetched plans
         let allPlans = [];
         
-        // Fetch plans for each period
-        for (const period of periodRange) {
-          const params = {
-            search: this.filters.search,
-            planningPeriod: period + '-01',
-            materialType: this.filters.materialType,
-            status: this.filters.status,
-            page: page,  // Use the passed page parameter
-            per_page: 100  // Fetch more items per page to get a comprehensive view
-          };
-          
-          try {
-            const response = await axios.get('/material-planning', { params });
-            if (response.data.data && response.data.data.length > 0) {
-              allPlans = [...allPlans, ...response.data.data];
-            }
-            
-            // Update pagination info from the most recent request
-            this.total = response.data.total ?? 0;
-            this.from = response.data.from ?? 0;
-            this.to = response.data.to ?? 0;
-            this.currentPage = response.data.current_page ?? 1;
-            this.totalPages = response.data.last_page ?? 1;
-          } catch (error) {
-            console.error(`Error fetching plans for period ${period}:`, error);
+        // Build params with filters
+        const params = {
+          search: this.filters.search,
+          materialType: this.filters.materialType,
+          status: this.filters.status,
+          per_page: 2000
+        };
+        
+        // Remove empty filters to avoid sending empty strings
+        Object.keys(params).forEach(key => {
+          if (params[key] === '' || params[key] === null || params[key] === undefined) {
+            delete params[key];
           }
+        });
+        
+        const response = await axios.get('/material-planning', { params });
+        
+        if (response.data.data) {
+          // Filter data to only include our 6-month range
+          allPlans = response.data.data.filter(plan => {
+            const planPeriod = plan.planning_period.substring(0, 7);
+            return periodRange.includes(planPeriod);
+          });
         }
         
-        // Store all collected plans
-        this.plans = allPlans;
+        // Store all filtered plans
+        this.allFilteredPlans = allPlans;
         
-        // Process data for horizontal view
-        this.processDataForHorizontalView();
+        // Reset to page 1 when fetchPlans is called (usually when filters change)
+        this.implementFrontendPagination(page);
+        
       } catch (error) {
-        console.error('Error in fetchPlans process:', error);
+        console.error('Error fetching plans:', error);
         alert('Failed to fetch material plans');
       } finally {
         this.isLoading = false;
       }
     },
-    
-    processDataForHorizontalView() {
-      // Generate a 6-month period range starting from the selected start period
+
+    // Add method to handle filter changes
+    handleFilterChange() {
+      // Reset to page 1 when filters change
+      this.currentPage = 1;
+      this.fetchPlans(1);
+    },
+
+    implementFrontendPagination(page = 1) {
+      const itemsPerPage = 20;
+      
+      // First, process all data to get all items
+      this.processAllDataForItems();
+      
+      // Get all items from processed data
+      let allItems = [];
+      this.allGroupedPlans.forEach(group => {
+        allItems = [...allItems, ...group.items];
+      });
+      
+      // Calculate pagination
+      this.total = allItems.length;
+      this.totalPages = Math.ceil(allItems.length / itemsPerPage) || 1;
+      this.currentPage = Math.min(Math.max(page, 1), this.totalPages);
+      
+      // Calculate start and end indices
+      const startIndex = (this.currentPage - 1) * itemsPerPage;
+      const endIndex = startIndex + itemsPerPage;
+      
+      this.from = this.total > 0 ? startIndex + 1 : 0;
+      this.to = Math.min(endIndex, this.total);
+      
+      // Get items for current page
+      const paginatedItems = allItems.slice(startIndex, endIndex);
+      
+      // Group paginated items back by material type
+      const paginatedGroups = new Map();
+      paginatedItems.forEach(item => {
+        if (!paginatedGroups.has(item.material_type)) {
+          paginatedGroups.set(item.material_type, {
+            material_type: item.material_type,
+            items: []
+          });
+        }
+        paginatedGroups.get(item.material_type).items.push(item);
+      });
+      
+      // Convert to array and sort
+      this.groupedPlans = Array.from(paginatedGroups.values()).sort(a => {
+        return a.material_type === 'FG' ? -1 : 1;
+      });
+    },
+
+    // New method to process all data and store complete grouped items
+    processAllDataForItems() {
+      const plans = this.allFilteredPlans || [];
+      
       this.periodRange = this.generateSixMonthPeriodRange(this.filters.startPeriod);
       
-      // Group plans by item and material type
       const itemsMap = new Map();
-      this.plans.forEach(plan => {
+      
+      plans.forEach(plan => {
+        if (!plan.item) return;
+        
         const itemKey = plan.item.item_id;
         if (!itemsMap.has(itemKey)) {
           itemsMap.set(itemKey, {
@@ -472,19 +525,19 @@ export default {
           });
         }
         
-        // Add period data to this item
-        const period = plan.planning_period.substring(0, 7); // YYYY-MM format
+        const period = plan.planning_period.substring(0, 7);
         itemsMap.get(itemKey).periods[period] = {
           plan_id: plan.plan_id,
-          forecast_quantity: plan.forecast_quantity,
-          available_stock: plan.available_stock,
-          net_requirement: plan.net_requirement,
-          planned_order_quantity: plan.planned_order_quantity,
+          forecast_quantity: plan.forecast_quantity || 0,
+          available_stock: plan.available_stock || 0,
+          wip_stock: plan.wip_stock || 0,
+          net_requirement: plan.net_requirement || 0,
+          planned_order_quantity: plan.planned_order_quantity || 0,
           status: plan.status
         };
       });
       
-      // Group items by material type
+      // Group all items by material type (store complete data)
       const materialGroups = new Map();
       for (const item of itemsMap.values()) {
         if (!materialGroups.has(item.material_type)) {
@@ -496,16 +549,75 @@ export default {
         materialGroups.get(item.material_type).items.push(item);
       }
       
-      // Convert to array and sort
-      this.groupedPlans = Array.from(materialGroups.values()).sort(a => {
-        // Sort FG first, then RM
+      this.allGroupedPlans = Array.from(materialGroups.values()).sort(a => {
         return a.material_type === 'FG' ? -1 : 1;
       });
       
       // Sort items within each group by item code
-      this.groupedPlans.forEach(group => {
+      this.allGroupedPlans.forEach(group => {
         group.items.sort((a, b) => a.item_code.localeCompare(b.item_code));
       });
+    },
+
+    processDataForHorizontalView(plansData = null) {
+      const plans = plansData || this.allFilteredPlans || [];
+      
+      this.periodRange = this.generateSixMonthPeriodRange(this.filters.startPeriod);
+      
+      const itemsMap = new Map();
+      
+      plans.forEach(plan => {
+        if (!plan.item) return;
+        
+        const itemKey = plan.item.item_id;
+        if (!itemsMap.has(itemKey)) {
+          itemsMap.set(itemKey, {
+            item_id: plan.item.item_id,
+            item_code: plan.item.item_code,
+            name: plan.item.name,
+            material_type: plan.material_type,
+            status: plan.status,
+            periods: {}
+          });
+        }
+        
+        const period = plan.planning_period.substring(0, 7);
+        itemsMap.get(itemKey).periods[period] = {
+          plan_id: plan.plan_id,
+          forecast_quantity: plan.forecast_quantity || 0,
+          available_stock: plan.available_stock || 0,
+          wip_stock: plan.wip_stock || 0,
+          net_requirement: plan.net_requirement || 0,
+          planned_order_quantity: plan.planned_order_quantity || 0,
+          status: plan.status
+        };
+      });
+      
+      // If this is called from implementFrontendPagination, return the items
+      if (plansData) {
+        const materialGroups = new Map();
+        for (const item of itemsMap.values()) {
+          if (!materialGroups.has(item.material_type)) {
+            materialGroups.set(item.material_type, {
+              material_type: item.material_type,
+              items: []
+            });
+          }
+          materialGroups.get(item.material_type).items.push(item);
+        }
+        
+        this.groupedPlans = Array.from(materialGroups.values()).sort(a => {
+          return a.material_type === 'FG' ? -1 : 1;
+        });
+        
+        this.groupedPlans.forEach(group => {
+          group.items.sort((a, b) => a.item_code.localeCompare(b.item_code));
+        });
+      }
+    },
+
+    handlePageChange(page) {
+      this.implementFrontendPagination(page);
     },
     
     generateSixMonthPeriodRange(startPeriod) {
@@ -719,10 +831,6 @@ export default {
       this.deleteItemId = null;
     },
     
-    handlePageChange(page) {
-      this.currentPage = page;
-      this.fetchPlans(page);
-    }
   }
 };
 </script>

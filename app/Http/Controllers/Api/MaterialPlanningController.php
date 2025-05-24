@@ -29,7 +29,7 @@ class MaterialPlanningController extends Controller
             $search = $request->input('search');
             $query->whereHas('item', function ($q) use ($search) {
                 $q->where('item_code', 'like', "%{$search}%")
-                  ->orWhere('name', 'like', "%{$search}%");
+                ->orWhere('name', 'like', "%{$search}%");
             });
         }
 
@@ -45,15 +45,16 @@ class MaterialPlanningController extends Controller
             $query->where('status', $request->input('status'));
         }
 
-        // Pagination parameters
-        $perPage = 10;
+        // Get per_page parameter, default to 50, max 2000
+        $perPage = min((int) $request->input('per_page', 50), 2000);
         $page = (int) $request->input('page', 1);
         if ($page < 1) {
             $page = 1;
         }
 
-        $plans = $query->orderBy('planning_period', 'desc')
-                       ->paginate($perPage, ['*'], 'page', $page);
+        $plans = $query->orderBy('planning_period', 'asc')
+                    ->orderBy('material_type', 'desc') // FG first, then RM
+                    ->paginate($perPage, ['*'], 'page', $page);
 
         return response()->json($plans);
     }
