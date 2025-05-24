@@ -427,12 +427,32 @@ Route::get('purchase-orders/reports/outstanding-items', [PurchaseOrderController
         Route::delete('/{id}', [WarehouseController::class, 'destroy']);
     });
 
-    // Stock Transaction Routes
+    // Add these routes to your routes/api.php file inside the auth:sanctum middleware group
+
+    // Stock Transaction Routes (Odoo-style)
     Route::prefix('stock-transactions')->group(function () {
+        // Basic CRUD
         Route::get('/', [StockTransactionController::class, 'index']);
         Route::post('/', [StockTransactionController::class, 'store']);
         Route::get('/{id}', [StockTransactionController::class, 'show']);
-    Route::get('/item/{itemId}', [StockTransactionController::class, 'itemMovement']);
+        Route::put('/{id}', [StockTransactionController::class, 'update']);
+        Route::delete('/{id}', [StockTransactionController::class, 'destroy']);
+        
+        // State management (like Odoo)
+        Route::post('/{id}/confirm', [StockTransactionController::class, 'confirm']);
+        Route::post('/{id}/cancel', [StockTransactionController::class, 'cancel']);
+        
+        // Bulk operations
+        Route::post('/bulk-confirm', [StockTransactionController::class, 'bulkConfirm']);
+        Route::get('/pending', [StockTransactionController::class, 'getPending']);
+        
+        // Transfer operations (simplified like Odoo)
+        Route::post('/transfer', [StockTransactionController::class, 'transfer']);
+        
+        // Item movement history
+        Route::get('/item/{itemId}/movement', [StockTransactionController::class, 'itemMovement']);
+        
+        // Warehouse-specific transactions
         Route::get('/warehouse/{warehouseId}', [StockTransactionController::class, 'getWarehouseTransactions']);
     });
 
