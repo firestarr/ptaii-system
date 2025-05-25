@@ -329,19 +329,17 @@ class ProductionOrderController extends Controller
             return response()->json(['message' => 'Production order not found'], 404);
         }
         
-        // ============ BAGIAN YANG DIPERBAIKI ============
-        // ENHANCED validation for completion - actual_quantity must be greater than 0
+        // Enhanced validation for completion - actual_quantity must be greater than 0
         $validator = Validator::make($request->all(), [
             'actual_quantity' => [
                 'required',
                 'numeric',
-                'min:0.01', // ← DIPERBAIKI: dari 'min:0' menjadi 'min:0.01'
+                'min:0.01',
             ],
             'consumptions' => 'sometimes|array',
             'consumptions.*.consumption_id' => 'required|integer',
             'consumptions.*.actual_quantity' => 'required|numeric|min:0.01',
         ], [
-            // ← DITAMBAHKAN: Custom error messages
             'actual_quantity.min' => 'The actual quantity must be greater than 0.',
             'actual_quantity.required' => 'The actual quantity field is required.',
             'actual_quantity.numeric' => 'The actual quantity must be a number.',
@@ -351,7 +349,7 @@ class ProductionOrderController extends Controller
             return response()->json(['errors' => $validator->errors()], 422);
         }
 
-        // ← DITAMBAHKAN: Additional business rule validation
+        // Additional business rule validation
         $actualQuantity = floatval($request->actual_quantity);
         if ($actualQuantity <= 0) {
             return response()->json([
@@ -361,7 +359,6 @@ class ProductionOrderController extends Controller
                 ]
             ], 422);
         }
-        // ============ END PERBAIKAN ============
         
         // Validate stock availability before processing
         $stockErrors = [];
@@ -420,29 +417,26 @@ class ProductionOrderController extends Controller
             $finishedItem = $productionOrder->workOrder->item;
             $finishedGoodsWarehouseId = self::FINISHED_GOODS_WAREHOUSE_ID;
             
-            // Create stock transaction for the finished product
-            StockTransaction::create([
+            // ===== UPDATED: Create stock transaction for the finished product (Odoo-style) =====
+            $finishedProductTransaction = StockTransaction::create([
                 'item_id' => $finishedItem->item_id,
                 'warehouse_id' => $finishedGoodsWarehouseId,
-                'transaction_type' => 'receive',
-                'quantity' => $actualQuantity,
+                'dest_warehouse_id' => null,
+                'transaction_type' => StockTransaction::TYPE_MANUFACTURING,
+                'move_type' => StockTransaction::MOVE_TYPE_IN, // Incoming finished product
+                'quantity' => $actualQuantity, // Always positive
                 'transaction_date' => now(),
                 'reference_document' => 'production_order',
-                'reference_number' => $productionOrder->production_number
+                'reference_number' => $productionOrder->production_number,
+                'origin' => "WO-{$productionOrder->wo_id}",
+                'batch_id' => null,
+                'state' => StockTransaction::STATE_DRAFT,
+                'notes' => "Finished product from production"
             ]);
-            
-            // Update item's total stock
-            $finishedItem->current_stock += $actualQuantity;
-            $finishedItem->save();
-            
-            // Update ItemStock for finished product
-            $finishedItemStock = ItemStock::firstOrNew([
-                'item_id' => $finishedItem->item_id,
-                'warehouse_id' => $finishedGoodsWarehouseId
-            ]);
-            
-            $finishedItemStock->quantity = ($finishedItemStock->quantity ?? 0) + $actualQuantity;
-            $finishedItemStock->save();
+
+            // Auto-confirm to update stock
+            $finishedProductTransaction->markAsDone();
+            // ===== END UPDATE =====
             
             // Process material consumptions
             $rawMaterialsWarehouseId = self::RAW_MATERIALS_WAREHOUSE_ID;
@@ -461,31 +455,26 @@ class ProductionOrderController extends Controller
                 $consumption->warehouse_id = $consumption->warehouse_id ?: $rawMaterialsWarehouseId;
                 $consumption->save();
                 
-                // Create stock transaction for consumed material (negative quantity)
-                StockTransaction::create([
+                // ===== UPDATED: Create stock transaction for consumed material (Odoo-style) =====
+                $materialTransaction = StockTransaction::create([
                     'item_id' => $consumption->item_id,
                     'warehouse_id' => $consumption->warehouse_id,
-                    'transaction_type' => 'issue',
-                    'quantity' => -$actualConsumption,
+                    'dest_warehouse_id' => null,
+                    'transaction_type' => StockTransaction::TYPE_MANUFACTURING,
+                    'move_type' => StockTransaction::MOVE_TYPE_OUT, // Outgoing raw material
+                    'quantity' => $actualConsumption, // Always positive
                     'transaction_date' => now(),
                     'reference_document' => 'production_order',
-                    'reference_number' => $productionOrder->production_number
+                    'reference_number' => $productionOrder->production_number,
+                    'origin' => "WO-{$productionOrder->wo_id}",
+                    'batch_id' => null,
+                    'state' => StockTransaction::STATE_DRAFT,
+                    'notes' => "Material consumption for production"
                 ]);
-                
-                // Update material item's total stock
-                $materialItem = $consumption->item;
-                $materialItem->current_stock -= $actualConsumption;
-                $materialItem->save();
-                
-                // Update ItemStock for material
-                $materialItemStock = ItemStock::where('item_id', $consumption->item_id)
-                    ->where('warehouse_id', $consumption->warehouse_id)
-                    ->first();
-                
-                if ($materialItemStock) {
-                    $materialItemStock->quantity = max(0, $materialItemStock->quantity - $actualConsumption);
-                    $materialItemStock->save();
-                }
+
+                // Auto-confirm to update stock
+                $materialTransaction->markAsDone();
+                // ===== END UPDATE =====
             }
             
             // Update work order progress if needed

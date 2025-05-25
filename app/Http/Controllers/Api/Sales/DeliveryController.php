@@ -588,29 +588,32 @@ class DeliveryController extends Controller
                     throw new \Exception('Insufficient stock for item ' . $line->item_id . ' in warehouse ' . $line->warehouse_id);
                 }
 
-                // Decrease stock quantity
-                $itemStock->decrement('quantity', $line->delivered_quantity);
+                // ===== UPDATED: Use Odoo-style stock transaction =====
+                // Create stock transaction (always positive quantity, direction determined by move_type)
+                $transaction = StockTransaction::create([
+                    'item_id' => $line->item_id,
+                    'warehouse_id' => $line->warehouse_id,
+                    'dest_warehouse_id' => null,
+                    'transaction_type' => StockTransaction::TYPE_ISSUE,
+                    'move_type' => StockTransaction::MOVE_TYPE_OUT, // Outgoing move
+                    'quantity' => $line->delivered_quantity, // Always positive
+                    'transaction_date' => now(),
+                    'reference_document' => 'delivery',
+                    'reference_number' => $delivery->delivery_number,
+                    'origin' => "SO-{$delivery->so_id}",
+                    'batch_id' => null,
+                    'state' => StockTransaction::STATE_DRAFT,
+                    'notes' => $allowNegativeStock ? 'Negative stock allowed' : null
+                ]);
+
+                // Auto-confirm the transaction to update stock
+                $transaction->markAsDone();
+                // ===== END UPDATE =====
 
                 // Decrease reserved quantity if this delivery was using reserved stock
                 if ($line->reservation_reference) {
                     $itemStock->decrement('reserved_quantity', $line->delivered_quantity);
                 }
-
-                // Create stock transaction
-                StockTransaction::create([
-                    'item_id' => $line->item_id,
-                    'warehouse_id' => $line->warehouse_id,
-                    'transaction_type' => 'issue',
-                    'quantity' => -$line->delivered_quantity, // Negative for outgoing
-                    'transaction_date' => now(),
-                    'reference_document' => 'delivery',
-                    'reference_number' => $delivery->delivery_number,
-                    'notes' => $line->reservation_reference
-                ]);
-
-                // Update item's current stock
-                $item = Item::find($line->item_id);
-                $item->decrement('current_stock', $line->delivered_quantity);
             }
         }
 
@@ -741,29 +744,32 @@ class DeliveryController extends Controller
                         ], 400);
                     }
 
-                    // Decrease stock quantity
-                    $itemStock->decrement('quantity', $line->delivered_quantity);
-
-                    // Decrease reserved quantity if this delivery was using reserved stock
-                    if ($line->reservation_reference) {
-                        $itemStock->decrement('reserved_quantity', $line->delivered_quantity);
-                    }
-
-                    // Create stock transaction
-                    StockTransaction::create([
+                    // ===== UPDATED: Use Odoo-style stock transaction =====
+                    // Create and confirm stock transaction
+                    $transaction = StockTransaction::create([
                         'item_id' => $line->item_id,
                         'warehouse_id' => $line->warehouse_id,
-                        'transaction_type' => 'issue',
-                        'quantity' => -$line->delivered_quantity, // Negative for outgoing
+                        'dest_warehouse_id' => null,
+                        'transaction_type' => StockTransaction::TYPE_ISSUE,
+                        'move_type' => StockTransaction::MOVE_TYPE_OUT,
+                        'quantity' => $line->delivered_quantity, // Always positive
                         'transaction_date' => now(),
                         'reference_document' => 'delivery',
                         'reference_number' => $delivery->delivery_number,
+                        'origin' => "SO-{$delivery->so_id}",
+                        'batch_id' => null,
+                        'state' => StockTransaction::STATE_DRAFT,
                         'notes' => $allowNegativeStock ? 'Negative stock allowed' : null
                     ]);
 
-                    // Update item's current stock
-                    $item = Item::find($line->item_id);
-                    $item->decrement('current_stock', $line->delivered_quantity);
+                    // Auto-confirm to update stock
+                    $transaction->markAsDone();
+                    // ===== END UPDATE =====
+
+                    // Decrease reserved quantity if this delivery was using reserved stock
+                    if ($line->reservation_reference) {
+                        $itemStock->fresh()->decrement('reserved_quantity', $line->delivered_quantity);
+                    }
                 }
             }
 

@@ -7,6 +7,7 @@ use App\Models\GoodsReceipt;
 use App\Models\GoodsReceiptLine;
 use App\Models\PurchaseOrder;
 use App\Models\POLine;
+use App\Models\StockTransaction;
 use App\Http\Requests\GoodsReceiptRequest;
 use App\Services\ReceiptNumberGenerator;
 use App\Services\StockService;
@@ -588,18 +589,30 @@ class GoodsReceiptController extends Controller
             // Load lines for processing
             $goodsReceipt->load('lines');
             
-            // Update stock levels
+            // ===== UPDATED: Use Odoo-style stock transactions =====
+            // Update stock levels using new stock transaction system
             foreach ($goodsReceipt->lines as $line) {
-                $this->stockService->increaseStock(
-                    $line->item_id,
-                    $line->warehouse_id,
-                    null,
-                    $line->received_quantity,
-                    'goods_receipt',
-                    $goodsReceipt->receipt_number,
-                    $line->batch_number
-                );
+                // Create stock transaction
+                $transaction = StockTransaction::create([
+                    'item_id' => $line->item_id,
+                    'warehouse_id' => $line->warehouse_id,
+                    'dest_warehouse_id' => null,
+                    'transaction_type' => StockTransaction::TYPE_RECEIVE,
+                    'move_type' => StockTransaction::MOVE_TYPE_IN, // Incoming move
+                    'quantity' => $line->received_quantity, // Always positive
+                    'transaction_date' => $goodsReceipt->receipt_date,
+                    'reference_document' => 'goods_receipt',
+                    'reference_number' => $goodsReceipt->receipt_number,
+                    'origin' => "PO-{$line->po_id}",
+                    'batch_id' => $line->batch_number ? $this->getOrCreateBatch($line)->batch_id : null,
+                    'state' => StockTransaction::STATE_DRAFT,
+                    'notes' => "GR from PO Line {$line->po_line_id}"
+                ]);
+
+                // Auto-confirm the transaction to update stock
+                $transaction->markAsDone();
             }
+            // ===== END UPDATE =====
             
             // Get unique PO IDs from receipt lines
             $poIds = $goodsReceipt->lines->pluck('po_id')->unique();
@@ -629,6 +642,24 @@ class GoodsReceiptController extends Controller
                 'error' => $e->getMessage()
             ], 500);
         }
+    }
+    /**
+     * Helper method to get or create batch for items with batch numbers
+     */
+    private function getOrCreateBatch($line)
+    {
+        if (!$line->batch_number) {
+            return null;
+        }
+
+        return ItemBatch::firstOrCreate([
+            'item_id' => $line->item_id,
+            'batch_number' => $line->batch_number
+        ], [
+            'manufacturing_date' => now(),
+            'expiry_date' => null, // Set based on item properties if needed
+            'lot_number' => $line->batch_number
+        ]);
     }
     
     /**

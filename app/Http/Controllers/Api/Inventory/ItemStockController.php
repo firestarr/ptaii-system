@@ -104,10 +104,7 @@ class ItemStockController extends Controller
     }
 
     /**
-     * Memindahkan stock antar warehouse
-     *
-     * @param  \Illuminate\Http\Request  $request
-     * @return \Illuminate\Http\Response
+     * Memindahkan stock antar warehouse (Updated to use Odoo-style)
      */
     public function transferStock(Request $request)
     {
@@ -138,54 +135,50 @@ class ItemStockController extends Controller
                 ], 400);
             }
             
-            // Kurangi stock di warehouse asal
-            $fromStock->quantity -= $request->quantity;
-            $fromStock->save();
-            
-            // Buat/update stock di warehouse tujuan
-            $toStock = ItemStock::firstOrNew([
-                'item_id' => $request->item_id,
-                'warehouse_id' => $request->to_warehouse_id
-            ]);
-            
-            $toStock->quantity = ($toStock->quantity ?? 0) + $request->quantity;
-            $toStock->save();
-            
-            // Buat stock transaction untuk tracking
-            // Transaction dari warehouse asal (negative amount)
-            StockTransaction::create([
+            // ===== UPDATED: Use Odoo-style stock transaction =====
+            // Create single transfer transaction (like Odoo)
+            $transaction = StockTransaction::create([
                 'item_id' => $request->item_id,
                 'warehouse_id' => $request->from_warehouse_id,
-                'transaction_type' => 'transfer',
-                'quantity' => -$request->quantity,
+                'dest_warehouse_id' => $request->to_warehouse_id,
+                'transaction_type' => StockTransaction::TYPE_TRANSFER,
+                'move_type' => StockTransaction::MOVE_TYPE_INTERNAL,
+                'quantity' => $request->quantity, // Always positive
                 'transaction_date' => now(),
                 'reference_document' => 'stock_transfer',
-                'reference_number' => $request->reference_number ?? 'TR' . time()
+                'reference_number' => $request->reference_number ?? 'TR' . time(),
+                'origin' => 'Manual Transfer',
+                'batch_id' => null,
+                'state' => StockTransaction::STATE_DRAFT,
+                'notes' => $request->notes
             ]);
             
-            // Transaction ke warehouse tujuan (positive amount)
-            StockTransaction::create([
-                'item_id' => $request->item_id,
-                'warehouse_id' => $request->to_warehouse_id,
-                'transaction_type' => 'transfer',
-                'quantity' => $request->quantity,
-                'transaction_date' => now(),
-                'reference_document' => 'stock_transfer',
-                'reference_number' => $request->reference_number ?? 'TR' . time()
-            ]);
+            // Auto-confirm the transaction to update stock
+            $transaction->markAsDone();
+            // ===== END UPDATE =====
             
             DB::commit();
+            
+            // Get updated stock information
+            $fromStockUpdated = ItemStock::where('item_id', $request->item_id)
+                ->where('warehouse_id', $request->from_warehouse_id)
+                ->first();
+                
+            $toStockUpdated = ItemStock::where('item_id', $request->item_id)
+                ->where('warehouse_id', $request->to_warehouse_id)
+                ->first();
             
             return response()->json([
                 'message' => 'Stock berhasil dipindahkan',
                 'data' => [
+                    'transaction_id' => $transaction->transaction_id,
                     'from_warehouse' => [
-                        'warehouse_id' => $fromStock->warehouse_id,
-                        'remaining_quantity' => $fromStock->quantity
+                        'warehouse_id' => $request->from_warehouse_id,
+                        'remaining_quantity' => $fromStockUpdated->quantity ?? 0
                     ],
                     'to_warehouse' => [
-                        'warehouse_id' => $toStock->warehouse_id,
-                        'new_quantity' => $toStock->quantity
+                        'warehouse_id' => $request->to_warehouse_id,
+                        'new_quantity' => $toStockUpdated->quantity ?? 0
                     ]
                 ]
             ], 200);
@@ -196,10 +189,7 @@ class ItemStockController extends Controller
     }
 
     /**
-     * Menyesuaikan (adjust) stock item di warehouse tertentu
-     *
-     * @param  \Illuminate\Http\Request  $request
-     * @return \Illuminate\Http\Response
+     * Menyesuaikan (adjust) stock item di warehouse tertentu (Updated to use Odoo-style)
      */
     public function adjustStock(Request $request)
     {
@@ -228,37 +218,51 @@ class ItemStockController extends Controller
             $oldQuantity = $itemStock->quantity ?? 0;
             $adjustmentQuantity = $request->new_quantity - $oldQuantity;
             
-            // Update quantity
-            $itemStock->quantity = $request->new_quantity;
-            $itemStock->save();
-            
-            // Buat stock transaction untuk adjustment
-            StockTransaction::create([
-                'item_id' => $request->item_id,
-                'warehouse_id' => $request->warehouse_id,
-                'transaction_type' => 'adjustment',
-                'quantity' => $adjustmentQuantity,
-                'transaction_date' => now(),
-                'reference_document' => 'stock_adjustment',
-                'reference_number' => $request->reference_number ?? 'ADJ' . time(),
-                'notes' => $request->reason . ($request->notes ? ' - ' . $request->notes : '')
-            ]);
-            
-            // Update item's current_stock
-            $item = Item::find($request->item_id);
-            $item->current_stock += $adjustmentQuantity;
-            $item->save();
+            // Only create transaction if there's actually an adjustment
+            if ($adjustmentQuantity != 0) {
+                // ===== UPDATED: Use Odoo-style stock transaction =====
+                // Determine move type based on adjustment direction
+                $moveType = $adjustmentQuantity > 0 ? 
+                    StockTransaction::MOVE_TYPE_IN : 
+                    StockTransaction::MOVE_TYPE_OUT;
+                
+                $transaction = StockTransaction::create([
+                    'item_id' => $request->item_id,
+                    'warehouse_id' => $request->warehouse_id,
+                    'dest_warehouse_id' => null,
+                    'transaction_type' => StockTransaction::TYPE_ADJUSTMENT,
+                    'move_type' => $moveType,
+                    'quantity' => abs($adjustmentQuantity), // Always positive
+                    'transaction_date' => now(),
+                    'reference_document' => 'stock_adjustment',
+                    'reference_number' => $request->reference_number ?? 'ADJ' . time(),
+                    'origin' => 'Manual Adjustment',
+                    'batch_id' => null,
+                    'state' => StockTransaction::STATE_DRAFT,
+                    'notes' => $request->reason . ($request->notes ? ' - ' . $request->notes : '')
+                ]);
+                
+                // Auto-confirm the transaction to update stock
+                $transaction->markAsDone();
+                // ===== END UPDATE =====
+            }
             
             DB::commit();
+            
+            // Get updated stock
+            $updatedStock = ItemStock::where('item_id', $request->item_id)
+                ->where('warehouse_id', $request->warehouse_id)
+                ->first();
             
             return response()->json([
                 'message' => 'Stock berhasil disesuaikan',
                 'data' => [
-                    'item_id' => $itemStock->item_id,
-                    'warehouse_id' => $itemStock->warehouse_id,
+                    'item_id' => $request->item_id,
+                    'warehouse_id' => $request->warehouse_id,
                     'old_quantity' => $oldQuantity,
-                    'new_quantity' => $itemStock->quantity,
-                    'adjustment' => $adjustmentQuantity
+                    'new_quantity' => $updatedStock->quantity ?? 0,
+                    'adjustment' => $adjustmentQuantity,
+                    'transaction_id' => isset($transaction) ? $transaction->transaction_id : null
                 ]
             ], 200);
         } catch (\Exception $e) {
