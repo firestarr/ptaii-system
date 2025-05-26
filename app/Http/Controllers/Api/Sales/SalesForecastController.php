@@ -1457,4 +1457,390 @@ class SalesForecastController extends Controller
        // Merge and prioritize actual quantities from forecasts
        return array_merge($historicalSales, $pastForecasts);
    }
+   public function getForecastTrend(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'item_id' => 'required|exists:items,item_id',
+            'customer_id' => 'required|exists:Customer,customer_id', 
+            'start_period' => 'required|date',
+            'end_period' => 'required|date|after:start_period',
+            'show_percentage_change' => 'boolean'
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json(['errors' => $validator->errors()], 422);
+        }
+
+        try {
+            // Get all forecast versions for the specified item, customer, and period range
+            $forecasts = SalesForecast::where('item_id', $request->item_id)
+                ->where('customer_id', $request->customer_id)
+                ->whereBetween('forecast_period', [$request->start_period, $request->end_period])
+                ->whereNotNull('forecast_issue_date')
+                ->with(['customer', 'item'])
+                ->orderBy('forecast_period')
+                ->orderBy('forecast_issue_date')
+                ->get();
+
+            if ($forecasts->isEmpty()) {
+                return response()->json([
+                    'message' => 'No forecast data found for the specified criteria'
+                ], 404);
+            }
+
+            // Group forecasts by period, then by issue date
+            $groupedData = [];
+            $allIssueDates = [];
+
+            foreach ($forecasts as $forecast) {
+                $period = Carbon::parse($forecast->forecast_period)->format('Y-m');
+                $issueDate = Carbon::parse($forecast->forecast_issue_date)->format('Y-m-d');
+                
+                if (!isset($groupedData[$period])) {
+                    $groupedData[$period] = [];
+                }
+                
+                $groupedData[$period][$issueDate] = [
+                    'forecast_id' => $forecast->forecast_id,
+                    'forecast_quantity' => $forecast->forecast_quantity,
+                    'actual_quantity' => $forecast->actual_quantity,
+                    'variance' => $forecast->variance,
+                    'forecast_source' => $forecast->forecast_source,
+                    'confidence_level' => $forecast->confidence_level,
+                    'submission_date' => $forecast->submission_date,
+                    'is_current_version' => $forecast->is_current_version
+                ];
+                
+                if (!in_array($issueDate, $allIssueDates)) {
+                    $allIssueDates[] = $issueDate;
+                }
+            }
+
+            // Sort issue dates
+            sort($allIssueDates);
+
+            // Calculate percentage changes and prepare response
+            $trendData = [];
+            $totalChangeByPeriod = [];
+
+            foreach ($groupedData as $period => $issueDateData) {
+                $periodData = [
+                    'period' => $period,
+                    'forecasts' => [],
+                    'changes' => []
+                ];
+
+                $previousQuantity = null;
+                $firstQuantity = null;
+
+                foreach ($allIssueDates as $issueDate) {
+                    if (isset($issueDateData[$issueDate])) {
+                        $currentQuantity = $issueDateData[$issueDate]['forecast_quantity'];
+                        
+                        if ($firstQuantity === null) {
+                            $firstQuantity = $currentQuantity;
+                        }
+
+                        $changeData = [
+                            'issue_date' => $issueDate,
+                            'quantity' => $currentQuantity,
+                            'percentage_change' => null,
+                            'absolute_change' => null,
+                            'change_from_first' => null,
+                            'percentage_from_first' => null
+                        ];
+
+                        // Calculate change from previous issue date
+                        if ($previousQuantity !== null && $previousQuantity > 0) {
+                            $changeData['absolute_change'] = $currentQuantity - $previousQuantity;
+                            $changeData['percentage_change'] = (($currentQuantity - $previousQuantity) / $previousQuantity) * 100;
+                        }
+
+                        // Calculate change from first forecast
+                        if ($firstQuantity !== null && $firstQuantity > 0) {
+                            $changeData['change_from_first'] = $currentQuantity - $firstQuantity;
+                            $changeData['percentage_from_first'] = (($currentQuantity - $firstQuantity) / $firstQuantity) * 100;
+                        }
+
+                        $periodData['forecasts'][$issueDate] = array_merge(
+                            $issueDateData[$issueDate],
+                            $changeData
+                        );
+
+                        $previousQuantity = $currentQuantity;
+                    } else {
+                        // No forecast for this issue date in this period
+                        $periodData['forecasts'][$issueDate] = [
+                            'issue_date' => $issueDate,
+                            'quantity' => null,
+                            'percentage_change' => null,
+                            'absolute_change' => null,
+                            'change_from_first' => null,
+                            'percentage_from_first' => null
+                        ];
+                    }
+                }
+
+                // Calculate period summary
+                $forecastValues = array_filter(array_column($periodData['forecasts'], 'quantity'));
+                if (count($forecastValues) > 1) {
+                    $firstValue = reset($forecastValues);
+                    $lastValue = end($forecastValues);
+                    
+                    $totalChangeByPeriod[$period] = [
+                        'first_quantity' => $firstValue,
+                        'last_quantity' => $lastValue,
+                        'total_absolute_change' => $lastValue - $firstValue,
+                        'total_percentage_change' => $firstValue > 0 ? (($lastValue - $firstValue) / $firstValue) * 100 : null,
+                        'forecast_count' => count($forecastValues),
+                        'highest_quantity' => max($forecastValues),
+                        'lowest_quantity' => min($forecastValues)
+                    ];
+                }
+
+                $trendData[] = $periodData;
+            }
+
+            // Calculate overall statistics
+            $allQuantities = [];
+            $allChanges = [];
+            
+            foreach ($trendData as $period) {
+                foreach ($period['forecasts'] as $forecast) {
+                    if ($forecast['quantity'] !== null) {
+                        $allQuantities[] = $forecast['quantity'];
+                    }
+                    if ($forecast['percentage_change'] !== null) {
+                        $allChanges[] = $forecast['percentage_change'];
+                    }
+                }
+            }
+
+            $statistics = [
+                'total_forecasts' => count($allQuantities),
+                'average_quantity' => count($allQuantities) > 0 ? array_sum($allQuantities) / count($allQuantities) : 0,
+                'max_quantity' => count($allQuantities) > 0 ? max($allQuantities) : 0,
+                'min_quantity' => count($allQuantities) > 0 ? min($allQuantities) : 0,
+                'average_percentage_change' => count($allChanges) > 0 ? array_sum($allChanges) / count($allChanges) : 0,
+                'max_percentage_increase' => count($allChanges) > 0 ? max($allChanges) : 0,
+                'max_percentage_decrease' => count($allChanges) > 0 ? min($allChanges) : 0,
+                'volatile_periods' => [] // Periods with high variance
+            ];
+
+            // Identify volatile periods (where percentage change > 20%)
+            foreach ($totalChangeByPeriod as $period => $data) {
+                if (abs($data['total_percentage_change']) > 20) {
+                    $statistics['volatile_periods'][] = [
+                        'period' => $period,
+                        'change' => $data['total_percentage_change']
+                    ];
+                }
+            }
+
+            return response()->json([
+                'data' => [
+                    'item_info' => [
+                        'item_id' => $request->item_id,
+                        'item_code' => $forecasts->first()->item->item_code,
+                        'item_name' => $forecasts->first()->item->name,
+                        'customer_id' => $request->customer_id,
+                        'customer_name' => $forecasts->first()->customer->name
+                    ],
+                    'period_range' => [
+                        'start' => $request->start_period,
+                        'end' => $request->end_period
+                    ],
+                    'issue_dates' => $allIssueDates,
+                    'trend_data' => $trendData,
+                    'period_summary' => $totalChangeByPeriod,
+                    'statistics' => $statistics
+                ],
+                'message' => 'Forecast trend analysis completed successfully'
+            ], 200);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'message' => 'Failed to generate forecast trend analysis',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    // ========================================
+    // METHOD BARU (TAMBAHAN)
+    // ========================================
+    
+    /**
+     * METHOD BARU: Get forecast volatility summary untuk SEMUA item
+     * URL: GET /api/forecasts/volatility-summary  
+     * Dipakai untuk: Overview dashboard (list items)
+     */
+    public function getVolatilitySummary(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'start_period' => 'required|date',
+            'end_period' => 'required|date|after:start_period',
+            'customer_id' => 'nullable|exists:Customer,customer_id',
+            'volatility_threshold' => 'nullable|numeric|min:0',
+            'limit' => 'nullable|integer|min:1|max:100'
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json(['errors' => $validator->errors()], 422);
+        }
+
+        $threshold = $request->input('volatility_threshold', 20);
+        $limit = $request->input('limit', 50);
+
+        try {
+            $query = SalesForecast::whereBetween('forecast_period', [$request->start_period, $request->end_period])
+                ->whereNotNull('forecast_issue_date')
+                ->where('is_current_version', true);
+
+            if ($request->has('customer_id')) {
+                $query->where('customer_id', $request->customer_id);
+            }
+
+            $forecasts = $query->with(['customer', 'item'])
+                ->orderBy('item_id')
+                ->orderBy('customer_id')
+                ->orderBy('forecast_period')
+                ->orderBy('forecast_issue_date')
+                ->get();
+
+            // Group by item-customer-period
+            $groupedData = [];
+            foreach ($forecasts as $forecast) {
+                $itemKey = $forecast->item_id . '-' . $forecast->customer_id;
+                $periodKey = Carbon::parse($forecast->forecast_period)->format('Y-m');
+                
+                if (!isset($groupedData[$itemKey])) {
+                    $groupedData[$itemKey] = [
+                        'item' => $forecast->item,
+                        'customer' => $forecast->customer,
+                        'periods' => []
+                    ];
+                }
+                
+                if (!isset($groupedData[$itemKey]['periods'][$periodKey])) {
+                    $groupedData[$itemKey]['periods'][$periodKey] = [];
+                }
+                
+                $groupedData[$itemKey]['periods'][$periodKey][] = $forecast;
+            }
+
+            $summary = [];
+
+            foreach ($groupedData as $itemData) {
+                $itemSummary = [
+                    'item_id' => $itemData['item']->item_id,
+                    'item_code' => $itemData['item']->item_code,
+                    'item_name' => $itemData['item']->name,
+                    'customer_id' => $itemData['customer']->customer_id,
+                    'customer_name' => $itemData['customer']->name,
+                    'total_periods' => count($itemData['periods']),
+                    'volatile_periods' => [],
+                    'max_increase' => 0,
+                    'max_decrease' => 0,
+                    'avg_volatility' => 0,
+                    'risk_level' => 'LOW',
+                    'total_forecasts' => 0
+                ];
+
+                $volatilities = [];
+                
+                foreach ($itemData['periods'] as $period => $forecasts) {
+                    if (count($forecasts) < 2) continue;
+
+                    // Sort by issue date
+                    usort($forecasts, function($a, $b) {
+                        return strtotime($a->forecast_issue_date) - strtotime($b->forecast_issue_date);
+                    });
+
+                    $quantities = array_map(function($f) { return $f->forecast_quantity; }, $forecasts);
+                    $firstQuantity = $quantities[0];
+                    $lastQuantity = end($quantities);
+                    
+                    if ($firstQuantity > 0) {
+                        $totalChange = (($lastQuantity - $firstQuantity) / $firstQuantity) * 100;
+                        $volatilities[] = abs($totalChange);
+                        
+                        // Track max increase/decrease
+                        if ($totalChange > $itemSummary['max_increase']) {
+                            $itemSummary['max_increase'] = $totalChange;
+                        }
+                        if ($totalChange < $itemSummary['max_decrease']) {
+                            $itemSummary['max_decrease'] = $totalChange;
+                        }
+                        
+                        if (abs($totalChange) >= $threshold) {
+                            $itemSummary['volatile_periods'][] = [
+                                'period' => $period,
+                                'change_percentage' => round($totalChange, 1),
+                                'first_quantity' => $firstQuantity,
+                                'last_quantity' => $lastQuantity,
+                                'forecast_count' => count($forecasts),
+                                'trend' => $totalChange > 0 ? 'INCREASE' : 'DECREASE'
+                            ];
+                        }
+                    }
+                    
+                    $itemSummary['total_forecasts'] += count($forecasts);
+                }
+
+                // Calculate average volatility
+                if (count($volatilities) > 0) {
+                    $itemSummary['avg_volatility'] = array_sum($volatilities) / count($volatilities);
+                }
+
+                // Determine risk level
+                $volatileCount = count($itemSummary['volatile_periods']);
+                $avgVol = $itemSummary['avg_volatility'];
+                
+                if ($volatileCount >= 3 || $avgVol > 50) {
+                    $itemSummary['risk_level'] = 'HIGH';
+                } elseif ($volatileCount >= 1 || $avgVol > 25) {
+                    $itemSummary['risk_level'] = 'MEDIUM';
+                }
+
+                // Only include items with volatility
+                if (count($itemSummary['volatile_periods']) > 0) {
+                    $summary[] = $itemSummary;
+                }
+            }
+
+            // Sort by average volatility (descending)
+            usort($summary, function($a, $b) {
+                return $b['avg_volatility'] <=> $a['avg_volatility'];
+            });
+
+            // Limit results
+            if ($limit > 0) {
+                $summary = array_slice($summary, 0, $limit);
+            }
+
+            return response()->json([
+                'data' => $summary,
+                'summary' => [
+                    'total_volatile_items' => count($summary),
+                    'high_risk_items' => count(array_filter($summary, function($item) { return $item['risk_level'] === 'HIGH'; })),
+                    'medium_risk_items' => count(array_filter($summary, function($item) { return $item['risk_level'] === 'MEDIUM'; })),
+                    'avg_volatility_overall' => count($summary) > 0 ? array_sum(array_column($summary, 'avg_volatility')) / count($summary) : 0
+                ],
+                'parameters' => [
+                    'threshold' => $threshold,
+                    'period_range' => [
+                        'start' => $request->start_period,
+                        'end' => $request->end_period
+                    ]
+                ]
+            ], 200);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'message' => 'Failed to generate volatility summary',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
 }

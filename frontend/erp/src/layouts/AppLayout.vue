@@ -609,6 +609,20 @@
                                         <small>Forecast analytics</small>
                                     </div>
                                 </router-link>
+                                <router-link to="/sales/forecasts/volatility-dashboard" class="menu-link">
+                                    <i class="fas fa-exclamation-triangle"></i>
+                                    <div>
+                                        <span>Volatility Monitor</span>
+                                        <small>Monitor forecast changes</small>
+                                    </div>
+                                </router-link>
+                                <router-link to="/sales/forecasts/trend-analysis" class="menu-link">
+                                    <i class="fas fa-chart-area"></i>
+                                    <div>
+                                        <span>Trend Analysis</span>
+                                        <small>Detailed trend analysis</small>
+                                    </div>
+                                </router-link>
                                 <router-link to="/sales/forecasts/consolidated" class="menu-link">
                                     <i class="fas fa-table"></i>
                                     <div>
@@ -1061,22 +1075,242 @@ export default {
         ]);
 
         const pageTitle = computed(() => {
-            const titleMap = {
-                "Dashboard": "Dashboard",
-                "Items": "Items Management",
-                "ItemCategories": "Item Categories", 
-                "UnitOfMeasures": "Units of Measure",
-                "Warehouses": "Warehouses",
-                "ItemPrices": "Item Prices",
-                "PriceComparison": "Price Comparison",
-                "ItemPriceManagement": "Item Prices Management",
-                "Customers": "Customers",
-                "SalesQuotations": "Sales Quotations",
-                "SalesOrders": "Sales Orders",
-                "Users": "User Management"
-            };
-            return titleMap[route.name] || "Dashboard";
-        });
+        const titleMap = {
+            // Dashboard
+            "Dashboard": "Dashboard",
+            
+            // Inventory Management
+            "Items": "Items Management",
+            "ItemDetail": "Item Details",
+            "ItemCategories": "Item Categories",
+            "ItemCategoriesEnhanced": "Enhanced Item Categories",
+            "UnitOfMeasures": "Units of Measure",
+            "UnitOfMeasureDetail": "Unit of Measure Details",
+            "ItemPriceManagement": "Item Prices Management",
+            
+            // Stock Management
+            "StockTransactions": "Stock Transactions",
+            "CreateStockTransaction": "Create Stock Transaction",
+            "StockTransactionDetail": "Stock Transaction Details",
+            "ItemMovementHistory": "Item Movement History",
+            "StockTransfer": "Stock Transfer",
+            "ItemStocks": "Inventory Stock",
+            "ItemStockDetail": "Item Stock Details",
+            "WarehouseStock": "Warehouse Stock",
+            "StockAdjustment": "Stock Adjustment",
+            "StockReservation": "Stock Reservation",
+            "NegativeStocks": "Negative Stocks",
+            "StockAdjustments": "Stock Adjustments",
+            "CreateStockAdjustment": "Create Stock Adjustment",
+            "StockAdjustmentDetail": "Stock Adjustment Details",
+            "EditStockAdjustment": "Edit Stock Adjustment",
+            "ApproveStockAdjustment": "Approve Stock Adjustment",
+            
+            // Cycle Counting
+            "CycleCountList": "Cycle Counting",
+            "CreateCycleCount": "Create Cycle Count",
+            "GenerateCycleCounts": "Generate Count Tasks",
+            "CycleCountDetail": "Cycle Count Details",
+            "EditCycleCount": "Edit Cycle Count",
+            "CycleCountApproval": "Cycle Count Approval",
+            
+            // Batch Management
+            "ItemBatches": "Item Batches",
+            "CreateBatch": "Create Batch",
+            "BatchDetail": "Batch Details",
+            "EditBatch": "Edit Batch",
+            "ExpiryDashboard": "Expiry Management",
+            
+            // Customers
+            "customers.index": "Customer Management",
+            "customers.create": "Add New Customer",
+            "customers.show": "Customer Details",
+            "customers.edit": "Edit Customer",
+            
+            // Sales Quotations
+            "SalesQuotations": "Sales Quotations",
+            "CreateSalesQuotation": "Create Sales Quotation",
+            "SalesQuotationDetail": "Sales Quotation Details",
+            "EditSalesQuotation": "Edit Sales Quotation",
+            "PrintSalesQuotation": "Print Sales Quotation",
+            
+            // Sales Forecasts
+            "SalesForecastsList": "Sales Forecasts",
+            "SalesForecastDetail": "Sales Forecast Details",
+            "SalesForecastAnalytics": "Sales Forecast Analytics",
+            "CreateSalesForecast": "Create Sales Forecast",
+            "EditSalesForecast": "Edit Sales Forecast",
+            "ConsolidatedForecastView": "Consolidated Forecast View",
+            "ImportForecastForm": "Import Forecast",
+            "ForecastAccuracyAnalysis": "Forecast Accuracy Analysis",
+            "ForecastDashboard": "Forecast Dashboard",
+            "UpdateActualsPage": "Update Actuals",
+            "ForecastHistoryView": "Forecast Version History",
+            "ForecastVolatilityDashboard": "Forecast Volatility Monitor",
+            "ForecastTrendAnalysis": "Forecast Trend Analysis",
+            
+            // Sales Orders
+            "SalesOrders": "Sales Orders",
+            "CreateSalesOrder": "Create Sales Order",
+            "SalesOrderDetail": "Sales Order Details",
+            "EditSalesOrder": "Edit Sales Order",
+            "CreateOrderFromQuotation": "Create Order from Quotation",
+            "PrintSalesOrder": "Print Sales Order",
+            
+            // Sales Invoices
+            "SalesInvoices": "Sales Invoices",
+            "CreateSalesInvoice": "Create Sales Invoice",
+            "CreateInvoiceFromDelivery": "Create Invoice from Delivery",
+            "SalesInvoiceDetail": "Sales Invoice Details",
+            "EditSalesInvoice": "Edit Sales Invoice",
+            "SalesInvoicePayment": "Sales Invoice Payment",
+            "PrintSalesInvoice": "Print Sales Invoice",
+            
+            // Sales Deliveries
+            "DeliveryList": "Deliveries",
+            "CreateDelivery": "Create Delivery",
+            "DeliveryDetail": "Delivery Details",
+            "EditDelivery": "Edit Delivery",
+            "PrintDeliveryOrder": "Print Delivery Order",
+            
+            // Sales Returns
+            "SalesReturns": "Sales Returns",
+            "CreateSalesReturn": "Create Sales Return",
+            "SalesReturnDetail": "Sales Return Details",
+            "EditSalesReturn": "Edit Sales Return",
+            
+            // Manufacturing - BOM
+            "BOMList": "Bill of Materials",
+            "CreateBOM": "Create BOM",
+            "BOMDetail": "BOM Details",
+            "EditBOM": "Edit BOM",
+            
+            // Manufacturing - Routing
+            "RoutingList": "Routing",
+            "CreateRouting": "Create Routing",
+            "RoutingDetail": "Routing Details",
+            "EditRouting": "Edit Routing",
+            
+            // Manufacturing - Work Centers
+            "WorkCentersList": "Work Centers",
+            "CreateWorkCenter": "Create Work Center",
+            "WorkCenterDetail": "Work Center Details",
+            "EditWorkCenter": "Edit Work Center",
+            "WorkCenterSchedule": "Work Center Schedule",
+            
+            // Manufacturing - Work Orders
+            "WorkOrders": "Work Orders",
+            "CreateWorkOrder": "Create Work Order",
+            "WorkOrderDetail": "Work Order Details",
+            "EditWorkOrder": "Edit Work Order",
+            "WorkOrderOperation": "Work Order Operation",
+            "ManufacturingDashboard": "Manufacturing Dashboard",
+            
+            // Manufacturing - Production Orders
+            "ProductionOrders": "Production Orders",
+            "CreateProductionOrder": "Create Production Order",
+            "ProductionOrderDetail": "Production Order Details",
+            "EditProductionOrder": "Edit Production Order",
+            "AddProductionConsumption": "Add Production Consumption",
+            "EditProductionConsumption": "Edit Production Consumption",
+            "CompleteProductionOrder": "Complete Production Order",
+            
+            // Purchasing - Vendors
+            "VendorList": "Vendor Management",
+            "VendorCreate": "Add New Vendor",
+            "VendorDetail": "Vendor Details",
+            "VendorEdit": "Edit Vendor",
+            
+            // Purchasing - Requisitions
+            "PurchaseRequisitionList": "Purchase Requisitions",
+            "CreatePurchaseRequisition": "Create Purchase Requisition",
+            "PurchaseRequisitionDetail": "Purchase Requisition Details",
+            "EditPurchaseRequisition": "Edit Purchase Requisition",
+            "ApprovePurchaseRequisition": "Approve Purchase Requisition",
+            "ConvertToRFQ": "Convert to RFQ",
+            "PRApprovalList": "PR Approvals",
+            "PRToRFQList": "PR to RFQ",
+            
+            // Purchasing - RFQ
+            "RFQList": "Request for Quotations",
+            "CreateRFQ": "Create RFQ",
+            "RFQDetail": "RFQ Details",
+            "EditRFQ": "Edit RFQ",
+            "SendRFQ": "Send RFQ",
+            "CompareRFQ": "Compare RFQ",
+            
+            // Purchasing - Vendor Quotations
+            "VendorQuotations": "Vendor Quotations",
+            "CreateVendorQuotation": "Create Vendor Quotation",
+            "VendorQuotationDetail": "Vendor Quotation Details",
+            "EditVendorQuotation": "Edit Vendor Quotation",
+            "CompareVendorQuotations": "Compare Quotations",
+            "CreatePOFromQuotation": "Create PO from Quotation",
+            
+            // Purchasing - Purchase Orders
+            "PurchaseOrders": "Purchase Orders",
+            "CreatePurchaseOrder": "Create Purchase Order",
+            "PurchaseOrderDetail": "Purchase Order Details",
+            "EditPurchaseOrder": "Edit Purchase Order",
+            "PurchaseOrderTrack": "Track Purchase Order",
+            
+            // Purchasing - Goods Receipts
+            "GoodsReceiptList": "Goods Receipts",
+            "CreateGoodsReceipt": "Create Goods Receipt",
+            "PendingReceiptsDashboard": "Receipts Dashboard",
+            "GoodsReceiptDetail": "Goods Receipt Details",
+            "EditGoodsReceipt": "Edit Goods Receipt",
+            "ConfirmGoodsReceipt": "Confirm Goods Receipt",
+            
+            // Purchasing - Vendor Invoices
+            "VendorInvoiceList": "Vendor Invoices",
+            "VendorInvoiceCreate": "Create Vendor Invoice",
+            "VendorInvoiceDetail": "Vendor Invoice Details",
+            "VendorInvoiceEdit": "Edit Vendor Invoice",
+            "VendorInvoiceApproval": "Vendor Invoice Approval",
+            "VendorInvoicePayment": "Vendor Invoice Payment",
+            
+            // Warehouses
+            "Warehouses": "Warehouses",
+            "WarehouseDetail": "Warehouse Details",
+            "WarehouseZones": "Warehouse Zones",
+            "WarehouseLocations": "Warehouse Locations",
+            "LocationInventory": "Location Inventory",
+            
+            // Material Planning
+            "MaterialPlans": "Material Planning",
+            "MaterialPlanDetail": "Material Plan Details",
+            "MaterialPlanGeneration": "Generate Material Plans",
+            "PRGenerationFromMaterialPlan": "Generate PR from Material Plan",
+            
+            // Accounting
+            "CurrencyRates": "Exchange Rates",
+            "CreateCurrencyRate": "Create Exchange Rate",
+            "CurrencyRateDetail": "Exchange Rate Details",
+            "EditCurrencyRate": "Edit Exchange Rate",
+            "CurrencyConverter": "Currency Converter",
+            
+            // Quality Management
+            "quality-inspections": "Quality Inspections",
+            "quality-inspections-create": "Create Quality Inspection",
+            "quality-inspection-detail": "Quality Inspection Details",
+            "quality-inspection-edit": "Edit Quality Inspection",
+            "quality-parameters-create": "Create Quality Parameters",
+            "quality-parameters-edit": "Edit Quality Parameters",
+            "quality-dashboard": "Quality Dashboard",
+            
+            // Administration
+            "AdminDashboard": "Admin Dashboard",
+            "SystemSettings": "System Settings",
+            "UserList": "User Management",
+            
+            // Legacy routes yang sudah ada sebelumnya
+            "Customers": "Customers",
+            "Users": "User Management"
+        };
+        
+        return titleMap[route.name] || "Dashboard";
+    });
 
         // Methods
         const showMegaMenu = (menu) => {
@@ -1454,7 +1688,7 @@ body {
     display: flex;
     gap: 0.25rem;
     flex: 1;
-    justify-content: center;
+    justify-content: flex-start;
     max-width: 800px;
     overflow-x: auto;
     padding: 0 1rem;

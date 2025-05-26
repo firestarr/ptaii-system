@@ -547,6 +547,19 @@ const routes = [
                 component: ForecastHistoryView,
                 meta: { requiresAuth: true },
             },
+            // New Forecast Volatility Routes
+            {
+                path: "/sales/forecasts/volatility-dashboard",
+                name: "ForecastVolatilityDashboard",
+                component: () => import("../views/sales/ForecastVolatilityDashboard.vue"),
+                meta: { requiresAuth: true },
+            },
+            {
+                path: "/sales/forecasts/trend-analysis",
+                name: "ForecastTrendAnalysis",
+                component: () => import("../views/sales/ForecastTrendAnalysis.vue"),
+                meta: { requiresAuth: true },
+            },
             //SalesOrder
             {
                 path: "/sales/orders",

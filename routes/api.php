@@ -348,6 +348,8 @@ Route::get('purchase-orders/reports/outstanding-items', [PurchaseOrderController
         Route::post('/import', [SalesForecastController::class, 'importCustomerForecasts']);
         Route::post('/generate', [SalesForecastController::class, 'generateForecasts']);
         Route::post('/update-actuals', [SalesForecastController::class, 'updateActuals']);
+        Route::get('/trend', [SalesForecastController::class, 'getForecastTrend']);
+        Route::get('/volatility-summary', [SalesForecastController::class, 'getVolatilitySummary']);
         
         // Then define the generic routes
         Route::get('/', [SalesForecastController::class, 'index']);
