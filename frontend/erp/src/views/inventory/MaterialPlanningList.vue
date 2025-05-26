@@ -44,6 +44,7 @@
                   <option value="">All Status</option>
                   <option value="Draft">Draft</option>
                   <option value="Requisitioned">Requisitioned</option>
+                  <option value="Work Order Created">Work Order Created</option>
                   <option value="Approved">Approved</option>
                 </select>
               </div>
@@ -193,6 +194,16 @@
                         >
                           <i class="fas fa-trash"></i>
                         </button>
+                        <!-- Generate WO Button for Finished Goods -->
+                        <button 
+                          v-if="item.material_type === 'FG' && item.status === 'Draft' && hasPositiveNetRequirement(item)" 
+                          class="btn-icon btn-icon-manufacturing" 
+                          @click="generateWorkOrder(item)"
+                          title="Generate Work Order"
+                        >
+                          <i class="fas fa-cogs"></i>
+                        </button>
+                        <!-- Generate PR Button for Raw Materials -->
                         <button 
                           v-if="item.material_type === 'RM' && item.status === 'Draft' && hasPositiveNetRequirement(item)" 
                           class="btn-icon btn-icon-success" 
@@ -279,6 +290,60 @@
       </div>
     </div>
 
+    <!-- Work Order Generation Modal -->
+    <div v-if="showWOModal" class="modal">
+      <div class="modal-backdrop" @click="closeWOModal"></div>
+      <div class="modal-content modal-md">
+        <div class="modal-header">
+          <h2>Generate Work Order</h2>
+          <button class="close-btn" @click="closeWOModal">
+            <i class="fas fa-times"></i>
+          </button>
+        </div>
+        <div class="modal-body">
+          <form @submit.prevent="submitWO">
+            <div class="form-group">
+              <label>Planning Period</label>
+              <input
+                type="month"
+                v-model="woForm.period"
+                class="form-control"
+                readonly
+              />
+            </div>
+            <div class="form-group">
+              <label>Planned Start Date <span class="required">*</span></label>
+              <input
+                type="date"
+                v-model="woForm.plannedStartDate"
+                class="form-control"
+                required
+              />
+            </div>
+            <div class="form-group">
+              <label>Lead Time (days) <span class="required">*</span></label>
+              <input
+                type="number"
+                v-model="woForm.leadTimeDays"
+                class="form-control"
+                min="1"
+                required
+              />
+            </div>
+            <div class="form-actions">
+              <button type="button" class="btn btn-secondary" @click="closeWOModal">
+                Cancel
+              </button>
+              <button type="submit" class="btn btn-primary" :disabled="isGeneratingWO">
+                <i class="fas fa-cogs" :class="{ 'fa-spin': isGeneratingWO }"></i>
+                {{ isGeneratingWO ? 'Generating...' : 'Generate WO' }}
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+
     <!-- Purchase Requisition Generation Modal -->
     <div v-if="showPRModal" class="modal">
       <div class="modal-backdrop" @click="closePRModal"></div>
@@ -351,8 +416,8 @@ export default {
   data() {
     return {
       plans: [],
-      allFilteredPlans: [], // Add this line
-      allGroupedPlans: [], // Add this line
+      allFilteredPlans: [],
+      allGroupedPlans: [],
       groupedPlans: [],
       periodRange: [],
       isLoading: false,
@@ -371,6 +436,7 @@ export default {
       statusClasses: {
         'Draft': 'bg-gray',
         'Requisitioned': 'bg-blue',
+        'Work Order Created': 'bg-purple',
         'Approved': 'bg-green'
       },
       showGenerateModal: false,
@@ -381,6 +447,15 @@ export default {
         itemIds: []
       },
       itemOptions: [],
+      // Work Order Modal
+      showWOModal: false,
+      isGeneratingWO: false,
+      woForm: {
+        period: '',
+        plannedStartDate: '',
+        leadTimeDays: 7
+      },
+      // Purchase Requisition Modal
       showPRModal: false,
       isGeneratingPR: false,
       prForm: {
@@ -702,6 +777,44 @@ export default {
       }
     },
     
+    async submitWO() {
+      if (!this.woForm.plannedStartDate || !this.woForm.leadTimeDays) {
+        alert('Please fill in all required fields');
+        return;
+      }
+      
+      this.isGeneratingWO = true;
+      try {
+        const payload = {
+          period: this.woForm.period + '-01',
+          planned_start_date: this.woForm.plannedStartDate,
+          lead_time_days: this.woForm.leadTimeDays
+        };
+        
+        const response = await axios.post('/material-planning/work-orders', payload);
+        
+        this.closeWOModal();
+        this.fetchPlans();
+        
+        // Show success message with work order details
+        if (response.data.data && response.data.data.length > 0) {
+          const woNumbers = response.data.data.map(wo => wo.wo_number).join(', ');
+          alert(`${response.data.message}\nWork Order Numbers: ${woNumbers}`);
+          
+          // Optionally redirect to work order list
+          // this.$router.push('/manufacturing/work-orders');
+        } else {
+          alert(response.data.message);
+        }
+      } catch (error) {
+        console.error('Error generating work orders:', error);
+        const message = error.response?.data?.message || 'Failed to generate work orders';
+        alert(message);
+      } finally {
+        this.isGeneratingWO = false;
+      }
+    },
+    
     async submitPR() {
       if (!this.prForm.leadTimeDays) {
         alert('Please fill in all required fields');
@@ -778,6 +891,21 @@ export default {
       }
     },
     
+    generateWorkOrder(item) {
+      this.selectedPlan = item;
+      // Get the first period with positive net requirement
+      for (const [period, periodData] of Object.entries(item.periods)) {
+        if (periodData.net_requirement > 0) {
+          this.woForm.period = period;
+          // Set default planned start date to beginning of planning period
+          const [year, month] = period.split('-');
+          this.woForm.plannedStartDate = `${year}-${month}-01`;
+          this.showWOModal = true;
+          return;
+        }
+      }
+    },
+    
     generatePurchaseRequisition(item) {
       this.selectedPlan = item;
       // Get the first period with positive net requirement
@@ -815,6 +943,16 @@ export default {
         bufferPercentage: 10,
         itemIds: []
       };
+    },
+    
+    closeWOModal() {
+      this.showWOModal = false;
+      this.woForm = {
+        period: '',
+        plannedStartDate: '',
+        leadTimeDays: 7
+      };
+      this.selectedPlan = null;
     },
     
     closePRModal() {
@@ -1086,7 +1224,7 @@ export default {
 }
 
 .action-column {
-  width: 150px;
+  width: 180px;
 }
 
 .btn-icon {
@@ -1121,6 +1259,11 @@ export default {
   color: #16a34a;
 }
 
+.btn-icon-manufacturing:hover {
+  background: #e0e7ff;
+  color: #6366f1;
+}
+
 .status-chip {
   padding: 2px 8px;
   border-radius: 12px;
@@ -1138,6 +1281,11 @@ export default {
 .bg-blue {
   background: #dbeafe;
   color: #1e40af;
+}
+
+.bg-purple {
+  background: #e0e7ff;
+  color: #6366f1;
 }
 
 .bg-green {

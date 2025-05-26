@@ -517,6 +517,7 @@ Route::get('purchase-orders/reports/outstanding-items', [PurchaseOrderController
     Route::post('/material-planning/max-production', [MaterialPlanningController::class, 'calculateMaximumProduction']);
     // Tambahkan route untuk list material plans jika diperlukan
     Route::get('/material-planning', [MaterialPlanningController::class, 'index']);
+    Route::post('/material-planning/work-orders', [MaterialPlanningController::class, 'generateWorkOrders']);
 
     Route::delete('/material-planning/{id}', [MaterialPlanningController::class, 'destroy']);
 

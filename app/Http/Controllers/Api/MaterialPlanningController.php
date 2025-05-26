@@ -1,5 +1,5 @@
 <?php
-// app/Http/Controllers/MaterialPlanningController.php
+// app/Http/Controllers/Api/MaterialPlanningController.php
 
 namespace App\Http\Controllers\Api;
 
@@ -9,6 +9,9 @@ use App\Models\Sales\SalesForecast;
 use App\Models\Item;
 use App\Models\Manufacturing\BOM;
 use App\Models\Manufacturing\BOMLine;
+use App\Models\Manufacturing\WorkOrder;
+use App\Models\Manufacturing\WorkOrderOperation;
+use App\Models\Manufacturing\Routing;
 use App\Models\PurchaseRequisition;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -497,7 +500,7 @@ class MaterialPlanningController extends Controller
     }
     
     /**
-     * Generate purchase requisitions from material plans
+     * Generate purchase requisitions from material plans (for Raw Materials)
      */
     public function generatePurchaseRequisitions(Request $request)
     {
@@ -563,6 +566,116 @@ class MaterialPlanningController extends Controller
             return response()->json(['message' => 'Failed to generate purchase requisition', 'error' => $e->getMessage()], 500);
         }
     }
+
+    /**
+     * Generate work orders from material plans (for Finished Goods)
+     */
+    public function generateWorkOrders(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'period' => 'required|date',
+            'planned_start_date' => 'required|date',
+            'lead_time_days' => 'required|integer|min:1',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json(['errors' => $validator->errors()], 422);
+        }
+
+        try {
+            DB::beginTransaction();
+            
+            // Get finished goods plans for the specified period
+            $plans = MaterialPlan::where('planning_period', $request->period)
+                ->where('material_type', 'FG')  // Only finished goods
+                ->where('net_requirement', '>', 0)
+                ->where('status', 'Draft')
+                ->with(['item', 'bom'])
+                ->get();
+            
+            if ($plans->isEmpty()) {
+                return response()->json(['message' => 'No finished goods plans found requiring production'], 404);
+            }
+            
+            $plannedStartDate = Carbon::parse($request->planned_start_date);
+            $plannedEndDate = $plannedStartDate->copy()->addDays($request->lead_time_days);
+            $workOrders = [];
+            
+            foreach ($plans as $plan) {
+                // Validate that the item has a BOM
+                if (!$plan->bom_id || !$plan->bom) {
+                    continue; // Skip items without BOM
+                }
+                
+                // Get active routing for the item
+                $routing = Routing::where('item_id', $plan->item_id)
+                    ->where('status', 'Active')
+                    ->orderBy('effective_date', 'desc')
+                    ->first();
+                
+                if (!$routing) {
+                    continue; // Skip items without routing
+                }
+                
+                $woNumber = $this->generateWONumber();
+                
+                // Create work order
+                $workOrder = WorkOrder::create([
+                    'wo_number' => $woNumber,
+                    'wo_date' => now(),
+                    'item_id' => $plan->item_id,
+                    'bom_id' => $plan->bom_id,
+                    'routing_id' => $routing->routing_id,
+                    'planned_quantity' => $plan->planned_order_quantity,
+                    'planned_start_date' => $plannedStartDate,
+                    'planned_end_date' => $plannedEndDate,
+                    'status' => 'Planned',
+                ]);
+                
+                // Create work order operations based on routing operations
+                $routingOperations = $routing->routingOperations()->orderBy('sequence')->get();
+                $operationStartDate = $plannedStartDate->copy();
+                
+                foreach ($routingOperations as $routingOperation) {
+                    $operationEndDate = $operationStartDate->copy()->addHours($routingOperation->setup_time + $routingOperation->run_time);
+                    
+                    WorkOrderOperation::create([
+                        'wo_id' => $workOrder->wo_id,
+                        'routing_operation_id' => $routingOperation->operation_id,
+                        'scheduled_start' => $operationStartDate,
+                        'scheduled_end' => $operationEndDate,
+                        'actual_start' => null,
+                        'actual_end' => null,
+                        'actual_labor_time' => 0,
+                        'actual_machine_time' => 0,
+                        'status' => 'Pending',
+                    ]);
+                    
+                    // Next operation starts after this one ends
+                    $operationStartDate = $operationEndDate->copy();
+                }
+                
+                // Update plan status
+                $plan->update(['status' => 'Work Order Created']);
+                
+                $workOrders[] = $workOrder->load(['item', 'bom', 'routing']);
+            }
+            
+            DB::commit();
+            
+            if (empty($workOrders)) {
+                return response()->json(['message' => 'No work orders could be generated. Please check that items have valid BOM and Routing.'], 400);
+            }
+            
+            return response()->json([
+                'message' => count($workOrders) . ' work order(s) generated successfully',
+                'data' => $workOrders
+            ], 200);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json(['message' => 'Failed to generate work orders', 'error' => $e->getMessage()], 500);
+        }
+    }
     
     /**
      * Generate PR number
@@ -583,5 +696,51 @@ class MaterialPlanningController extends Controller
         }
         
         return $prefix . $date . '-' . str_pad($newNumber, 3, '0', STR_PAD_LEFT);
+    }
+    
+    /**
+     * Generate WO number
+     */
+    private function generateWONumber()
+    {
+        $prefix = 'WO-AUTO-';
+        $date = date('Ymd');
+        $lastWO = WorkOrder::where('wo_number', 'like', "{$prefix}{$date}%")
+            ->orderBy('wo_number', 'desc')
+            ->first();
+            
+        if ($lastWO) {
+            $lastNumber = intval(substr($lastWO->wo_number, -3));
+            $newNumber = $lastNumber + 1;
+        } else {
+            $newNumber = 1;
+        }
+        
+        return $prefix . $date . '-' . str_pad($newNumber, 3, '0', STR_PAD_LEFT);
+    }
+
+    /**
+     * Delete a material plan
+     */
+    public function destroy($id)
+    {
+        try {
+            $plan = MaterialPlan::find($id);
+            
+            if (!$plan) {
+                return response()->json(['message' => 'Material plan not found'], 404);
+            }
+            
+            // Check if plan has been processed (has work orders or purchase requisitions)
+            if ($plan->status !== 'Draft') {
+                return response()->json(['message' => 'Cannot delete processed material plan'], 400);
+            }
+            
+            $plan->delete();
+            
+            return response()->json(['message' => 'Material plan deleted successfully'], 200);
+        } catch (\Exception $e) {
+            return response()->json(['message' => 'Failed to delete material plan', 'error' => $e->getMessage()], 500);
+        }
     }
 }
