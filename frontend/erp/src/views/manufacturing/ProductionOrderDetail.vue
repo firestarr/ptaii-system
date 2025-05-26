@@ -122,7 +122,7 @@
               </div>
               <div class="detail-item">
                 <div class="detail-label">Product</div>
-                <div class="detail-value">{{ workOrder?.product?.name || 'N/A' }}</div>
+                <div class="detail-value">{{ workOrder?.item?.item_code || 'N/A' }}</div>
               </div>
               <div class="detail-item">
                 <div class="detail-label">Planned Quantity</div>

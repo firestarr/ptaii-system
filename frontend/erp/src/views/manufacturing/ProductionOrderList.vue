@@ -91,8 +91,8 @@
             <tr v-for="order in sortedProductionOrders" :key="order.production_id">
               <td>{{ order.production_number }}</td>
               <td>{{ formatDate(order.production_date) }}</td>
-              <td>{{ order.workOrder?.wo_number || 'N/A' }}</td>
-              <td>{{ order.workOrder?.product?.name || 'N/A' }}</td>
+              <td>{{ order.work_order?.wo_number || 'N/A' }}</td>
+              <td>{{ order.work_order?.item?.item_code || 'N/A' }}</td>
               <td>{{ order.planned_quantity }}</td>
               <td>{{ order.actual_quantity }}</td>
               <td>
