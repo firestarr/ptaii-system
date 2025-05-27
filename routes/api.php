@@ -19,6 +19,7 @@ use App\Http\Controllers\Api\Inventory\CycleCountingController;
 use App\Http\Controllers\Api\Inventory\ItemStockController;
 use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\MaterialPlanningController;
+use App\Http\Controllers\Api\PDFOrderCaptureController;
 
 // purchase order
 use App\Http\Controllers\Api\VendorController;
@@ -597,5 +598,60 @@ Route::get('purchase-orders/reports/outstanding-items', [PurchaseOrderController
         
         // Currency Converter utility
         Route::get('currency-rates/current-rate', [App\Http\Controllers\Api\CurrencyRateController::class, 'getCurrentRate']);
+    });
+
+    // PDF Order Capture Routes
+    Route::prefix('pdf-order-capture')->group(function () {
+        
+        // Main processing endpoint
+        Route::post('/', [PdfOrderCaptureController::class, 'processPdf']);
+        
+        // Get processing history with filtering
+        Route::get('/', [PdfOrderCaptureController::class, 'getHistory']);
+        
+        // Get specific capture details
+        Route::get('/{id}', [PdfOrderCaptureController::class, 'show']);
+        
+        // Retry failed processing
+        Route::post('/{id}/retry', [PdfOrderCaptureController::class, 'retry']);
+        
+        // Cancel processing (if in progress)
+        Route::post('/{id}/cancel', [PdfOrderCaptureController::class, 'cancel']);
+        
+        // Delete capture record and file
+        Route::delete('/{id}', [PdfOrderCaptureController::class, 'destroy']);
+        
+        // Download original PDF file
+        Route::get('/{id}/download', [PdfOrderCaptureController::class, 'downloadFile']);
+        
+        // Preview extraction without creating sales order
+        Route::post('/preview', [PdfOrderCaptureController::class, 'previewExtraction']);
+        
+        // Validate extracted data manually
+        Route::post('/{id}/validate', [PdfOrderCaptureController::class, 'validateExtraction']);
+        
+        // Update extracted data manually before creating sales order
+        Route::put('/{id}/extracted-data', [PdfOrderCaptureController::class, 'updateExtractedData']);
+        
+        // Create sales order from validated data
+        Route::post('/{id}/create-order', [PdfOrderCaptureController::class, 'createSalesOrder']);
+        
+        // Get statistics and analytics
+        Route::get('/statistics/overview', [PdfOrderCaptureController::class, 'getStatistics']);
+        
+        // Get user's processing statistics
+        Route::get('/statistics/user', [PdfOrderCaptureController::class, 'getUserStatistics']);
+        
+        // Bulk operations
+        Route::post('/bulk/retry', [PdfOrderCaptureController::class, 'bulkRetry']);
+        Route::post('/bulk/cancel', [PdfOrderCaptureController::class, 'bulkCancel']);
+        Route::delete('/bulk/delete', [PdfOrderCaptureController::class, 'bulkDelete']);
+        
+        // Configuration and settings
+        Route::get('/config/supported-formats', [PdfOrderCaptureController::class, 'getSupportedFormats']);
+        Route::get('/config/processing-options', [PdfOrderCaptureController::class, 'getProcessingOptions']);
+        
+        // Health check for AI service
+        Route::get('/health/ai-service', [PdfOrderCaptureController::class, 'checkAiServiceHealth']);
     });
 });

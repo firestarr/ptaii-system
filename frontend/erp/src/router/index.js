@@ -70,6 +70,7 @@ import SalesInvoiceForm from "../views/sales/SalesInvoiceForm.vue";
 import SalesInvoicePrint from "../views/sales/SalesInvoicePrint.vue";
 import SalesInvoicePayment from "../views/sales/SalesInvoicePayment.vue";
 import CreateInvoiceFromDelivery from "../views/sales/CreateInvoiceFromDelivery.vue";
+import PdfOrderCapture from "../views/ai-pdf-capture/PdfOrderCapture.vue";
 //Sales Delivery
 import DeliveryList from "../views/sales/DeliveryList.vue";
 import DeliveryDetail from "../views/sales/DeliveryDetail.vue";
@@ -558,6 +559,13 @@ const routes = [
                 path: "/sales/forecasts/trend-analysis",
                 name: "ForecastTrendAnalysis",
                 component: () => import("../views/sales/ForecastTrendAnalysis.vue"),
+                meta: { requiresAuth: true },
+            },
+            // Add inside AppLayout children:
+            {
+                path: "/pdf-order-capture",
+                name: "PdfOrderCapture", 
+                component: PdfOrderCapture,
                 meta: { requiresAuth: true },
             },
             //SalesOrder

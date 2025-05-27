@@ -541,6 +541,56 @@
                     <!-- Sales Mega Menu -->
                     <div v-if="activeMegaMenu === 'sales'" class="mega-menu-content">
                         <div class="menu-section">
+                            <h3><i class="fas fa-cloud-upload-alt"></i> PDF Processing</h3>
+                            <div class="menu-links">
+                                <router-link to="/pdf-order-capture" class="menu-link">
+                                    <i class="fas fa-file-pdf"></i>
+                                    <div>
+                                        <span>PDF Order Capture</span>
+                                        <small>AI-powered PDF to order</small>
+                                    </div>
+                                </router-link>
+                            </div>
+                        </div>
+                        <div class="menu-section">
+                            <h3><i class="fas fa-eye"></i> Review & Processing</h3>
+                            <div class="menu-links">
+                                <router-link to="/ai-pdf-capture?status=extracted" class="menu-link">
+                                    <i class="fas fa-search"></i>
+                                    <div>
+                                        <span>Review Extractions</span>
+                                        <small>Review AI extracted data</small>
+                                    </div>
+                                </router-link>
+                                <router-link to="/ai-pdf-capture?status=failed" class="menu-link">
+                                    <i class="fas fa-exclamation-triangle"></i>
+                                    <div>
+                                        <span>Failed Extractions</span>
+                                        <small>Retry failed processes</small>
+                                    </div>
+                                </router-link>
+                            </div>
+                        </div>
+                        <div class="menu-section">
+                            <h3><i class="fas fa-chart-line"></i> Analytics</h3>
+                            <div class="menu-links">
+                                <router-link to="/ai-pdf-capture/statistics" class="menu-link">
+                                    <i class="fas fa-chart-bar"></i>
+                                    <div>
+                                        <span>Processing Stats</span>
+                                        <small>AI performance metrics</small>
+                                    </div>
+                                </router-link>
+                                <router-link to="/ai-pdf-capture/accuracy-report" class="menu-link">
+                                    <i class="fas fa-bullseye"></i>
+                                    <div>
+                                        <span>Accuracy Report</span>
+                                        <small>AI extraction accuracy</small>
+                                    </div>
+                                </router-link>
+                            </div>
+                        </div>
+                        <div class="menu-section">
                             <h3><i class="fas fa-users"></i> Customers</h3>
                             <div class="menu-links">
                                 <router-link to="/sales/customers" class="menu-link">
