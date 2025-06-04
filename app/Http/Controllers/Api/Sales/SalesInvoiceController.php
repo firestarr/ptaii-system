@@ -545,50 +545,127 @@ class SalesInvoiceController extends Controller
      * @param  int  $id
      * @return \Illuminate\Http\Response
      */
+
+    // Perbaikan untuk method update() di SalesInvoiceController
+
     public function update(Request $request, $id)
     {
-        $invoice = SalesInvoice::find($id);
-
-        if (!$invoice) {
-            return response()->json(['message' => 'Sales invoice not found'], 404);
-        }
-
-        // Check if invoice can be updated (not paid)
-        if (in_array($invoice->status, ['Paid', 'Closed'])) {
-            return response()->json(['message' => 'Cannot update a ' . $invoice->status . ' invoice'], 400);
-        }
-
-        $validator = Validator::make($request->all(), [
-            'invoice_number' => 'required|unique:SalesInvoice,invoice_number,' . $id . ',invoice_id',
-            'invoice_date' => 'required|date',
-            'due_date' => 'required|date|after_or_equal:invoice_date',
-            'status' => 'required|string|max:50',
-            'lines' => 'sometimes|array',
-            'lines.*.item_id' => 'required_with:lines|exists:items,item_id',
-            'lines.*.quantity' => 'required_with:lines|numeric|min:0',
-            'lines.*.unit_price' => 'required_with:lines|numeric|min:0',
-            'lines.*.uom_id' => 'required_with:lines|exists:unit_of_measures,uom_id'
-        ]);
-
-        if ($validator->fails()) {
-            return response()->json(['errors' => $validator->errors()], 422);
-        }
-
         try {
+            $invoice = SalesInvoice::find($id);
+
+            if (!$invoice) {
+                return response()->json(['message' => 'Sales invoice not found'], 404);
+            }
+
+            // Check if invoice can be updated (not paid)
+            if (in_array($invoice->status, ['Paid', 'Closed'])) {
+                return response()->json(['message' => 'Cannot update a ' . $invoice->status . ' invoice'], 400);
+            }
+
+            // Enhanced validation with better error messages
+            $validator = Validator::make($request->all(), [
+                'invoice_number' => 'required|unique:SalesInvoice,invoice_number,' . $id . ',invoice_id',
+                'invoice_date' => 'required|date',
+                'due_date' => 'required|date|after_or_equal:invoice_date',
+                'status' => 'required|string|max:50',
+                'customer_id' => 'required|exists:Customer,customer_id',
+                'currency_code' => 'nullable|string|size:3',
+                'lines' => 'sometimes|array|min:1',
+                'lines.*.item_id' => 'required_with:lines|exists:items,item_id',
+                'lines.*.quantity' => 'required_with:lines|numeric|min:0.01',
+                'lines.*.unit_price' => 'required_with:lines|numeric|min:0',
+                'lines.*.uom_id' => 'required_with:lines|exists:unit_of_measures,uom_id',
+                'lines.*.discount' => 'nullable|numeric|min:0',
+                'lines.*.tax' => 'nullable|numeric|min:0'
+            ], [
+                'invoice_number.required' => 'Invoice number is required',
+                'invoice_number.unique' => 'Invoice number already exists',
+                'invoice_date.required' => 'Invoice date is required',
+                'invoice_date.date' => 'Invoice date must be a valid date',
+                'due_date.required' => 'Due date is required',
+                'due_date.after_or_equal' => 'Due date must be after or equal to invoice date',
+                'customer_id.required' => 'Customer is required',
+                'customer_id.exists' => 'Selected customer does not exist',
+                'lines.required' => 'At least one invoice line is required',
+                'lines.min' => 'At least one invoice line is required',
+                'lines.*.item_id.required_with' => 'Item is required for all lines',
+                'lines.*.item_id.exists' => 'Selected item does not exist',
+                'lines.*.quantity.required_with' => 'Quantity is required for all lines',
+                'lines.*.quantity.min' => 'Quantity must be greater than 0',
+                'lines.*.unit_price.required_with' => 'Unit price is required for all lines',
+                'lines.*.unit_price.min' => 'Unit price must be 0 or greater',
+                'lines.*.uom_id.required_with' => 'Unit of measure is required for all lines',
+                'lines.*.uom_id.exists' => 'Selected unit of measure does not exist',
+            ]);
+
+            if ($validator->fails()) {
+                \Log::error('Validation failed for invoice update', [
+                    'invoice_id' => $id,
+                    'errors' => $validator->errors(),
+                    'request_data' => $request->all()
+                ]);
+                return response()->json(['errors' => $validator->errors()], 422);
+            }
+
             DB::beginTransaction();
 
+            // Log the update attempt
+            \Log::info('Updating invoice', [
+                'invoice_id' => $id,
+                'user_id' => auth()->id(),
+                'request_data' => $request->all()
+            ]);
+
             // Update invoice basic info
-            $invoice->update([
+            $updateData = [
                 'invoice_number' => $request->invoice_number,
                 'invoice_date' => $request->invoice_date,
                 'due_date' => $request->due_date,
                 'status' => $request->status,
                 'reference' => $request->reference ?? $invoice->reference,
                 'payment_terms' => $request->payment_terms ?? $invoice->payment_terms
-            ]);
+            ];
+
+            $invoice->update($updateData);
 
             // Update invoice lines if provided
             if ($request->has('lines')) {
+                // Validate each line more thoroughly
+                foreach ($request->lines as $index => $line) {
+                    // Check if item exists and is valid
+                    $item = \App\Models\Item::find($line['item_id']);
+                    if (!$item) {
+                        DB::rollBack();
+                        return response()->json([
+                            'message' => "Item in line " . ($index + 1) . " does not exist"
+                        ], 422);
+                    }
+
+                    // Check if UOM exists and is valid for the item
+                    $uom = \App\Models\UnitOfMeasure::find($line['uom_id']);
+                    if (!$uom) {
+                        DB::rollBack();
+                        return response()->json([
+                            'message' => "Unit of measure in line " . ($index + 1) . " does not exist"
+                        ], 422);
+                    }
+
+                    // Validate numeric values
+                    if (!is_numeric($line['quantity']) || $line['quantity'] <= 0) {
+                        DB::rollBack();
+                        return response()->json([
+                            'message' => "Invalid quantity in line " . ($index + 1)
+                        ], 422);
+                    }
+
+                    if (!is_numeric($line['unit_price']) || $line['unit_price'] < 0) {
+                        DB::rollBack();
+                        return response()->json([
+                            'message' => "Invalid unit price in line " . ($index + 1)
+                        ], 422);
+                    }
+                }
+
                 // Delete existing lines (this is a replace operation)
                 $invoice->salesInvoiceLines()->delete();
                 
@@ -596,43 +673,66 @@ class SalesInvoiceController extends Controller
                 $taxAmount = 0;
                 
                 // Re-create lines
-                foreach ($request->lines as $line) {
-                    // Calculate amounts
-                    $unitPrice = $line['unit_price'];
-                    $quantity = $line['quantity'];
-                    $subtotal = $unitPrice * $quantity;
-                    $discount = $line['discount'] ?? 0;
-                    $tax = $line['tax'] ?? 0;
-                    $total = $subtotal - $discount + $tax;
-                    
-                    // Calculate base currency amounts
-                    $baseUnitPrice = $unitPrice * $invoice->exchange_rate;
-                    $baseSubtotal = $subtotal * $invoice->exchange_rate;
-                    $baseDiscount = $discount * $invoice->exchange_rate;
-                    $baseTax = $tax * $invoice->exchange_rate;
-                    $baseTotal = $total * $invoice->exchange_rate;
-                    
-                    SalesInvoiceLine::create([
-                        'invoice_id' => $invoice->invoice_id,
-                        'do_line_id' => $line['do_line_id'] ?? null,
-                        'so_line_id' => $line['so_line_id'] ?? null,
-                        'item_id' => $line['item_id'],
-                        'quantity' => $quantity,
-                        'unit_price' => $unitPrice,
-                        'discount' => $discount,
-                        'subtotal' => $subtotal,
-                        'tax' => $tax,
-                        'total' => $total,
-                        'uom_id' => $line['uom_id'],
-                        'base_currency_unit_price' => $baseUnitPrice,
-                        'base_currency_subtotal' => $baseSubtotal,
-                        'base_currency_discount' => $baseDiscount,
-                        'base_currency_tax' => $baseTax,
-                        'base_currency_total' => $baseTotal
-                    ]);
-                    
-                    $totalAmount += $total;
-                    $taxAmount += $tax;
+                foreach ($request->lines as $index => $line) {
+                    try {
+                        // Calculate amounts with proper validation
+                        $unitPrice = (float) $line['unit_price'];
+                        $quantity = (float) $line['quantity'];
+                        $discount = (float) ($line['discount'] ?? 0);
+                        $tax = (float) ($line['tax'] ?? 0);
+                        
+                        $subtotal = $unitPrice * $quantity;
+                        $total = $subtotal - $discount + $tax;
+                        
+                        // Calculate base currency amounts
+                        $baseUnitPrice = $unitPrice * $invoice->exchange_rate;
+                        $baseSubtotal = $subtotal * $invoice->exchange_rate;
+                        $baseDiscount = $discount * $invoice->exchange_rate;
+                        $baseTax = $tax * $invoice->exchange_rate;
+                        $baseTotal = $total * $invoice->exchange_rate;
+                        
+                        $lineData = [
+                            'invoice_id' => $invoice->invoice_id,
+                            'do_line_id' => $line['do_line_id'] ?? null,
+                            'so_line_id' => $line['so_line_id'] ?? null,
+                            'item_id' => $line['item_id'],
+                            'quantity' => $quantity,
+                            'unit_price' => $unitPrice,
+                            'discount' => $discount,
+                            'subtotal' => $subtotal,
+                            'tax' => $tax,
+                            'total' => $total,
+                            'uom_id' => $line['uom_id'],
+                            'base_currency_unit_price' => $baseUnitPrice,
+                            'base_currency_subtotal' => $baseSubtotal,
+                            'base_currency_discount' => $baseDiscount,
+                            'base_currency_tax' => $baseTax,
+                            'base_currency_total' => $baseTotal
+                        ];
+
+                        \Log::info('Creating invoice line', [
+                            'invoice_id' => $invoice->invoice_id,
+                            'line_index' => $index,
+                            'line_data' => $lineData
+                        ]);
+                        
+                        SalesInvoiceLine::create($lineData);
+                        
+                        $totalAmount += $total;
+                        $taxAmount += $tax;
+
+                    } catch (\Exception $e) {
+                        \Log::error('Error creating invoice line', [
+                            'invoice_id' => $invoice->invoice_id,
+                            'line_index' => $index,
+                            'line_data' => $line,
+                            'error' => $e->getMessage()
+                        ]);
+                        DB::rollBack();
+                        return response()->json([
+                            'message' => "Error processing line " . ($index + 1) . ": " . $e->getMessage()
+                        ], 500);
+                    }
                 }
                 
                 // Update invoice totals
@@ -687,10 +787,27 @@ class SalesInvoiceController extends Controller
 
             DB::commit();
 
-            return response()->json(['data' => $invoice->load('salesInvoiceLines'), 'message' => 'Sales invoice updated successfully'], 200);
+            \Log::info('Invoice updated successfully', ['invoice_id' => $id]);
+
+            return response()->json([
+                'data' => $invoice->load('salesInvoiceLines'), 
+                'message' => 'Sales invoice updated successfully'
+            ], 200);
+
         } catch (\Exception $e) {
             DB::rollBack();
-            return response()->json(['message' => 'Failed to update sales invoice', 'error' => $e->getMessage()], 500);
+            
+            \Log::error('Error updating sales invoice', [
+                'invoice_id' => $id,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+                'request_data' => $request->all()
+            ]);
+            
+            return response()->json([
+                'message' => 'Failed to update sales invoice',
+                'error' => $e->getMessage()
+            ], 500);
         }
     }
 

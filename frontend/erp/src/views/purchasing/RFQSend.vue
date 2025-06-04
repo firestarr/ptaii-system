@@ -369,17 +369,18 @@
         this.isSending = true;
         
         try {
+          // First update RFQ status to 'sent'
+          await axios.patch(`/request-for-quotations/${this.rfqId}/status`, {
+            status: 'sent'
+          });
+          
+          // Then create vendor quotations
           const response = await axios.post('/vendor-quotations/create-from-rfq', {
             rfq_id: this.rfqId,
             vendor_ids: this.selectedVendors
           });
           
           if (response.data.status === 'success') {
-            // Update RFQ status
-            await axios.patch(`/request-for-quotations/${this.rfqId}/status`, {
-              status: 'sent'
-            });
-            
             // Show success modal
             this.showSuccessModal = true;
           } else {

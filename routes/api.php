@@ -19,7 +19,6 @@ use App\Http\Controllers\Api\Inventory\CycleCountingController;
 use App\Http\Controllers\Api\Inventory\ItemStockController;
 use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\MaterialPlanningController;
-use App\Http\Controllers\Api\PDFOrderCaptureController;
 
 // purchase order
 use App\Http\Controllers\Api\VendorController;
@@ -97,7 +96,7 @@ Route::middleware('auth:sanctum')->group(function () {
         // Special item filters
         Route::get('/purchasable', 'App\Http\Controllers\Api\Inventory\ItemController@getPurchasableItems');
         Route::get('/sellable', 'App\Http\Controllers\Api\Inventory\ItemController@getSellableItems');
-        
+
         // Item price routes
         Route::get('/{itemId}/prices', 'App\Http\Controllers\Api\Inventory\ItemPriceController@index');
         Route::post('/{itemId}/prices', 'App\Http\Controllers\Api\Inventory\ItemPriceController@store');
@@ -148,41 +147,41 @@ Route::middleware('auth:sanctum')->group(function () {
     // Item Category Routes
     Route::get('categories/tree', [ItemCategoryController::class, 'tree']);
     Route::resource('categories', ItemCategoryController::class);
-    
+
     // Unit of Measure Routes
     Route::resource('uoms', UnitOfMeasureController::class);
-    
+
     // Item Routes
     Route::get('items/stock-levels', [ItemController::class, 'stockLevelReport']);
     Route::post('items/{id}/update-stock', [ItemController::class, 'updateStock']);
     Route::resource('items', ItemController::class);
-    
+
     // Warehouse Routes
     Route::get('warehouses/{id}/inventory', [WarehouseController::class, 'inventory']);
     Route::resource('warehouses', WarehouseController::class);
-    
+
     // Warehouse Zone Routes
     Route::resource('warehouses/{warehouse_id}/zones', WarehouseZoneController::class);
-    
+
     // Warehouse Location Routes
     Route::get('zones/{zone_id}/locations/{id}/inventory', [WarehouseLocationController::class, 'inventory']);
     Route::resource('zones/{zone_id}/locations', WarehouseLocationController::class);
-    
+
     // Item Batch Routes
     Route::get('batches/near-expiry/{days?}', [ItemBatchController::class, 'nearExpiry']);
     Route::resource('items/{item_id}/batches', ItemBatchController::class);
-    
+
     // Stock Transaction Routes
     Route::get('transactions/items/{item_id}/movement', [StockTransactionController::class, 'itemMovement']);
     Route::post('transactions/transfer', [StockTransactionController::class, 'transfer']);
     Route::resource('transactions', StockTransactionController::class);
-    
+
     // Stock Adjustment Routes
     Route::post('adjustments/{id}/submit', [StockAdjustmentController::class, 'submit']);
     Route::post('adjustments/{id}/approve', [StockAdjustmentController::class, 'approve']);
     Route::post('adjustments/{id}/reject', [StockAdjustmentController::class, 'reject']);
     Route::resource('adjustments', StockAdjustmentController::class);
-    
+
     // Cycle Counting Routes
     Route::post('cycle-counts/generate', [CycleCountingController::class, 'generateTasks']);
     Route::post('cycle-counts/{id}/submit', [CycleCountingController::class, 'submit']);
@@ -206,17 +205,21 @@ Route::middleware('auth:sanctum')->group(function () {
     // Vendor Quotations
     Route::apiResource('vendor-quotations', VendorQuotationController::class);
     Route::patch('vendor-quotations/{vendorQuotation}/status', [VendorQuotationController::class, 'updateStatus']);
+    Route::post('vendor-quotations/create-from-rfq', [VendorQuotationController::class, 'createFromRFQ']);
 
     // Purchase Orders
     Route::apiResource('purchase-orders', PurchaseOrderController::class);
     Route::patch('purchase-orders/{purchaseOrder}/status', [PurchaseOrderController::class, 'updateStatus']);
     Route::post('purchase-orders/create-from-quotation', [PurchaseOrderController::class, 'createFromQuotation']);
     // Route untuk outstanding PO
-Route::get('purchase-orders/{purchaseOrder}/outstanding', [PurchaseOrderController::class, 'showOutstanding']);
-Route::get('purchase-orders/outstanding/all', [PurchaseOrderController::class, 'getAllOutstanding']);
-Route::get('purchase-orders/reports/outstanding-items', [PurchaseOrderController::class, 'outstandingItemsReport']);
+    Route::get('purchase-orders/{purchaseOrder}/outstanding', [PurchaseOrderController::class, 'showOutstanding']);
+    Route::get('purchase-orders/outstanding/all', [PurchaseOrderController::class, 'getAllOutstanding']);
+    Route::get('purchase-orders/reports/outstanding-items', [PurchaseOrderController::class, 'outstandingItemsReport']);
     // New route for currency conversion
     Route::post('purchase-orders/{purchaseOrder}/convert-currency', [PurchaseOrderController::class, 'convertCurrency']);
+    Route::get('purchase-orders/template/download', [PurchaseOrderController::class, 'downloadTemplate']);
+    Route::post('purchase-orders/import', [PurchaseOrderController::class, 'importFromExcel']);
+    Route::post('purchase-orders/export', [PurchaseOrderController::class, 'exportToExcel']);
 
     // Goods Receipts
     Route::prefix('goods-receipts')->group(function () {
@@ -280,12 +283,22 @@ Route::get('purchase-orders/reports/outstanding-items', [PurchaseOrderController
         Route::post('/{id}/lines', [SalesOrderController::class, 'addLine']);
         Route::put('/{id}/lines/{lineId}', [SalesOrderController::class, 'updateLine']);
         Route::delete('/{id}/lines/{lineId}', [SalesOrderController::class, 'removeLine']);
+        // Excel functionality routes (letakkan sebelum routes dengan parameter {id})
+        Route::get('/excel/template', [SalesOrderController::class, 'downloadTemplate']);
+        Route::post('/excel/import', [SalesOrderController::class, 'importFromExcel']);
+        Route::get('/excel/export', [SalesOrderController::class, 'exportToExcel']);
     });
 
-    // Delivery routes
     Route::prefix('deliveries')->group(function () {
         Route::get('/', [DeliveryController::class, 'index']);
         Route::post('/', [DeliveryController::class, 'store']);
+
+        // ===== PENTING: Route spesifik HARUS sebelum route dengan {id} =====
+        Route::get('outstanding-so', [DeliveryController::class, 'getOutstandingSalesOrders']);
+        Route::get('outstanding-items/{soId}', [DeliveryController::class, 'getOutstandingItemsForDelivery']);
+        Route::post('from-outstanding', [DeliveryController::class, 'storeFromOutstanding']);
+
+        // Route dengan parameter {id} harus di akhir
         Route::get('/{id}', [DeliveryController::class, 'show']);
         Route::put('/{id}', [DeliveryController::class, 'update']);
         Route::delete('/{id}', [DeliveryController::class, 'destroy']);
@@ -351,11 +364,11 @@ Route::get('purchase-orders/reports/outstanding-items', [PurchaseOrderController
         Route::post('/update-actuals', [SalesForecastController::class, 'updateActuals']);
         Route::get('/trend', [SalesForecastController::class, 'getForecastTrend']);
         Route::get('/volatility-summary', [SalesForecastController::class, 'getVolatilitySummary']);
-        
+
         // Then define the generic routes
         Route::get('/', [SalesForecastController::class, 'index']);
         Route::post('/', [SalesForecastController::class, 'store']);
-        
+
         // Finally define the parameter routes that will capture anything else
         Route::get('/{id}', [SalesForecastController::class, 'show']);
         Route::put('/{id}', [SalesForecastController::class, 'update']);
@@ -366,11 +379,7 @@ Route::get('purchase-orders/reports/outstanding-items', [PurchaseOrderController
     Route::get('sales-orders/{id}/outstanding-items', 'Api\Sales\SalesOrderController@getOutstandingItems');
     Route::get('sales-orders/outstanding', 'Api\Sales\SalesOrderController@getAllOutstandingSalesOrders');
 
-    // Routes untuk Delivery dari Outstanding Items
-    Route::get('deliveries/outstanding-so', [DeliveryController::class, 'getOutstandingSalesOrders']);
-    Route::get('deliveries/outstanding-items/{soId}', [DeliveryController::class, 'getOutstandingItemsForDelivery']);
-    Route::post('deliveries/from-outstanding', [DeliveryController::class, 'storeFromOutstanding']);
-    
+
 
 
     // Routes untuk ItemStock
@@ -383,8 +392,8 @@ Route::get('purchase-orders/reports/outstanding-items', [PurchaseOrderController
     Route::post('item-stocks/adjust', [ItemStockController::class, 'adjustStock']);
     Route::post('item-stocks/reserve', [ItemStockController::class, 'reserveStock']);
     Route::post('item-stocks/release-reservation', [ItemStockController::class, 'releaseReservation']);
-    
-    
+
+
     // Routes untuk System Settings
     Route::get('settings', 'Api\Admin\SystemSettingController@index');
     Route::get('settings/group/{group}', 'Api\Admin\SystemSettingController@getByGroup');
@@ -440,21 +449,24 @@ Route::get('purchase-orders/reports/outstanding-items', [PurchaseOrderController
         Route::get('/{id}', [StockTransactionController::class, 'show']);
         Route::put('/{id}', [StockTransactionController::class, 'update']);
         Route::delete('/{id}', [StockTransactionController::class, 'destroy']);
-        
+
         // State management (like Odoo)
         Route::post('/{id}/confirm', [StockTransactionController::class, 'confirm']);
         Route::post('/{id}/cancel', [StockTransactionController::class, 'cancel']);
-        
+
         // Bulk operations
         Route::post('/bulk-confirm', [StockTransactionController::class, 'bulkConfirm']);
         Route::get('/pending', [StockTransactionController::class, 'getPending']);
-        
+
         // Transfer operations (simplified like Odoo)
         Route::post('/transfer', [StockTransactionController::class, 'transfer']);
-        
+
+        // Item transactions (new route)
+        Route::get('/item/{itemId}', [StockTransactionController::class, 'itemTransactions']);
+
         // Item movement history
         Route::get('/item/{itemId}/movement', [StockTransactionController::class, 'itemMovement']);
-        
+
         // Warehouse-specific transactions
         Route::get('/warehouse/{warehouseId}', [StockTransactionController::class, 'getWarehouseTransactions']);
     });
@@ -477,10 +489,10 @@ Route::get('purchase-orders/reports/outstanding-items', [PurchaseOrderController
     Route::apiResource('boms/{bomId}/lines', BOMLineController::class);
     // Calculate potential yield from a specific material
     Route::post('/{bomId}/lines/{lineId}/calculate-yield', [BOMLineController::class, 'calculateYield']);
-    
+
     // Calculate maximum possible production based on current stock
     Route::get('/{bomId}/maximum-yield', [BOMLineController::class, 'calculateMaximumYield']);
-    
+
     // Create a yield-based BOM
     Route::post('/yield-based', [BOMController::class, 'createYieldBased']);
 
@@ -497,10 +509,35 @@ Route::get('purchase-orders/reports/outstanding-items', [PurchaseOrderController
     Route::apiResource('work-orders/{workOrderId}/operations', WorkOrderOperationController::class)
         ->except(['store', 'destroy']);
 
-    // Production Orders
-    Route::apiResource('production-orders', ProductionOrderController::class);
-    Route::patch('production-orders/{id}/status', [ProductionOrderController::class, 'updateStatus']); // ← NEW ROUTE
-    Route::post('production-orders/{id}/complete', [ProductionOrderController::class, 'complete']);
+    // Production Orders - Updated with separated flow
+    Route::prefix('production-orders')->group(function () {
+        // Basic CRUD
+        Route::get('/', [ProductionOrderController::class, 'index']);
+        Route::post('/', [ProductionOrderController::class, 'store']);
+        Route::get('/{id}', [ProductionOrderController::class, 'show']);
+        Route::put('/{id}', [ProductionOrderController::class, 'update']);
+        Route::delete('/{id}', [ProductionOrderController::class, 'destroy']);
+
+        // Status management
+        Route::patch('/{id}/status', [ProductionOrderController::class, 'updateStatus']);
+
+        // New separated production flow endpoints
+        Route::post('/{id}/issue-materials', [ProductionOrderController::class, 'issueMaterials']);
+        Route::post('/{id}/start-production', [ProductionOrderController::class, 'startProduction']);
+        Route::post('/{id}/complete', [ProductionOrderController::class, 'complete']);
+
+        // Additional utility endpoints
+        Route::get('/{id}/material-status', [ProductionOrderController::class, 'getMaterialStatus']);
+        Route::get('/{id}/production-summary', [ProductionOrderController::class, 'getProductionSummary']);
+
+        // Bulk operations
+        Route::post('/bulk/issue-materials', [ProductionOrderController::class, 'bulkIssueMaterials']);
+        Route::post('/bulk/start-production', [ProductionOrderController::class, 'bulkStartProduction']);
+
+        // Reports
+        Route::get('/reports/material-consumption', [ProductionOrderController::class, 'materialConsumptionReport']);
+        Route::get('/reports/production-efficiency', [ProductionOrderController::class, 'productionEfficiencyReport']);
+    });
     Route::apiResource('production-orders/{productionId}/consumptions', ProductionConsumptionController::class);
 
     // Maintenance Schedules
@@ -518,9 +555,9 @@ Route::get('purchase-orders/reports/outstanding-items', [PurchaseOrderController
     Route::post('/material-planning/max-production', [MaterialPlanningController::class, 'calculateMaximumProduction']);
     // Tambahkan route untuk list material plans jika diperlukan
     Route::get('/material-planning', [MaterialPlanningController::class, 'index']);
-    Route::post('/material-planning/work-orders', [MaterialPlanningController::class, 'generateWorkOrders']);
 
     Route::delete('/material-planning/{id}', [MaterialPlanningController::class, 'destroy']);
+    Route::post('/material-planning/work-orders', [MaterialPlanningController::class, 'generateWorkOrders']);
 
     // Add GET route for single material plan
     Route::get('/material-planning/{id}', [MaterialPlanningController::class, 'show']);
@@ -595,63 +632,8 @@ Route::get('purchase-orders/reports/outstanding-items', [PurchaseOrderController
         Route::get('currency-rates/{id}', [App\Http\Controllers\Api\CurrencyRateController::class, 'show']);
         Route::put('currency-rates/{id}', [App\Http\Controllers\Api\CurrencyRateController::class, 'update']);
         Route::delete('currency-rates/{id}', [App\Http\Controllers\Api\CurrencyRateController::class, 'destroy']);
-        
+
         // Currency Converter utility
         Route::get('currency-rates/current-rate', [App\Http\Controllers\Api\CurrencyRateController::class, 'getCurrentRate']);
-    });
-
-    // PDF Order Capture Routes
-    Route::prefix('pdf-order-capture')->group(function () {
-        
-        // Main processing endpoint
-        Route::post('/', [PdfOrderCaptureController::class, 'processPdf']);
-        
-        // Get processing history with filtering
-        Route::get('/', [PdfOrderCaptureController::class, 'getHistory']);
-        
-        // Get specific capture details
-        Route::get('/{id}', [PdfOrderCaptureController::class, 'show']);
-        
-        // Retry failed processing
-        Route::post('/{id}/retry', [PdfOrderCaptureController::class, 'retry']);
-        
-        // Cancel processing (if in progress)
-        Route::post('/{id}/cancel', [PdfOrderCaptureController::class, 'cancel']);
-        
-        // Delete capture record and file
-        Route::delete('/{id}', [PdfOrderCaptureController::class, 'destroy']);
-        
-        // Download original PDF file
-        Route::get('/{id}/download', [PdfOrderCaptureController::class, 'downloadFile']);
-        
-        // Preview extraction without creating sales order
-        Route::post('/preview', [PdfOrderCaptureController::class, 'previewExtraction']);
-        
-        // Validate extracted data manually
-        Route::post('/{id}/validate', [PdfOrderCaptureController::class, 'validateExtraction']);
-        
-        // Update extracted data manually before creating sales order
-        Route::put('/{id}/extracted-data', [PdfOrderCaptureController::class, 'updateExtractedData']);
-        
-        // Create sales order from validated data
-        Route::post('/{id}/create-order', [PdfOrderCaptureController::class, 'createSalesOrder']);
-        
-        // Get statistics and analytics
-        Route::get('/statistics/overview', [PdfOrderCaptureController::class, 'getStatistics']);
-        
-        // Get user's processing statistics
-        Route::get('/statistics/user', [PdfOrderCaptureController::class, 'getUserStatistics']);
-        
-        // Bulk operations
-        Route::post('/bulk/retry', [PdfOrderCaptureController::class, 'bulkRetry']);
-        Route::post('/bulk/cancel', [PdfOrderCaptureController::class, 'bulkCancel']);
-        Route::delete('/bulk/delete', [PdfOrderCaptureController::class, 'bulkDelete']);
-        
-        // Configuration and settings
-        Route::get('/config/supported-formats', [PdfOrderCaptureController::class, 'getSupportedFormats']);
-        Route::get('/config/processing-options', [PdfOrderCaptureController::class, 'getProcessingOptions']);
-        
-        // Health check for AI service
-        Route::get('/health/ai-service', [PdfOrderCaptureController::class, 'checkAiServiceHealth']);
     });
 });

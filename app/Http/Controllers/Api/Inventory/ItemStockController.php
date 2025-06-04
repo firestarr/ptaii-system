@@ -110,8 +110,8 @@ class ItemStockController extends Controller
     {
         $validator = Validator::make($request->all(), [
             'item_id' => 'required|exists:items,item_id',
-            'from_warehouse_id' => 'required|exists:Warehouse,warehouse_id',
-            'to_warehouse_id' => 'required|exists:Warehouse,warehouse_id|different:from_warehouse_id',
+            'from_warehouse_id' => 'required|exists:warehouses,warehouse_id',
+            'to_warehouse_id' => 'required|exists:warehouses,warehouse_id|different:from_warehouse_id',
             'quantity' => 'required|numeric|min:0.01',
             'reference_number' => 'nullable|string|max:50',
             'notes' => 'nullable|string'
@@ -195,7 +195,7 @@ class ItemStockController extends Controller
     {
         $validator = Validator::make($request->all(), [
             'item_id' => 'required|exists:items,item_id',
-            'warehouse_id' => 'required|exists:Warehouse,warehouse_id',
+            'warehouse_id' => 'required|exists:warehouses,warehouse_id',
             'new_quantity' => 'required|numeric|min:0',
             'reason' => 'required|string',
             'reference_number' => 'nullable|string|max:50',
@@ -281,7 +281,7 @@ class ItemStockController extends Controller
     {
         $validator = Validator::make($request->all(), [
             'item_id' => 'required|exists:items,item_id',
-            'warehouse_id' => 'required|exists:Warehouse,warehouse_id',
+            'warehouse_id' => 'required|exists:warehouses,warehouse_id',
             'quantity' => 'required|numeric|min:0.01',
             'reference_type' => 'required|string|max:50',
             'reference_id' => 'required|string|max:50'
@@ -347,7 +347,7 @@ class ItemStockController extends Controller
     {
         $validator = Validator::make($request->all(), [
             'item_id' => 'required|exists:items,item_id',
-            'warehouse_id' => 'required|exists:Warehouse,warehouse_id',
+            'warehouse_id' => 'required|exists:warehouses,warehouse_id',
             'quantity' => 'required|numeric|min:0.01',
             'reference_type' => 'required|string|max:50',
             'reference_id' => 'required|string|max:50'

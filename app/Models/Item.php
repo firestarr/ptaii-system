@@ -40,6 +40,7 @@ class Item extends Model
         'thickness',
         'weight',
         'document_path',
+        'hs_code', // Tambahan HS Code
     ];
 
     protected $casts = [
@@ -123,16 +124,22 @@ class Item extends Model
     }
 
     /**
+     * Get the active BOM for this item
+     */
+    public function activeBom()
+    {
+        return $this->hasOne(BOM::class, 'item_id', 'item_id')
+                    ->where('status', 'Active')
+                    ->latest('effective_date');
+    }
+
+    /**
      * Get the routings for this item
      */
     public function routings()
     {
         return $this->hasMany(Routing::class, 'item_id', 'item_id');
     }
-
-    /**
-     * Tambahkan method berikut pada model Item
-     */
 
     /**
      * Get the stocks for this item in all warehouses

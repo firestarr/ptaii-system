@@ -1,4 +1,4 @@
-<!-- src/views/inventory/ItemsList.vue -->
+<!-- src/views/inventory/ItemsList.vue - FIXED VERSION -->
 <template>
   <div class="items-list">
     <!-- Search and Filter Section -->
@@ -116,8 +116,8 @@
               </span>
             </td>
             <td class="actions">
-              <button class="action-btn" title="View Details" @click="viewItem(item)">
-                <i class="fas fa-eye"></i>
+              <button class="action-btn" title="View Details" @click="viewItem(item)" :disabled="isLoadingItemDetail">
+                <i class="fas fa-eye" :class="{ 'fa-spin fa-spinner': isLoadingItemDetail && loadingItemId === item.item_id }"></i>
               </button>
               <button class="action-btn" title="Edit Item" @click="editItem(item)">
                 <i class="fas fa-edit"></i>
@@ -166,8 +166,8 @@
     
     <!-- Item Details Modal -->
     <ItemDetailModal
-      v-if="showDetailModal"
-      :item="selectedItem"
+      v-if="showDetailModal && selectedItemDetail"
+      :item="selectedItemDetail"
       @close="closeDetailModal"
       @edit="editItemFromDetail"
     />
@@ -176,7 +176,9 @@
 
 <script>
 import { ref, computed, onMounted, watch } from 'vue';
+import { useRouter } from 'vue-router';
 import api from '@/services/api';
+import ItemService from '@/services/ItemService.js';
 import SearchFilter from '@/components/common/SearchFilter.vue';
 import PaginationComponent from '@/components/common/Pagination.vue';
 import ItemFormModal from '@/components/inventory/ItemFormModal.vue';
@@ -193,6 +195,7 @@ export default {
     ConfirmationModal
   },
   setup() {
+    const router = useRouter();
     const items = ref([]);
     const categories = ref([]);
     const unitOfMeasures = ref([]);
@@ -233,6 +236,7 @@ export default {
       width: '',
       thickness: '',
       weight: '',
+      hs_code: '', // ← Tambah HS Code
       is_purchasable: false,
       is_sellable: false,
       cost_price: 0,
@@ -241,7 +245,11 @@ export default {
       sale_price_currency: 'USD',
     });
     const itemToDelete = ref({});
-    const selectedItem = ref(null);
+    
+    // NEW: Item detail loading state
+    const selectedItemDetail = ref(null);
+    const isLoadingItemDetail = ref(false);
+    const loadingItemId = ref(null);
     
     // Computed properties
     const filteredItems = computed(() => {
@@ -493,6 +501,7 @@ export default {
         width: '',
         thickness: '',
         weight: '',
+        hs_code: '', // ← Tambah HS Code
         is_purchasable: false,
         is_sellable: false,
         cost_price: 0,
@@ -518,6 +527,7 @@ export default {
         width: item.width || '',
         thickness: item.thickness || '',
         weight: item.weight || '',
+        hs_code: item.hs_code || '', // ← Tambah HS Code
         is_purchasable: item.is_purchasable || false,
         is_sellable: item.is_sellable || false,
         cost_price: item.cost_price || 0,
@@ -533,9 +543,44 @@ export default {
       editItem(item);
     };
     
-    const viewItem = (item) => {
-      selectedItem.value = item;
-      showDetailModal.value = true;
+    // NEW: Fixed viewItem function that fetches detailed item data
+    const viewItem = async (item) => {
+      if (isLoadingItemDetail.value) return;
+      
+      isLoadingItemDetail.value = true;
+      loadingItemId.value = item.item_id;
+      
+      try {
+        console.log('🔍 Fetching detailed item data for:', item.item_id);
+        
+        // Fetch detailed item data with BOM components using ItemService
+        const response = await ItemService.getItemById(item.item_id);
+        
+        console.log('📦 Detailed item response:', response);
+        
+        // Set the detailed item data
+        selectedItemDetail.value = {
+          ...response.data,
+          bom_components: response.bom_components || []
+        };
+        
+        console.log('✅ Selected item detail set with BOM components:', selectedItemDetail.value.bom_components);
+        
+        // Open the modal
+        showDetailModal.value = true;
+        
+      } catch (error) {
+        console.error('❌ Error fetching detailed item:', error);
+        alert('Error loading item details. Please try again.');
+      } finally {
+        isLoadingItemDetail.value = false;
+        loadingItemId.value = null;
+      }
+    };
+    
+    // Alternative: Navigate to dedicated item detail page
+    const viewItemPage = (item) => {
+      router.push(`/items/${item.item_id}`);
     };
     
     const closeItemModal = () => {
@@ -544,7 +589,7 @@ export default {
     
     const closeDetailModal = () => {
       showDetailModal.value = false;
-      selectedItem.value = null;
+      selectedItemDetail.value = null;
     };
     
     const saveItem = async (formData) => {
@@ -568,11 +613,11 @@ export default {
           // Show success message
           alert('Item updated successfully!');
         } else {
-await api.post('/items', formData, {
-  headers: {
-    'Content-Type': 'multipart/form-data'
-  }
-});
+          await api.post('/items', formData, {
+            headers: {
+              'Content-Type': 'multipart/form-data'
+            }
+          });
           
           // Refresh items list
           await fetchItems();
@@ -679,7 +724,9 @@ await api.post('/items', formData, {
       isEditMode,
       itemForm,
       itemToDelete,
-      selectedItem,
+      selectedItemDetail, // ← Changed from selectedItem
+      isLoadingItemDetail, // ← NEW
+      loadingItemId, // ← NEW
       sortIconClass,
       getStockStatus,
       getStockStatusClass,
@@ -690,7 +737,8 @@ await api.post('/items', formData, {
       openAddItemModal,
       editItem,
       editItemFromDetail,
-      viewItem,
+      viewItem, // ← Fixed function
+      viewItemPage, // ← Alternative function
       closeItemModal,
       closeDetailModal,
       saveItem,
@@ -795,9 +843,14 @@ await api.post('/items', formData, {
   transition: background-color 0.2s, color 0.2s;
 }
 
-.action-btn:hover {
+.action-btn:hover:not(:disabled) {
   background-color: #f1f5f9;
   color: #0f172a;
+}
+
+.action-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 .loading-indicator {
@@ -834,6 +887,7 @@ await api.post('/items', formData, {
   margin: 0 0 0.5rem 0;
   color: #1e293b;
 }
+
 @media (max-width: 768px) {
   .data-table {
     font-size: 0.75rem;

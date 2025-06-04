@@ -1,4 +1,4 @@
-// src/services/item.service.js
+// src/services/ItemService.js
 import api from './api';
 
 /**
@@ -16,13 +16,31 @@ const ItemService = {
   },
   
   /**
-   * Get item by ID
+   * Get item by ID with detailed information including BOM components
    * @param {Number} id - Item ID
    * @returns {Promise} Promise with item response
    */
   getItemById: async (id) => {
-    const response = await api.get(`/items/${id}`);
-    return response.data;
+    try {
+      console.log('ItemService: Fetching item with ID:', id);
+      const response = await api.get(`/items/${id}`);
+      console.log('ItemService: API response:', response.data);
+      
+      // Ensure the response structure is correct
+      if (response.data && response.data.success) {
+        return {
+          success: true,
+          data: response.data.data,
+          bom_components: response.data.bom_components || []
+        };
+      } else {
+        console.warn('ItemService: Unexpected response structure:', response.data);
+        return response.data;
+      }
+    } catch (error) {
+      console.error('ItemService: Error fetching item:', error);
+      throw error;
+    }
   },
   
   /**
@@ -108,7 +126,7 @@ const ItemService = {
    * @returns {Promise} Promise with transactions response
    */
   getItemTransactions: async (itemId, params = {}) => {
-    const response = await api.get(`/stock-transactions/item/${itemId}`, { params });
+    const response = await api.get(`/transactions/items/${itemId}/movement`, { params });
     return response.data;
   },
   
@@ -124,6 +142,49 @@ const ItemService = {
     if (date) params.date = date;
     
     const response = await api.get(`/items/${id}/prices-in-currencies`, { params });
+    return response.data;
+  },
+  
+  /**
+   * Get BOM components for an item
+   * @param {Number} itemId - Item ID
+   * @returns {Promise} Promise with BOM components response
+   */
+  getBOMComponents: async (itemId) => {
+    try {
+      // This data should come with the item details, but if needed separately:
+      const response = await api.get(`/boms?item_id=${itemId}&status=Active`);
+      
+      if (response.data && response.data.data && response.data.data.length > 0) {
+        const bom = response.data.data[0];
+        const bomLinesResponse = await api.get(`/boms/${bom.bom_id}/lines`);
+        return bomLinesResponse.data;
+      }
+      
+      return { data: [] };
+    } catch (error) {
+      console.error('Error fetching BOM components:', error);
+      return { data: [] };
+    }
+  },
+  
+  /**
+   * Get item with all prices including customer-specific prices
+   * @param {Number} id - Item ID
+   * @returns {Promise} Promise with detailed prices response
+   */
+  getItemWithAllPrices: async (id) => {
+    const response = await api.get(`/items/${id}/all-prices`);
+    return response.data;
+  },
+  
+  /**
+   * Get customer price matrix for an item
+   * @param {Number} id - Item ID
+   * @returns {Promise} Promise with customer price matrix response
+   */
+  getCustomerPriceMatrix: async (id) => {
+    const response = await api.get(`/items/${id}/customer-price-matrix`);
     return response.data;
   },
   
@@ -178,6 +239,21 @@ const ItemService = {
   updateStock: async (id, data) => {
     const response = await api.post(`/items/${id}/update-stock`, data);
     return response.data;
+  },
+
+  /**
+   * Debug helper to log item structure
+   * @param {Object} item - Item object to debug
+   */
+  debugItem: (item) => {
+    console.group('🔍 Item Debug Info');
+    console.log('Item Object:', item);
+    console.log('Has BOM Components:', !!(item && item.bom_components));
+    console.log('BOM Components Count:', item?.bom_components?.length || 0);
+    if (item?.bom_components?.length > 0) {
+      console.log('First Component:', item.bom_components[0]);
+    }
+    console.groupEnd();
   }
 };
 

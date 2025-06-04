@@ -33,6 +33,10 @@
                   {{ item.unitOfMeasure ? `${item.unitOfMeasure.name} (${item.unitOfMeasure.symbol})` : '-' }}
                 </div>
               </div>
+              <div class="detail-item">
+                <div class="detail-label">HS Code</div>
+                <div class="detail-value">{{ item.hs_code || '-' }}</div>
+              </div>
             </div>
           </div>
           
@@ -133,8 +137,9 @@
               <div class="detail-item" v-if="showMultiCurrencyPrices">
                 <div class="detail-label">View Prices in Other Currencies</div>
                 <div class="detail-value">
-                  <button @click="fetchPricesInCurrencies" class="btn btn-sm btn-secondary">
-                    <i class="fas fa-money-bill-wave"></i> Show Prices
+                  <button @click="fetchPricesInCurrencies" class="btn btn-sm btn-secondary" :disabled="isLoadingCurrencies">
+                    <i class="fas fa-money-bill-wave"></i> 
+                    {{ isLoadingCurrencies ? 'Loading...' : 'Show Prices' }}
                   </button>
                 </div>
               </div>
@@ -164,7 +169,7 @@
           
           <!-- BOM Components Section -->
           <div class="detail-section" v-if="bomComponents && bomComponents.length > 0">
-            <h3 class="section-title">BOM Components</h3>
+            <h3 class="section-title">BOM Components ({{ bomComponents.length }})</h3>
             <div class="components-table">
               <table>
                 <thead>
@@ -174,6 +179,7 @@
                     <th>Quantity</th>
                     <th>UOM</th>
                     <th>Critical</th>
+                    <th>Yield Based</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -186,6 +192,14 @@
                       <span :class="component.is_critical ? 'badge-warning' : 'badge-secondary'" class="badge">
                         {{ component.is_critical ? 'Yes' : 'No' }}
                       </span>
+                    </td>
+                    <td>
+                      <span :class="component.is_yield_based ? 'badge-info' : 'badge-secondary'" class="badge">
+                        {{ component.is_yield_based ? 'Yes' : 'No' }}
+                      </span>
+                      <div v-if="component.is_yield_based && component.yield_ratio" class="yield-info">
+                        <small>Ratio: {{ component.yield_ratio }}</small>
+                      </div>
                     </td>
                   </tr>
                 </tbody>
@@ -284,7 +298,10 @@ export default {
     const hasMoreTransactions = ref(false);
     const multiCurrencyPrices = ref(null);
     const isLoadingCurrencies = ref(false);
+    
+    // BOM Components dari props item
     const bomComponents = computed(() => {
+      console.log('ItemDetailModal - props.item:', props.item);
       return props.item && props.item.bom_components ? props.item.bom_components : [];
     });
 
@@ -296,7 +313,7 @@ export default {
     const fetchRecentTransactions = async () => {
       try {
         if (props.item && props.item.item_id) {
-          const response = await api.get(`/stock-transactions/item/${props.item.item_id}?limit=5`);
+          const response = await api.get(`/transactions/items/${props.item.item_id}/movement?limit=5`);
           recentTransactions.value = response.data.data || [];
           
           // Check if there are more transactions than what we fetched
@@ -318,7 +335,9 @@ export default {
           }
         });
         
-        multiCurrencyPrices.value = response.data.data;
+        if (response.data.success) {
+          multiCurrencyPrices.value = response.data.data;
+        }
       } catch (error) {
         console.error('Error fetching prices in currencies:', error);
       } finally {
@@ -429,7 +448,7 @@ export default {
   border-radius: 0.5rem;
   box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
   width: 100%;
-  max-width: 800px;
+  max-width: 900px;
   max-height: 90vh;
   z-index: 60;
   overflow: hidden;
@@ -643,6 +662,15 @@ export default {
   color: #1e293b;
 }
 
+.yield-info {
+  margin-top: 0.25rem;
+}
+
+.yield-info small {
+  font-size: 0.75rem;
+  color: #64748b;
+}
+
 .transaction-type {
   display: inline-block;
   padding: 0.25rem 0.5rem;
@@ -691,6 +719,49 @@ export default {
   margin-top: 1rem;
 }
 
+.btn {
+  padding: 0.5rem 1rem;
+  border-radius: 0.375rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  border: none;
+}
+
+.btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.btn-sm {
+  padding: 0.375rem 0.75rem;
+  font-size: 0.8125rem;
+}
+
+.btn-primary {
+  background-color: #2563eb;
+  color: white;
+}
+
+.btn-primary:hover:not(:disabled) {
+  background-color: #1d4ed8;
+}
+
+.btn-secondary {
+  background-color: #f8fafc;
+  color: #374151;
+  border: 1px solid #d1d5db;
+}
+
+.btn-secondary:hover:not(:disabled) {
+  background-color: #f1f5f9;
+  border-color: #9ca3af;
+}
+
 .badge {
   display: inline-block;
   padding: 0.25rem 0.5rem;
@@ -712,6 +783,11 @@ export default {
 .badge-warning {
   background-color: #fef3c7;
   color: #d97706;
+}
+
+.badge-info {
+  background-color: #dbeafe;
+  color: #2563eb;
 }
 
 @media (max-width: 640px) {

@@ -159,30 +159,29 @@ class ItemController extends Controller
         // Add stock status to the response
         $item->stock_status = $item->stock_status;
         
-        // Get BOM components if this is a Finished Good
+        // Get BOM components - PERBAIKI LOGIKA INI
         $bomComponents = [];
-        if ($item->category && $item->category->category_id === '1') {
-            // Get the active BOM
-            $activeBom = BOM::where('item_id', $item->item_id)
-                ->where('status', 'Active')
-                ->orderBy('effective_date', 'desc')
-                ->first();
-                
-            if ($activeBom) {
-                $bomComponents = BOMLine::with(['item', 'unitOfMeasure'])
-                    ->where('bom_id', $activeBom->bom_id)
-                    ->get()
-                    ->map(function ($line) {
-                        return [
-                            'component_id' => $line->item_id,
-                            'component_code' => $line->item->item_code,
-                            'component_name' => $line->item->name,
-                            'quantity' => $line->quantity,
-                            'uom' => $line->unitOfMeasure ? $line->unitOfMeasure->symbol : null,
-                            'is_critical' => $line->is_critical
-                        ];
-                    });
-            }
+        
+        // Cari BOM aktif untuk item ini (tanpa hard-coded category check)
+        $activeBom = BOM::where('item_id', $item->item_id)
+            ->where('status', 'Active')
+            ->orderBy('effective_date', 'desc')
+            ->first();
+            
+        if ($activeBom) {
+            $bomComponents = BOMLine::with(['item', 'unitOfMeasure'])
+                ->where('bom_id', $activeBom->bom_id)
+                ->get()
+                ->map(function ($line) {
+                    return [
+                        'component_id' => $line->item_id,
+                        'component_code' => $line->item->item_code,
+                        'component_name' => $line->item->name,
+                        'quantity' => $line->quantity,
+                        'uom' => $line->unitOfMeasure ? $line->unitOfMeasure->symbol : null,
+                        'is_critical' => $line->is_critical
+                    ];
+                });
         }
 
         // Add document URL if document exists

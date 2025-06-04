@@ -25,7 +25,7 @@ class SalesOrderController extends Controller
      */
     public function index()
     {
-        $orders = SalesOrder::with(['customer', 'salesQuotation'])->get();
+        $orders = SalesOrder::with(['customer', 'salesQuotation', 'deliveries', 'salesInvoices'])->get();
         return response()->json(['data' => $orders], 200);
     }
 

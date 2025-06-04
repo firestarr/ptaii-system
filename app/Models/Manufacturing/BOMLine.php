@@ -4,7 +4,6 @@ namespace App\Models\Manufacturing;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use App\Models\Item;
 use App\Models\UnitOfMeasure;
 
@@ -14,8 +13,7 @@ class BOMLine extends Model
 
     protected $table = 'bom_lines';
     protected $primaryKey = 'line_id';
-    public $timestamps = false;
-
+    
     protected $fillable = [
         'bom_id',
         'item_id',
@@ -23,12 +21,13 @@ class BOMLine extends Model
         'uom_id',
         'is_critical',
         'notes',
-        'yield_ratio', // How many finished products can be produced from this material
-        'is_yield_based', // Flag to indicate if this is a yield-based calculation
-        'shrinkage_factor', // Optional: Factor to account for material waste/shrinkage
+        'is_yield_based',
+        'yield_ratio',
+        'shrinkage_factor'
     ];
 
     protected $casts = [
+        'quantity' => 'float',
         'is_critical' => 'boolean',
         'is_yield_based' => 'boolean',
         'yield_ratio' => 'float',
@@ -36,52 +35,122 @@ class BOMLine extends Model
     ];
 
     /**
-     * Get the BOM that owns the BOM line.
+     * Get the BOM that owns this line
      */
-    public function bom(): BelongsTo
+    public function bom()
     {
         return $this->belongsTo(BOM::class, 'bom_id', 'bom_id');
     }
 
     /**
-     * Get the item that owns the BOM line.
+     * Get the item (component) for this BOM line
      */
-    public function item(): BelongsTo
+    public function item()
     {
         return $this->belongsTo(Item::class, 'item_id', 'item_id');
     }
 
     /**
-     * Get the unit of measure that owns the BOM line.
+     * Get the unit of measure for this BOM line
      */
-    public function unitOfMeasure(): BelongsTo
+    public function unitOfMeasure()
     {
         return $this->belongsTo(UnitOfMeasure::class, 'uom_id', 'uom_id');
     }
 
     /**
-     * Calculate the total yield of finished products from this material
-     * 
-     * @param float $materialQuantity The available quantity of this material
-     * @return float The number of finished products that can be produced
+     * Calculate the potential yield from a given material quantity.
+     * Only applicable for yield-based BOM lines.
+     *
+     * @param float|null $materialQuantity
+     * @return float
      */
     public function calculateYield($materialQuantity = null)
     {
-        // If no material quantity provided, use the quantity in BOM
-        $materialQuantity = $materialQuantity ?? $this->quantity;
-        
-        if ($this->is_yield_based && $this->yield_ratio > 0) {
-            // Apply shrinkage factor if defined
-            $effectiveQuantity = $materialQuantity;
-            if ($this->shrinkage_factor > 0) {
-                $effectiveQuantity = $materialQuantity * (1 - $this->shrinkage_factor);
-            }
-            
-            // Calculate how many finished products can be produced
-            return $effectiveQuantity * $this->yield_ratio;
+        if (!$this->is_yield_based || !$this->yield_ratio) {
+            return 0;
         }
+
+        // If no material quantity provided, use the item's current stock
+        if ($materialQuantity === null) {
+            $materialQuantity = $this->item->current_stock ?? 0;
+        }
+
+        // Calculate base yield
+        $baseYield = $materialQuantity * $this->yield_ratio;
+
+        // Apply shrinkage factor if set
+        if ($this->shrinkage_factor && $this->shrinkage_factor > 0) {
+            $shrinkageAmount = $baseYield * ($this->shrinkage_factor / 100);
+            $baseYield -= $shrinkageAmount;
+        }
+
+        return $baseYield;
+    }
+
+    /**
+     * Get the extended cost for this BOM line (quantity * unit cost)
+     *
+     * @param string $currency
+     * @return float
+     */
+    public function getExtendedCost($currency = 'USD')
+    {
+        if (!$this->item) {
+            return 0;
+        }
+
+        $unitCost = $this->item->getDefaultPurchasePriceInCurrency($currency);
+        return $this->quantity * $unitCost;
+    }
+
+    /**
+     * Check if this component is available in sufficient quantity
+     *
+     * @param float $productionQuantity
+     * @return bool
+     */
+    public function isAvailableForProduction($productionQuantity = 1)
+    {
+        if (!$this->item) {
+            return false;
+        }
+
+        $requiredQuantity = $this->quantity * $productionQuantity;
+        return $this->item->current_stock >= $requiredQuantity;
+    }
+
+    /**
+     * Get the shortage quantity for a given production quantity
+     *
+     * @param float $productionQuantity
+     * @return float
+     */
+    public function getShortageQuantity($productionQuantity = 1)
+    {
+        if (!$this->item) {
+            return 0;
+        }
+
+        $requiredQuantity = $this->quantity * $productionQuantity;
+        $availableQuantity = $this->item->current_stock;
         
-        // Default behavior for non-yield-based items
-        return null;
+        return max(0, $requiredQuantity - $availableQuantity);
+    }
+
+    /**
+     * Scope for critical components
+     */
+    public function scopeCritical($query)
+    {
+        return $query->where('is_critical', true);
+    }
+
+    /**
+     * Scope for yield-based components
+     */
+    public function scopeYieldBased($query)
+    {
+        return $query->where('is_yield_based', true);
     }
 }

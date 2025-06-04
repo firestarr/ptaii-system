@@ -138,7 +138,7 @@
         <div class="detail-card">
           <div class="card-header">
             <h2 class="card-title">RFQ Lines</h2>
-            <div class="items-count">{{ rfq.lines.length }} Items</div>
+            <div class="items-count">{{ rfq && rfq.lines ? rfq.lines.length : 0 }} Items</div>
           </div>
           
           <div class="card-body">
@@ -155,17 +155,19 @@
                   </tr>
                 </thead>
                 <tbody>
-                  <tr v-for="(line, index) in rfq.lines" :key="line.line_id">
-                    <td>{{ index + 1 }}</td>
-                    <td>
-                      <div class="item-code">{{ line.item.item_code }}</div>
-                      <div class="item-name">{{ line.item.name }}</div>
-                    </td>
-                    <td>{{ line.item.description || 'N/A' }}</td>
-                    <td>{{ formatNumber(line.quantity) }}</td>
-                    <td>{{ line.unit_of_measure.symbol }}</td>
-                    <td>{{ formatDate(line.required_date) || 'N/A' }}</td>
-                  </tr>
+                  <template v-if="rfq && Array.isArray(rfq.lines)">
+                    <tr v-for="(line, index) in rfq.lines" :key="line.line_id">
+                      <td>{{ index + 1 }}</td>
+                      <td>
+                        <div class="item-code">{{ line.item.item_code }}</div>
+                        <div class="item-name">{{ line.item.name }}</div>
+                      </td>
+                      <td>{{ line.item.description || 'N/A' }}</td>
+                      <td>{{ formatNumber(line.quantity) }}</td>
+                      <td>{{ line.unit_of_measure.symbol }}</td>
+                      <td>{{ formatDate(line.required_date) || 'N/A' }}</td>
+                    </tr>
+                  </template>
                 </tbody>
               </table>
             </div>
@@ -353,30 +355,46 @@ export default {
     },
     methods: {
       async loadRFQ() {
-        this.loading = true;
-        
-        try {
-          const response = await axios.get(`/request-for-quotations/${this.id}`);
-          
-          if (response.data.status === 'success' && response.data.data) {
-            this.rfq = response.data.data;
-          } else {
-            this.rfq = null;
-            throw new Error(response.data.message || 'Failed to load RFQ');
-          }
-        } catch (error) {
-          console.error('Error loading RFQ:', error);
-          this.rfq = null;
-          
-          if (error.response && error.response.status === 404) {
-            this.$toast.error('Request for Quotation not found');
-          } else {
-            this.$toast.error('Failed to load RFQ details. Please try again.');
-          }
-        } finally {
-          this.loading = false;
+  this.loading = true;
+  
+  try {
+    const response = await axios.get(`/request-for-quotations/${this.id}`);
+    
+    if (response.data.status === 'success' && response.data.data) {
+      this.rfq = response.data.data;
+      
+      // Ensure lines and vendor_quotations are arrays to prevent undefined errors
+      if (!Array.isArray(this.rfq.lines)) {
+        this.rfq.lines = [];
+      }
+      if (!Array.isArray(this.rfq.vendor_quotations)) {
+        this.rfq.vendor_quotations = [];
+      }
+      
+      // NEW: Ensure each quotation has a lines array
+      this.rfq.vendor_quotations.forEach(quotation => {
+        if (!Array.isArray(quotation.lines)) {
+          quotation.lines = [];
         }
-      },
+      });
+      
+    } else {
+      this.rfq = null;
+      throw new Error(response.data.message || 'Failed to load RFQ');
+    }
+  } catch (error) {
+    console.error('Error loading RFQ:', error);
+    this.rfq = null;
+    
+    if (error.response && error.response.status === 404) {
+      this.$toast.error('Request for Quotation not found');
+    } else {
+      this.$toast.error('Failed to load RFQ details. Please try again.');
+    }
+  } finally {
+    this.loading = false;
+  }
+},
       formatDate(dateString) {
         if (!dateString) return null;
         

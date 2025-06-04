@@ -422,10 +422,9 @@ export default {
         };
 
         const canDeleteOrder = (order) => {
-            // Only allow delete if there are no deliveries or invoices
+            // Only allow delete if there are no deliveries
             return (
-                order.deliveries?.length === 0 &&
-                order.salesInvoices?.length === 0
+                order.deliveries?.length === 0
             );
         };
 

@@ -569,7 +569,7 @@
         };
         
           try {
-            await axios.post('/request-for-quotations/from-requisition', requestData);
+await axios.post('/request-for-quotations', requestData);
             
             // Redirect to the RFQ list with success message
             this.$router.push({

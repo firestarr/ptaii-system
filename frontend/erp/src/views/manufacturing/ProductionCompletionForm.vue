@@ -34,9 +34,33 @@
       <div v-else-if="!productionOrder" class="error-container">
         <i class="fas fa-exclamation-triangle"></i>
         <h3>Production Order Not Found</h3>
-        <p>The requested production order could not be found or is not in a valid state for completion.</p>
+        <p>The requested production order could not be found or is not ready for completion.</p>
         <router-link to="/manufacturing/production-orders" class="btn btn-primary">
           Back to Production Orders
+        </router-link>
+      </div>
+
+      <div v-else-if="productionOrder.status !== 'In Progress'" class="error-container">
+        <i class="fas fa-info-circle"></i>
+        <h3>Production Order Not Ready</h3>
+        <p>This production order is in <strong>{{ productionOrder.status }}</strong> status.</p>
+        <p>Only production orders in "In Progress" status can be completed.</p>
+        <div class="status-help">
+          <div v-if="productionOrder.status === 'Draft'" class="help-item">
+            <strong>Next Step:</strong> Issue materials first, then start production.
+          </div>
+          <div v-else-if="productionOrder.status === 'Materials Issued'" class="help-item">
+            <strong>Next Step:</strong> Start production first.
+          </div>
+          <div v-else-if="productionOrder.status === 'Completed'" class="help-item">
+            <strong>Status:</strong> This production order is already completed.
+          </div>
+          <div v-else-if="productionOrder.status === 'Cancelled'" class="help-item">
+            <strong>Status:</strong> This production order has been cancelled.
+          </div>
+        </div>
+        <router-link :to="`/manufacturing/production-orders/${productionId}`" class="btn btn-primary">
+          Go to Production Order
         </router-link>
       </div>
   
@@ -44,7 +68,7 @@
         <div class="card detail-card">
           <div class="card-header">
             <h2>Production Order Information</h2>
-            <div class="status-badge" :class="getStatusClass(productionOrder.status)">
+            <div class="status-badge status-in-progress">
               {{ productionOrder.status }}
             </div>
           </div>
@@ -64,7 +88,12 @@
               </div>
               <div class="detail-item">
                 <div class="detail-label">Product</div>
-                <div class="detail-value">{{ workOrder?.product?.name || 'N/A' }}</div>
+                <div class="detail-value">
+                  <div class="product-info">
+                    <div class="product-name">{{ workOrder?.item?.name || 'N/A' }}</div>
+                    <div class="product-code">{{ workOrder?.item?.item_code || '' }}</div>
+                  </div>
+                </div>
               </div>
               <div class="detail-item">
                 <div class="detail-label">Planned Quantity</div>
@@ -72,124 +101,144 @@
               </div>
               <div class="detail-item">
                 <div class="detail-label">Current Status</div>
-                <div class="detail-value">{{ productionOrder.status }}</div>
+                <div class="detail-value">Ready for completion</div>
               </div>
             </div>
           </div>
         </div>
-  
-        <form @submit.prevent="completeProduction" class="card completion-form">
+
+        <!-- Materials Summary Card -->
+        <div class="card detail-card" v-if="materialSummary">
           <div class="card-header">
-            <h2>Production Completion</h2>
+            <h2>Materials Already Issued</h2>
           </div>
           <div class="card-body">
             <div class="alert alert-info">
               <i class="fas fa-info-circle"></i>
               <div>
-                <strong>Important:</strong> Completing a production order will:
+                <strong>Materials Status:</strong> All required materials have been issued to production.
+                Total value: <strong>${{ materialSummary.total_actual_value?.toFixed(2) || '0.00' }}</strong>
+              </div>
+            </div>
+
+            <div class="table-responsive">
+              <table class="table material-summary-table">
+                <thead>
+                  <tr>
+                    <th>Item</th>
+                    <th>Quantity Issued</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="material in materialSummary.material_details" :key="material.consumption_id">
+                    <td>
+                      <div class="item-info">
+                        <div class="item-name">{{ material.item_name }}</div>
+                        <div class="item-code">{{ material.item_code }}</div>
+                      </div>
+                    </td>
+                    <td>{{ material.actual_quantity }}</td>
+                    <td>
+                      <span class="status-badge status-issued">
+                        {{ material.status }}
+                      </span>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- Completion Form -->
+        <form @submit.prevent="completeProduction" class="card completion-form">
+          <div class="card-header">
+            <h2>Production Completion</h2>
+          </div>
+          <div class="card-body">
+            <div class="alert alert-warning">
+              <i class="fas fa-exclamation-triangle"></i>
+              <div>
+                <strong>Important:</strong> Completing production will:
                 <ul>
-                  <li>Update inventory for the produced item</li>
-                  <li>Consume materials from inventory</li>
-                  <li>Record actual consumption and production quantities</li>
-                  <li>Change the status to "Completed"</li>
+                  <li>Move finished goods from WIP to Finished Goods warehouse</li>
+                  <li>Record the actual production quantity</li>
+                  <li>Change status to "Completed"</li>
+                  <li>Update work order progress</li>
                 </ul>
                 This action cannot be undone.
               </div>
             </div>
   
-            <div class="form-row">
-              <div class="form-group full-width">
-                <label for="actual_quantity">Actual Produced Quantity</label>
-                <input 
-                  type="number" 
-                  id="actual_quantity" 
-                  v-model="form.actual_quantity"
-                  :class="{ 'error': errors.actual_quantity }"
-                  min="0.01" 
-                  step="0.01" 
-                  required
-                  @input="validateActualQuantity"
-                >
-                <div v-if="errors.actual_quantity" class="error-message">
-                  {{ errors.actual_quantity }}
-                </div>
-                <div class="input-hint">
-                  Enter the actual quantity of {{ workOrder?.product?.name || 'product' }} produced (must be greater than 0)
-                </div>
-              </div>
-            </div>
-  
             <div class="form-section">
-              <h3>Material Consumption</h3>
-              <p class="section-description">
-                Verify and update the actual quantities of materials consumed during production.
-              </p>
+              <h3>Production Results</h3>
               
-              <div v-if="consumptions.length === 0" class="empty-state">
-                <i class="fas fa-box-open"></i>
-                <p>No material consumption records found. Add materials before completing the production order.</p>
-                <router-link 
-                  :to="`/manufacturing/production-orders/${productionId}/consumption/add`" 
-                  class="btn btn-primary">
-                  <i class="fas fa-plus"></i> Add Material
-                </router-link>
+              <div class="form-row">
+                <div class="form-group">
+                  <label for="actual_quantity">Actual Quantity Produced *</label>
+                  <input 
+                    type="number" 
+                    id="actual_quantity" 
+                    v-model="form.actual_quantity"
+                    :class="{ 'error': errors.actual_quantity }"
+                    min="0.01" 
+                    step="0.01" 
+                    required
+                    @input="validateActualQuantity"
+                  >
+                  <div v-if="errors.actual_quantity" class="error-message">
+                    {{ errors.actual_quantity }}
+                  </div>
+                  <div class="input-hint">
+                    Planned: {{ productionOrder.planned_quantity }} | 
+                    Efficiency: {{ calculateEfficiency() }}%
+                  </div>
+                </div>
+
+                <div class="form-group">
+                  <label for="quality_notes">Quality Notes</label>
+                  <textarea 
+                    id="quality_notes" 
+                    v-model="form.quality_notes"
+                    rows="4"
+                    placeholder="Enter quality observations, defects noted, or production remarks"
+                  ></textarea>
+                  <div class="input-hint">
+                    Optional: Record any quality observations or production notes
+                  </div>
+                </div>
               </div>
-              
-              <div v-else class="table-responsive">
-                <table class="table">
-                  <thead>
-                    <tr>
-                      <th>Item</th>
-                      <th>Warehouse</th>
-                      <th>Planned Quantity</th>
-                      <th>Actual Quantity</th>
-                      <th>Available Stock</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr v-for="(consumption, index) in consumptions" :key="consumption.consumption_id">
-                      <td>
-                        <div class="item-name">{{ consumption.item?.name || 'Unknown Item' }}</div>
-                        <div class="item-code">{{ consumption.item?.item_code || '' }}</div>
-                      </td>
-                      <td>{{ consumption.warehouse?.name || 'N/A' }}</td>
-                      <td>{{ consumption.planned_quantity }}</td>
-                      <td>
-                        <input 
-                          type="number" 
-                          v-model="form.consumptions[index].actual_quantity" 
-                          min="0" 
-                          step="0.01"
-                          :class="{ 'error': getConsumptionError(index) }"
-                          @input="validateConsumptions"
-                        >
-                        <div v-if="getConsumptionError(index)" class="error-message">
-                          {{ getConsumptionError(index) }}
-                        </div>
-                      </td>
-                      <td>
-                        <div 
-                          class="stock-amount" 
-                          :class="{ 'stock-warning': isStockInsufficient(consumption, index) }"
-                        >
-                          {{ getAvailableStock(consumption) }}
-                        </div>
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-            </div>
-  
-            <div class="form-row">
-              <div class="form-group full-width">
-                <label for="completion_notes">Completion Notes</label>
-                <textarea 
-                  id="completion_notes" 
-                  v-model="form.notes"
-                  rows="3"
-                  placeholder="Enter any notes or observations about this production run"
-                ></textarea>
+
+              <!-- Production Metrics Display -->
+              <div class="metrics-section" v-if="form.actual_quantity > 0">
+                <h4>Production Metrics Preview</h4>
+                <div class="metrics-grid">
+                  <div class="metric-item">
+                    <div class="metric-label">Production Efficiency</div>
+                    <div class="metric-value" :class="getEfficiencyClass()">
+                      {{ calculateEfficiency() }}%
+                    </div>
+                  </div>
+                  <div class="metric-item">
+                    <div class="metric-label">Quantity Variance</div>
+                    <div class="metric-value" :class="getVarianceClass()">
+                      {{ getQuantityVariance() }}
+                    </div>
+                  </div>
+                  <div class="metric-item">
+                    <div class="metric-label">Materials Used</div>
+                    <div class="metric-value">
+                      ${{ materialSummary?.total_actual_value?.toFixed(2) || '0.00' }}
+                    </div>
+                  </div>
+                  <div class="metric-item">
+                    <div class="metric-label">Unit Cost</div>
+                    <div class="metric-value">
+                      ${{ calculateUnitCost() }}
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -199,10 +248,10 @@
             <button 
               type="submit" 
               class="btn btn-success" 
-              :disabled="saving || hasValidationErrors || consumptions.length === 0 || !isActualQuantityValid"
+              :disabled="saving || hasValidationErrors || !isActualQuantityValid"
             >
               <i v-if="saving" class="fas fa-spinner fa-spin"></i>
-              {{ saving ? 'Completing...' : 'Complete Production Order' }}
+              {{ saving ? 'Completing Production...' : 'Complete Production Order' }}
             </button>
           </div>
         </form>
@@ -225,18 +274,14 @@ export default {
     return {
       productionOrder: null,
       workOrder: null,
-      consumptions: [],
-      itemStocks: {},
+      materialSummary: null,
       form: {
         actual_quantity: 0,
-        consumptions: [],
-        notes: '',
-        status: 'Completed'
+        quality_notes: ''
       },
       loading: true,
       saving: false,
       errors: {},
-      consumptionErrors: [],
       // Toast system
       toasts: [],
       toastIdCounter: 0
@@ -244,10 +289,7 @@ export default {
   },
   computed: {
     hasValidationErrors() {
-      return (
-        Object.keys(this.errors).length > 0 ||
-        this.consumptionErrors.some(err => err !== null)
-      );
+      return Object.keys(this.errors).length > 0;
     },
     
     isActualQuantityValid() {
@@ -294,21 +336,10 @@ export default {
     },
 
     // Helper untuk toast
-    showError(msg) {
-      this.showToast(msg, 'error');
-    },
-    
-    showSuccess(msg) {
-      this.showToast(msg, 'success');
-    },
-
-    showWarning(msg) {
-      this.showToast(msg, 'warning');
-    },
-
-    showInfo(msg) {
-      this.showToast(msg, 'info');
-    },
+    showError(msg) { this.showToast(msg, 'error'); },
+    showSuccess(msg) { this.showToast(msg, 'success'); },
+    showWarning(msg) { this.showToast(msg, 'warning'); },
+    showInfo(msg) { this.showToast(msg, 'info'); },
 
     validateActualQuantity() {
       const actualQty = parseFloat(this.form.actual_quantity) || 0;
@@ -326,30 +357,18 @@ export default {
         const resp = await axios.get(`/production-orders/${this.productionId}`);
         this.productionOrder = resp.data.data || resp.data;
 
-        if (this.productionOrder.status !== 'In Progress') {
-          this.showError(
-            'This production order cannot be completed because it is not in progress'
-          );
-          this.productionOrder = null;
-          return;
-        }
-
+        // Initialize form with planned quantity
         this.form.actual_quantity = this.productionOrder.planned_quantity;
         this.validateActualQuantity();
 
-        if (this.productionOrder.production_consumptions) {
-          this.consumptions = this.productionOrder.production_consumptions;
-          this.form.consumptions = this.consumptions.map(c => ({
-            consumption_id: c.consumption_id,
-            actual_quantity: c.actual_quantity || c.planned_quantity
-          }));
-          this.consumptionErrors = this.consumptions.map(() => null);
-          await this.fetchItemStocks();
-        }
-
+        // Fetch work order details
         if (this.productionOrder.wo_id) {
           await this.fetchWorkOrder(this.productionOrder.wo_id);
         }
+
+        // Fetch material summary
+        await this.fetchMaterialSummary();
+
       } catch (err) {
         console.error('Error fetching production order:', err);
         this.showError('Failed to load production order');
@@ -369,93 +388,71 @@ export default {
       }
     },
 
-    async fetchItemStocks() {
+    async fetchMaterialSummary() {
       try {
-        const requests = this.consumptions.map(c =>
-          axios.get(`/item-stocks/item/${c.item_id}`, {
-            params: { warehouse_id: c.warehouse_id }
-          })
-        );
-        const responses = await Promise.all(requests);
-
-        this.consumptions.forEach((c, i) => {
-          const key = `${c.item_id}-${c.warehouse_id}`;
-          this.itemStocks[key] = responses[i].data.data || responses[i].data;
-        });
-
-        this.validateConsumptions();
+        const resp = await axios.get(`/production-orders/${this.productionId}/material-status`);
+        this.materialSummary = resp.data.data || resp.data;
       } catch (err) {
-        console.error('Error fetching item stocks:', err);
-        this.showError('Failed to load stock information');
+        console.error('Error fetching material summary:', err);
+        // Don't show error as it's not critical
       }
-    },
-
-    getAvailableStock(c) {
-      const key = `${c.item_id}-${c.warehouse_id}`;
-      const stock = this.itemStocks[key];
-      if (!stock) return 'Unknown';
-      const ws = (stock.warehouse_stocks || []).find(
-        w => w.warehouse_id === c.warehouse_id
-      );
-      return ws ? ws.available_quantity || 0 : 0;
-    },
-
-    isStockInsufficient(c, idx) {
-      const key = `${c.item_id}-${c.warehouse_id}`;
-      const stock = this.itemStocks[key];
-      if (!stock) return false;
-      const ws = (stock.warehouse_stocks || []).find(
-        w => w.warehouse_id === c.warehouse_id
-      );
-      if (!ws) return false;
-      const avail = parseFloat(ws.available_quantity) || 0;
-      const actual = parseFloat(this.form.consumptions[idx].actual_quantity) || 0;
-      return actual > avail;
-    },
-
-    validateConsumptions() {
-      if (!this.consumptions || !this.form.consumptions) {
-        this.consumptionErrors = [];
-        return;
-      }
-      this.consumptionErrors = this.consumptions.map((c, i) => {
-        const entry = this.form.consumptions[i];
-        if (!entry) return 'Invalid consumption data';
-        const qty = parseFloat(entry.actual_quantity) || 0;
-        if (qty < 0) return 'Actual quantity cannot be negative';
-        if (this.isStockInsufficient(c, i)) return 'Insufficient stock available';
-        return null;
-      });
-    },
-
-    getConsumptionError(idx) {
-      return this.consumptionErrors[idx] || null;
     },
 
     formatDate(d) {
       return d ? new Date(d).toLocaleDateString() : 'N/A';
     },
 
-    getStatusClass(status) {
-      switch (status) {
-        case 'Draft':
-          return 'status-draft';
-        case 'In Progress':
-          return 'status-in-progress';
-        case 'Completed':
-          return 'status-completed';
-        case 'Cancelled':
-          return 'status-cancelled';
-        default:
-          return '';
-      }
+    calculateEfficiency() {
+      const planned = parseFloat(this.productionOrder?.planned_quantity) || 0;
+      const actual = parseFloat(this.form.actual_quantity) || 0;
+      
+      if (planned <= 0) return '0.00';
+      
+      const efficiency = (actual / planned) * 100;
+      return efficiency.toFixed(2);
+    },
+
+    getQuantityVariance() {
+      const planned = parseFloat(this.productionOrder?.planned_quantity) || 0;
+      const actual = parseFloat(this.form.actual_quantity) || 0;
+      const variance = actual - planned;
+      
+      if (variance === 0) return '0';
+      return variance > 0 ? `+${variance.toFixed(2)}` : variance.toFixed(2);
+    },
+
+    calculateUnitCost() {
+      const actual = parseFloat(this.form.actual_quantity) || 0;
+      const totalCost = parseFloat(this.materialSummary?.total_actual_value) || 0;
+      
+      if (actual <= 0) return '0.00';
+      
+      const unitCost = totalCost / actual;
+      return unitCost.toFixed(2);
+    },
+
+    getEfficiencyClass() {
+      const efficiency = parseFloat(this.calculateEfficiency());
+      if (efficiency >= 95) return 'metric-excellent';
+      if (efficiency >= 85) return 'metric-good';
+      if (efficiency >= 75) return 'metric-fair';
+      return 'metric-poor';
+    },
+
+    getVarianceClass() {
+      const planned = parseFloat(this.productionOrder?.planned_quantity) || 0;
+      const actual = parseFloat(this.form.actual_quantity) || 0;
+      const variance = actual - planned;
+      
+      if (Math.abs(variance) / planned <= 0.05) return 'metric-good'; // Within 5%
+      if (variance > 0) return 'metric-excellent'; // Over production
+      return 'metric-poor'; // Under production
     },
 
     async completeProduction() {
       try {
         this.errors = {};
         this.validateActualQuantity();
-        this.validateConsumptions();
 
         // Validasi actual quantity tidak boleh 0
         if (!this.isActualQuantityValid) {
@@ -465,11 +462,6 @@ export default {
 
         if (this.hasValidationErrors) {
           this.showError('Please correct the errors before completing the production order');
-          return;
-        }
-        
-        if (this.consumptions.length === 0) {
-          this.showError('Cannot complete production order without any material consumption');
           return;
         }
 
@@ -486,12 +478,6 @@ export default {
         console.error('Error completing production order:', err);
 
         const errorData = err.response?.data || {};
-
-        // Stock-specific errors
-        if (Array.isArray(errorData.errors?.stock)) {
-          errorData.errors.stock.forEach(msg => this.showError(msg));
-          return;
-        }
 
         // Field validation errors
         if (errorData.errors && typeof errorData.errors === 'object') {
@@ -518,14 +504,7 @@ export default {
     }
   },
 
-  watch: {
-    'form.consumptions': {
-      handler() {
-        this.validateConsumptions();
-      },
-      deep: true
-    },
-    
+  watch: {    
     'form.actual_quantity'() {
       this.validateActualQuantity();
     }
@@ -616,9 +595,11 @@ export default {
   }
 }
 
-/* Existing styles remain the same */
+/* Main styles */
 .production-completion-form {
   padding: 1rem;
+  max-width: 1000px;
+  margin: 0 auto;
 }
 
 .page-header {
@@ -628,223 +609,9 @@ export default {
   margin-bottom: 1.5rem;
 }
 
-.form-group {
-  flex: 1;
-  min-width: 250px;
-}
-
-.full-width {
-  width: 100%;
-}
-
-.form-group label {
-  display: block;
-  font-size: 0.875rem;
-  font-weight: 500;
-  margin-bottom: 0.25rem;
-  color: var(--gray-700);
-}
-
-.form-group input,
-.form-group textarea,
-.form-group select {
-  width: 100%;
-  padding: 0.5rem;
-  border: 1px solid var(--gray-300);
-  border-radius: 0.375rem;
-  font-size: 0.875rem;
-}
-
-.form-group input:focus,
-.form-group textarea:focus,
-.form-group select:focus {
-  border-color: var(--primary-color);
-  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.2);
-  outline: none;
-}
-
-.form-group .input-hint {
-  font-size: 0.75rem;
-  color: var(--gray-500);
-  margin-top: 0.25rem;
-}
-
-.error {
-  border-color: var(--danger-color) !important;
-}
-
-.error-message {
-  color: var(--danger-color);
-  font-size: 0.75rem;
-  margin-top: 0.25rem;
-}
-
-.form-section {
-  margin-top: 2rem;
-}
-
-.form-section h3 {
-  font-size: 1rem;
-  font-weight: 600;
-  margin-bottom: 0.75rem;
-  color: var(--gray-700);
-}
-
-.section-description {
-  font-size: 0.875rem;
-  color: var(--gray-600);
-  margin-bottom: 1rem;
-}
-
-.alert {
-  display: flex;
-  align-items: flex-start;
-  padding: 1rem;
-  border-radius: 0.375rem;
-  margin-bottom: 1.5rem;
-}
-
-.alert i {
-  margin-right: 0.75rem;
-  font-size: 1.25rem;
-  margin-top: 0.125rem;
-}
-
-.alert-info {
-  background-color: #dbeafe;
-  color: #1e40af;
-}
-
-.table {
-  width: 100%;
-  border-collapse: collapse;
-  margin-bottom: 1.5rem;
-}
-
-.table th,
-.table td {
-  padding: 0.75rem;
-  border-bottom: 1px solid var(--gray-200);
-  text-align: left;
-}
-
-.table th {
-  font-weight: 500;
-  color: var(--gray-600);
-}
-
-.item-name {
-  font-weight: 500;
-}
-
-.item-code {
-  font-size: 0.75rem;
-  color: var(--gray-500);
-}
-
-.stock-amount {
-  font-weight: 500;
-}
-
-.stock-warning {
-  color: var(--danger-color);
-}
-
-.empty-state {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding: 2rem;
-  text-align: center;
-  color: var(--gray-500);
-}
-
-.empty-state i {
-  font-size: 2rem;
-  margin-bottom: 1rem;
-}
-
-.empty-state p {
-  margin-bottom: 1rem;
-}
-
-.btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0.5rem 1rem;
-  border-radius: 0.375rem;
-  font-weight: 500;
-  cursor: pointer;
-  transition: background-color 0.2s, border-color 0.2s;
-  border: none;
-  gap: 0.5rem;
-}
-
-.btn-primary {
-  background-color: var(--primary-color);
-  color: white;
-}
-
-.btn-primary:hover {
-  background-color: var(--primary-dark);
-}
-
-.btn-secondary {
-  background-color: var(--gray-200);
-  color: var(--gray-800);
-}
-
-.btn-secondary:hover {
-  background-color: var(--gray-300);
-}
-
-.btn-success {
-  background-color: var(--success-color);
-  color: white;
-}
-
-.btn-success:hover {
-  background-color: #047857;
-}
-
-.btn:disabled {
-  opacity: 0.65;
-  cursor: not-allowed;
-}
-
-@media (max-width: 768px) {
-  .toast-container {
-    top: 10px;
-    right: 10px;
-    left: 10px;
-    max-width: none;
-  }
-  
-  .page-header {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 1rem;
-  }
-  
-  .actions {
-    width: 100%;
-    justify-content: flex-start;
-    flex-wrap: wrap;
-  }
-  
-  .form-row {
-    flex-direction: column;
-    gap: 1rem;
-  }
-  
-  .table-responsive {
-    overflow-x: auto;
-  }
-  
-  .detail-grid {
-    grid-template-columns: 1fr;
-  }
+.page-header h1 {
+  margin: 0;
+  color: #2c3e50;
 }
 
 .actions {
@@ -866,11 +633,23 @@ export default {
 .error-container i {
   font-size: 3rem;
   margin-bottom: 1rem;
-  color: var(--gray-300);
+  color: #bdc3c7;
 }
 
 .error-container i {
-  color: var(--danger-color);
+  color: #e74c3c;
+}
+
+.status-help {
+  margin: 1rem 0;
+  padding: 1rem;
+  background: #f8f9fa;
+  border-radius: 6px;
+  text-align: left;
+}
+
+.help-item {
+  margin-bottom: 0.5rem;
 }
 
 .detail-content {
@@ -879,14 +658,10 @@ export default {
   gap: 1.5rem;
 }
 
-.completion-form {
-  margin-top: 1rem;
-}
-
 .card {
-  background-color: white;
-  border-radius: 0.5rem;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
   overflow: hidden;
 }
 
@@ -895,14 +670,14 @@ export default {
   justify-content: space-between;
   align-items: center;
   padding: 1rem 1.5rem;
-  background-color: var(--gray-50);
-  border-bottom: 1px solid var(--gray-200);
+  background: #f8f9fa;
+  border-bottom: 1px solid #e9ecef;
 }
 
 .card-header h2 {
   margin: 0;
-  font-size: 1.125rem;
-  font-weight: 600;
+  font-size: 1.25rem;
+  color: #2c3e50;
 }
 
 .card-body {
@@ -914,13 +689,13 @@ export default {
   justify-content: flex-end;
   gap: 1rem;
   padding: 1rem 1.5rem;
-  background-color: var(--gray-50);
-  border-top: 1px solid var(--gray-200);
+  background: #f8f9fa;
+  border-top: 1px solid #e9ecef;
 }
 
 .detail-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
   gap: 1rem;
 }
 
@@ -931,45 +706,338 @@ export default {
 .detail-label {
   font-size: 0.875rem;
   font-weight: 500;
-  color: var(--gray-500);
+  color: #6c757d;
   margin-bottom: 0.25rem;
 }
 
 .detail-value {
   font-size: 1rem;
-  color: var(--gray-800);
-}
-
-.status-badge {
-  padding: 0.25rem 0.5rem;
-  border-radius: 0.25rem;
-  font-size: 0.75rem;
+  color: #2c3e50;
   font-weight: 500;
 }
 
-.status-draft {
-  background-color: var(--gray-200);
-  color: var(--gray-700);
+.product-info {
+  display: flex;
+  flex-direction: column;
+}
+
+.product-name {
+  font-weight: 600;
+  color: #2c3e50;
+}
+
+.product-code {
+  font-size: 0.875rem;
+  color: #6c757d;
+}
+
+.status-badge {
+  padding: 0.25rem 0.75rem;
+  border-radius: 20px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
 }
 
 .status-in-progress {
-  background-color: #bfdbfe;
-  color: #1e40af;
+  background: #e3f2fd;
+  color: #1976d2;
 }
 
-.status-completed {
-  background-color: #bbf7d0;
-  color: #166534;
+.status-issued {
+  background: #e8f5e8;
+  color: #2e7d32;
 }
 
-.status-cancelled {
-  background-color: #fecaca;
-  color: #b91c1c;
+.alert {
+  display: flex;
+  align-items: flex-start;
+  padding: 1rem;
+  border-radius: 6px;
+  margin-bottom: 1.5rem;
+}
+
+.alert i {
+  margin-right: 0.75rem;
+  font-size: 1.25rem;
+  margin-top: 0.125rem;
+  flex-shrink: 0;
+}
+
+.alert-info {
+  background: #e3f2fd;
+  color: #1976d2;
+  border: 1px solid #bbdefb;
+}
+
+.alert-warning {
+  background: #fff3e0;
+  color: #f57c00;
+  border: 1px solid #ffcc02;
+}
+
+.alert ul {
+  margin: 0.5rem 0 0 0;
+  padding-left: 1.5rem;
+}
+
+.form-section {
+  margin-bottom: 2rem;
+}
+
+.form-section h3 {
+  font-size: 1.125rem;
+  color: #2c3e50;
+  margin-bottom: 1rem;
+  border-bottom: 2px solid #e9ecef;
+  padding-bottom: 0.5rem;
 }
 
 .form-row {
+  display: grid;
+  grid-template-columns: 1fr 2fr;
+  gap: 2rem;
+  margin-bottom: 1.5rem;
+}
+
+.form-group {
   display: flex;
-  flex-wrap: wrap;
-  gap: 1.5rem;
+  flex-direction: column;
+}
+
+.form-group label {
+  font-size: 0.875rem;
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+  color: #2c3e50;
+}
+
+.form-group input,
+.form-group textarea {
+  padding: 0.75rem;
+  border: 2px solid #e9ecef;
+  border-radius: 6px;
+  font-size: 0.875rem;
+  transition: border-color 0.2s;
+}
+
+.form-group input:focus,
+.form-group textarea:focus {
+  border-color: #3498db;
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.1);
+}
+
+.form-group .error {
+  border-color: #e74c3c;
+}
+
+.error-message {
+  color: #e74c3c;
+  font-size: 0.75rem;
+  margin-top: 0.25rem;
+  font-weight: 500;
+}
+
+.input-hint {
+  font-size: 0.75rem;
+  color: #6c757d;
+  margin-top: 0.25rem;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 1rem;
+}
+
+.table th,
+.table td {
+  padding: 0.75rem;
+  text-align: left;
+  border-bottom: 1px solid #e9ecef;
+}
+
+.table th {
+  background: #f8f9fa;
+  font-weight: 600;
+  color: #495057;
+  font-size: 0.875rem;
+}
+
+.material-summary-table {
+  font-size: 0.875rem;
+}
+
+.item-info {
+  display: flex;
+  flex-direction: column;
+}
+
+.item-name {
+  font-weight: 500;
+  color: #2c3e50;
+}
+
+.item-code {
+  font-size: 0.75rem;
+  color: #6c757d;
+}
+
+.metrics-section {
+  margin-top: 2rem;
+  padding: 1.5rem;
+  background: #f8f9fa;
+  border-radius: 8px;
+  border: 1px solid #e9ecef;
+}
+
+.metrics-section h4 {
+  margin: 0 0 1rem 0;
+  color: #2c3e50;
+  font-size: 1rem;
+}
+
+.metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1rem;
+}
+
+.metric-item {
+  text-align: center;
+  padding: 1rem;
+  background: white;
+  border-radius: 6px;
+  border: 1px solid #e9ecef;
+}
+
+.metric-label {
+  font-size: 0.75rem;
+  color: #6c757d;
+  font-weight: 500;
+  margin-bottom: 0.5rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.metric-value {
+  font-size: 1.5rem;
+  font-weight: 700;
+}
+
+.metric-excellent {
+  color: #27ae60;
+}
+
+.metric-good {
+  color: #2980b9;
+}
+
+.metric-fair {
+  color: #f39c12;
+}
+
+.metric-poor {
+  color: #e74c3c;
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.75rem 1.5rem;
+  border-radius: 6px;
+  font-weight: 500;
+  text-decoration: none;
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s;
+  gap: 0.5rem;
+  font-size: 0.875rem;
+}
+
+.btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+}
+
+.btn-primary {
+  background: #3498db;
+  color: white;
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: #2980b9;
+}
+
+.btn-secondary {
+  background: #95a5a6;
+  color: white;
+}
+
+.btn-secondary:hover:not(:disabled) {
+  background: #7f8c8d;
+}
+
+.btn-success {
+  background: #27ae60;
+  color: white;
+}
+
+.btn-success:hover:not(:disabled) {
+  background: #229954;
+}
+
+@media (max-width: 768px) {
+  .toast-container {
+    top: 10px;
+    right: 10px;
+    left: 10px;
+    max-width: none;
+  }
+
+  .page-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 1rem;
+  }
+
+  .actions {
+    width: 100%;
+  }
+
+  .detail-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .form-row {
+    grid-template-columns: 1fr;
+    gap: 1rem;
+  }
+
+  .metrics-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .table {
+    font-size: 0.75rem;
+  }
+
+  .card-footer {
+    flex-direction: column;
+  }
+
+  .btn {
+    width: 100%;
+    justify-content: center;
+  }
 }
 </style>

@@ -116,6 +116,79 @@ class VendorQuotationController extends Controller
         }
     }
 
+    public function createFromRFQ(Request $request)
+    {
+        $request->validate([
+            'rfq_id' => 'required|integer|exists:request_for_quotations,rfq_id',
+            'vendor_ids' => 'required|array|min:1',
+            'vendor_ids.*' => 'integer|exists:vendors,vendor_id'
+        ]);
+
+        $rfq = RequestForQuotation::findOrFail($request->rfq_id);
+
+        if ($rfq->status !== 'sent') {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Vendor quotations can only be created for RFQs in sent status'
+            ], 400);
+        }
+
+        $createdQuotations = [];
+
+        DB::beginTransaction();
+
+        try {
+            foreach ($request->vendor_ids as $vendorId) {
+                // Check if vendor quotation already exists for this vendor and RFQ
+                $exists = VendorQuotation::where('rfq_id', $request->rfq_id)
+                                         ->where('vendor_id', $vendorId)
+                                         ->exists();
+
+                if ($exists) {
+                    continue; // Skip existing quotations
+                }
+
+                $vendorQuotation = VendorQuotation::create([
+                    'rfq_id' => $request->rfq_id,
+                    'vendor_id' => $vendorId,
+                    'quotation_date' => now(),
+                    'validity_date' => null,
+                    'status' => 'received'
+                ]);
+
+                // Copy lines from RFQ to vendor quotation lines
+                foreach ($rfq->lines as $line) {
+                    $vendorQuotation->lines()->create([
+                        'item_id' => $line->item_id,
+                        'unit_price' => 0,
+                        'uom_id' => $line->uom_id,
+                        'quantity' => $line->quantity,
+                        'delivery_date' => $line->required_date
+                    ]);
+                }
+
+                $createdQuotations[] = $vendorQuotation;
+            }
+
+            DB::commit();
+
+            return response()->json([
+                'status' => 'success',
+                'message' => 'Vendor Quotations created successfully',
+                'data' => $createdQuotations
+            ], 201);
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Failed to create Vendor Quotations',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
     public function show(VendorQuotation $vendorQuotation)
     {
         $vendorQuotation->load(['vendor', 'requestForQuotation', 'lines.item', 'lines.unitOfMeasure']);

@@ -60,6 +60,10 @@
                 {{ item.unitOfMeasure ? `${item.unitOfMeasure.name} (${item.unitOfMeasure.symbol})` : '-' }}
               </div>
             </div>
+            <div class="detail-row">
+              <div class="detail-label">HS Code</div>
+              <div class="detail-value">{{ item.hs_code || '-' }}</div>
+            </div>
             <div class="detail-row" v-if="item.description">
               <div class="detail-label">Description</div>
               <div class="detail-value description">{{ item.description }}</div>
@@ -234,15 +238,19 @@
         </div>
       </div>
 
-      <!-- Debug: Show BOM Components length -->
-      <div class="debug-info">
-        BOM Components length: {{ bomComponents.length }}
+      <!-- Debug: Show BOM Components data -->
+      <div class="debug-info" v-if="debugMode">
+        <h4>Debug Info:</h4>
+        <p>BOM Components from API: {{ JSON.stringify(bomComponents) }}</p>
+        <p>BOM Components length: {{ bomComponents.length }}</p>
+        <p>Item ID: {{ item.item_id }}</p>
       </div>
 
       <!-- BOM Components Card -->
-      <div class="detail-card" v-if="bomComponents.length > 0">
+      <div class="detail-card" v-if="bomComponents && bomComponents.length > 0">
         <div class="card-header">
           <h2 class="card-title">BOM Components</h2>
+          <span class="component-count">{{ bomComponents.length }} component(s)</span>
         </div>
         <div class="card-body">
           <div class="card-table">
@@ -254,6 +262,8 @@
                   <th>Quantity</th>
                   <th>UOM</th>
                   <th>Critical</th>
+                  <th>Yield Based</th>
+                  <th>Notes</th>
                 </tr>
               </thead>
               <tbody>
@@ -267,9 +277,33 @@
                       {{ component.is_critical ? 'Yes' : 'No' }}
                     </span>
                   </td>
+                  <td>
+                    <span :class="component.is_yield_based ? 'badge-info' : 'badge-secondary'" class="badge">
+                      {{ component.is_yield_based ? 'Yes' : 'No' }}
+                    </span>
+                    <div v-if="component.is_yield_based" class="yield-details">
+                      <small>Ratio: {{ component.yield_ratio }}</small>
+                      <small v-if="component.shrinkage_factor">Shrinkage: {{ component.shrinkage_factor }}%</small>
+                    </div>
+                  </td>
+                  <td>{{ component.notes || '-' }}</td>
                 </tr>
               </tbody>
             </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- No BOM Message -->
+      <div class="detail-card" v-else>
+        <div class="card-header">
+          <h2 class="card-title">BOM Components</h2>
+        </div>
+        <div class="card-body">
+          <div class="empty-state">
+            <i class="fas fa-cog"></i>
+            <p>No BOM components found for this item.</p>
+            <p><small>This item either doesn't have an active BOM or is not a manufactured item.</small></p>
           </div>
         </div>
       </div>
@@ -378,6 +412,8 @@ export default {
     const showMultiCurrencyPrices = ref(false);
     const multiCurrencyPrices = ref(null);
     const bomComponents = ref([]);
+    const debugMode = ref(false); // Set to true for debugging
+    
     const itemForm = ref({
       item_id: null,
       item_code: '',
@@ -396,7 +432,8 @@ export default {
       length: '',
       width: '',
       thickness: '',
-      weight: ''
+      weight: '',
+      hs_code: '' // Tambahan HS Code
     });
 
     const canDelete = computed(() => {
@@ -412,9 +449,20 @@ export default {
     const fetchItem = async () => {
       isLoading.value = true;
       try {
+        console.log('Fetching item with ID:', props.id);
         const response = await ItemService.getItemById(props.id);
-        item.value = response.data.data;
-        bomComponents.value = response.data.bom_components || [];
+        console.log('API Response:', response);
+        
+        item.value = response.data;
+        
+        // Set BOM components dari response API
+        if (response.bom_components) {
+          bomComponents.value = response.bom_components;
+          console.log('BOM Components found:', bomComponents.value);
+        } else {
+          console.log('No BOM components found in API response');
+          bomComponents.value = [];
+        }
         
         // Populate form for potential edit
         Object.assign(itemForm.value, {
@@ -435,7 +483,8 @@ export default {
           length: item.value.length || '',
           width: item.value.width || '',
           thickness: item.value.thickness || '',
-          weight: item.value.weight || ''
+          weight: item.value.weight || '',
+          hs_code: item.value.hs_code || '' // Tambahan HS Code
         });
       } catch (error) {
         console.error('Error fetching item:', error);
@@ -472,8 +521,8 @@ export default {
           ['USD', 'IDR', 'EUR', 'SGD', 'JPY']
         );
         
-        if (response.data.success) {
-          multiCurrencyPrices.value = response.data.data;
+        if (response.success) {
+          multiCurrencyPrices.value = response.data;
         }
       } catch (error) {
         console.error('Error fetching prices in currencies:', error);
@@ -633,6 +682,7 @@ export default {
       itemForm,
       canDelete,
       bomComponents,
+      debugMode,
       formatDate,
       getStockStatus,
       getStockStatusClass,
@@ -726,6 +776,14 @@ export default {
   font-weight: 600;
   margin: 0;
   color: #1e293b;
+}
+
+.component-count {
+  font-size: 0.875rem;
+  color: #64748b;
+  background-color: #e2e8f0;
+  padding: 0.25rem 0.5rem;
+  border-radius: 0.25rem;
 }
 
 .card-action {
@@ -965,13 +1023,36 @@ export default {
   color: #dc2626;
 }
 
+.yield-details {
+  margin-top: 0.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+}
+
+.yield-details small {
+  font-size: 0.75rem;
+  color: #64748b;
+}
+
 .empty-state {
   display: flex;
+  flex-direction: column;
   justify-content: center;
   align-items: center;
   padding: 2rem 0;
   color: #64748b;
-  font-style: italic;
+  text-align: center;
+}
+
+.empty-state i {
+  font-size: 2rem;
+  margin-bottom: 1rem;
+  color: #94a3b8;
+}
+
+.empty-state p {
+  margin: 0.25rem 0;
 }
 
 .loading-indicator {
@@ -1032,6 +1113,31 @@ export default {
 .badge-warning {
   background-color: #fef3c7;
   color: #d97706;
+}
+
+.badge-info {
+  background-color: #dbeafe;
+  color: #2563eb;
+}
+
+.debug-info {
+  background-color: #fff3cd;
+  border: 1px solid #ffeaa7;
+  border-radius: 0.375rem;
+  padding: 1rem;
+  margin: 1rem 0;
+  font-family: monospace;
+  font-size: 0.875rem;
+}
+
+.debug-info h4 {
+  margin: 0 0 0.5rem 0;
+  color: #856404;
+}
+
+.debug-info p {
+  margin: 0.25rem 0;
+  word-break: break-all;
 }
 
 @media (max-width: 768px) {

@@ -66,6 +66,7 @@ import CreateOrderFromQuotation from "../views/sales/CreateOrderFromQuotation.vu
 //Sales Invoice
 import SalesInvoiceList from "../views/sales/SalesInvoiceList.vue";
 import SalesInvoiceDetail from "../views/sales/SalesInvoiceDetail.vue";
+import EnhancedDeliveryDetail from "../views/sales/EnhancedDeliveryDetail.vue";
 import SalesInvoiceForm from "../views/sales/SalesInvoiceForm.vue";
 import SalesInvoicePrint from "../views/sales/SalesInvoicePrint.vue";
 import SalesInvoicePayment from "../views/sales/SalesInvoicePayment.vue";
@@ -75,6 +76,9 @@ import PdfOrderCapture from "../views/ai-pdf-capture/PdfOrderCapture.vue";
 import DeliveryList from "../views/sales/DeliveryList.vue";
 import DeliveryDetail from "../views/sales/DeliveryDetail.vue";
 import DeliveryForm from "../views/sales/DeliveryForm.vue";
+import EnchancedDeliveryForm from "../views/sales/ConsolidatedDeliveryAdvancedEdit.vue";
+import TrueConsolidatedDelivery from "../views/sales/TrueConsolidatedDelivery.vue";
+// import CreateDeliveryFromMultipleSO from "../views/sales/CreateDeliveryFromMultipleSO.vue";
 // import DeliveryPrint from "../views/sales/DeliveryPrint.vue";
 // Add these imports to the imports section
 import VendorList from "../views/purchasing/VendorList.vue";
@@ -622,6 +626,13 @@ const routes = [
                 meta: { requiresAuth: true },
             },
             {
+                path: "/sales/encdeliveries/:id",
+                name: "EnchancedDeliveryDetail",    
+                component: EnhancedDeliveryDetail, // <- Gunakan enhanced version
+                props: true,
+                meta: { requiresAuth: true },
+            },
+            {
                 path: "/sales/invoices/:id",
                 name: "SalesInvoiceDetail",
                 component: SalesInvoiceDetail,
@@ -656,6 +667,13 @@ const routes = [
                 component: DeliveryList,
                 meta: { requiresAuth: true },
             },
+            // TAMBAHKAN ROUTE BARU INI:
+            // {
+            //     path: "/sales/deliveries/create-from-multiple-so",
+            //     name: "CreateDeliveryFromMultipleSO",
+            //     component: CreateDeliveryFromMultipleSO,
+            //     meta: { requiresAuth: true },
+            // },
             {
                 path: "/sales/deliveries/create",
                 name: "CreateDelivery",
@@ -674,6 +692,13 @@ const routes = [
                 name: "EditDelivery",
                 component: DeliveryForm,
                 props: true,
+                meta: { requiresAuth: true },
+            },
+            {
+                path: "/sales/encdeliveries/:id/edit",
+                name: "EnchancedDeliveryEdit",
+                component: EnchancedDeliveryForm,
+                props: route => ({ deliveryId: route.params.id }),
                 meta: { requiresAuth: true },
             },
             //SalesReturn
@@ -701,6 +726,12 @@ const routes = [
                 name: "EditSalesReturn",
                 component: SalesReturnForm,
                 props: true,
+                meta: { requiresAuth: true },
+            },
+            {
+                path: "/sales/deliveries/create-consolidated",
+                name: "CreateConsolidatedDelivery",
+                component: TrueConsolidatedDelivery,
                 meta: { requiresAuth: true },
             },
             // {
@@ -883,7 +914,7 @@ const routes = [
                 path: "/purchasing/rfqs/:id/send",
                 name: "SendRFQ",
                 component: RFQSend,
-                props: true,
+                props: route => ({ rfqId: route.params.id }),
                 meta: { requiresAuth: true },
             },
             {

@@ -419,15 +419,23 @@
       };
 
       const createFromOutstanding = () => {
-        router.push('/sales/deliveries/outstanding');
+        router.push('/sales/deliveries/create-consolidated');
       };
 
       const viewDelivery = (delivery) => {
-        router.push(`/sales/deliveries/${delivery.delivery_id}`);
-      };
+              if (delivery.is_consolidated) {
+                router.push(`/sales/encdeliveries/${delivery.delivery_id}`);
+              } else {
+                router.push(`/sales/deliveries/${delivery.delivery_id}`);
+              }
+            };
 
       const editDelivery = (delivery) => {
-        router.push(`/sales/deliveries/${delivery.delivery_id}/edit`);
+        if (delivery.is_consolidated) {
+                router.push(`/sales/encdeliveries/${delivery.delivery_id}/edit`);
+              } else {
+                router.push(`/sales/deliveries/${delivery.delivery_id}/edit`);
+              }   
       };
 
       const confirmCancel = (delivery) => {
