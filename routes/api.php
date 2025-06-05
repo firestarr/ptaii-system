@@ -232,6 +232,19 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/{goodsReceipt}/confirm', 'App\Http\Controllers\API\GoodsReceiptController@confirm');
     });
 
+    // Purchase Requisition - Vendor Management Routes
+    Route::prefix('purchase-requisitions')->group(function () {
+        Route::get('{purchaseRequisition}/vendor-recommendations', [PurchaseRequisitionController::class, 'getVendorRecommendations']);
+        Route::post('{purchaseRequisition}/multi-vendor-rfq', [PurchaseRequisitionController::class, 'createMultiVendorRFQ']);
+        Route::get('{purchaseRequisition}/procurement-path', [PurchaseRequisitionController::class, 'getProcurementPath']);
+    });
+
+    // Purchase Order - Create from PR Routes
+    Route::prefix('purchase-orders')->group(function () {
+        Route::post('create-from-pr', [PurchaseOrderController::class, 'createFromPR']);
+        Route::post('create-split-from-pr', [PurchaseOrderController::class, 'createSplitPOFromPR']);
+    });
+
     // Vendor Invoices
     Route::get('vendor-invoices/uninvoiced-receipts', [VendorInvoiceController::class, 'getUninvoicedReceipts']);
     Route::apiResource('vendor-invoices', VendorInvoiceController::class);

@@ -33,4 +33,41 @@ class PurchaseRequisition extends Model
     {
         return $this->hasMany(PRLine::class, 'pr_id');
     }
+    /**
+     * Check if PR can be converted to PO
+     */
+    public function canCreatePO()
+    {
+        return $this->status === 'approved';
+    }
+
+    /**
+     * Check if PR has vendor pricing for all items
+     */
+    public function hasCompletePricing($vendorId = null)
+    {
+        foreach ($this->lines as $line) {
+            $item = $line->item;
+            $hasPrice = false;
+            
+            if ($vendorId) {
+                $hasPrice = $item->prices()
+                    ->where('vendor_id', $vendorId)
+                    ->where('price_type', 'purchase')
+                    ->active()
+                    ->exists();
+            } else {
+                $hasPrice = $item->prices()
+                    ->where('price_type', 'purchase')
+                    ->active()
+                    ->exists();
+            }
+            
+            if (!$hasPrice) {
+                return false;
+            }
+        }
+        
+        return true;
+    }
 }

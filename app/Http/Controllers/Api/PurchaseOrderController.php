@@ -961,4 +961,443 @@ $receivedQuantity = DB::table('goods_receipt_lines')
             ]
         ]);
     }
+    /**
+     * Create PO directly from Purchase Requisition
+     */
+    public function createFromPR(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'pr_id' => 'required|exists:purchase_requisitions,pr_id',
+            'vendor_id' => 'required|exists:vendors,vendor_id',
+            'pricing_source' => 'required|in:contract,quotation,item_pricing,manual',
+            'currency_code' => 'nullable|string|size:3',
+            'exchange_rate' => 'nullable|numeric|min:0.000001',
+            'payment_terms' => 'nullable|string',
+            'delivery_terms' => 'nullable|string',
+            'expected_delivery' => 'nullable|date|after_or_equal:today',
+            'manual_prices' => 'required_if:pricing_source,manual|array',
+            'manual_prices.*.pr_line_id' => 'required_if:pricing_source,manual|exists:pr_lines,line_id',
+            'manual_prices.*.unit_price' => 'required_if:pricing_source,manual|numeric|min:0'
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'status' => 'error',
+                'errors' => $validator->errors()
+            ], 422);
+        }
+        
+        try {
+            DB::beginTransaction();
+            
+            $pr = PurchaseRequisition::with(['lines.item', 'lines.unitOfMeasure'])
+                                    ->findOrFail($request->pr_id);
+            
+            // Check PR status
+            if ($pr->status !== 'approved') {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Only approved PR can be converted to PO'
+                ], 400);
+            }
+            
+            $vendor = Vendor::findOrFail($request->vendor_id);
+            
+            // Validate pricing availability
+            $pricingValidation = $this->validatePricingForPR($pr, $vendor, $request->pricing_source, $request->manual_prices ?? []);
+            
+            if (!$pricingValidation['valid']) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => $pricingValidation['message'],
+                    'missing_pricing' => $pricingValidation['missing_items']
+                ], 400);
+            }
+            
+            // Generate PO
+            $po = $this->createPOFromPR($pr, $vendor, $request);
+            
+            // Update PR status
+            $pr->update(['status' => 'po_created']);
+            
+            DB::commit();
+            
+            return response()->json([
+                'status' => 'success',
+                'message' => 'Purchase Order created successfully from PR',
+                'data' => $po->load(['vendor', 'lines.item', 'lines.unitOfMeasure'])
+            ], 201);
+            
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Failed to create PO from PR',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Create split POs from Purchase Requisition with multiple vendors
+     */
+    public function createSplitPOFromPR(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'pr_id' => 'required|exists:purchase_requisitions,pr_id',
+            'vendor_selections' => 'required|array|min:1',
+            'vendor_selections.*.pr_line_id' => 'required|exists:pr_lines,line_id',
+            'vendor_selections.*.vendor_id' => 'required|exists:vendors,vendor_id',
+            'vendor_selections.*.quantity' => 'required|numeric|min:0.01',
+            'vendor_selections.*.unit_price' => 'required|numeric|min:0',
+            'vendor_selections.*.currency_code' => 'nullable|string|size:3'
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'status' => 'error',
+                'errors' => $validator->errors()
+            ], 422);
+        }
+        
+        try {
+            DB::beginTransaction();
+            
+            $pr = PurchaseRequisition::with('lines')->findOrFail($request->pr_id);
+            
+            // Check PR status
+            if ($pr->status !== 'approved') {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Only approved PR can be converted to PO'
+                ], 400);
+            }
+            
+            // Validate total quantities match PR
+            $this->validateQuantitySplit($pr, $request->vendor_selections);
+            
+            // Group selections by vendor
+            $vendorGroups = collect($request->vendor_selections)->groupBy('vendor_id');
+            
+            $createdPOs = [];
+            
+            foreach ($vendorGroups as $vendorId => $selections) {
+                $vendor = Vendor::findOrFail($vendorId);
+                
+                // Create PO for this vendor
+                $po = $this->createPOForVendorFromSelections($pr, $vendor, $selections->toArray());
+                $createdPOs[] = $po;
+            }
+            
+            // Update PR status
+            $pr->update(['status' => 'po_created']);
+            
+            DB::commit();
+            
+            return response()->json([
+                'status' => 'success',
+                'message' => count($createdPOs) . ' Purchase Orders created successfully',
+                'data' => $createdPOs
+            ], 201);
+            
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Failed to create split POs',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Validate pricing availability for PR
+     */
+    private function validatePricingForPR($pr, $vendor, $pricingSource, $manualPrices = [])
+    {
+        $missingPricing = [];
+        $manualPricesMap = collect($manualPrices)->keyBy('pr_line_id');
+        
+        foreach ($pr->lines as $line) {
+            $item = $line->item;
+            $hasPricing = false;
+            
+            switch ($pricingSource) {
+                case 'contract':
+                    // Check active vendor contract
+                    $contract = VendorContract::where('vendor_id', $vendor->vendor_id)
+                        ->where('status', 'active')
+                        ->where('start_date', '<=', now())
+                        ->where(function($q) {
+                            $q->where('end_date', '>=', now())->orWhereNull('end_date');
+                        })->first();
+                    $hasPricing = (bool) $contract;
+                    break;
+                    
+                case 'quotation':
+                    // Check valid quotation
+                    $quotation = VendorQuotation::where('vendor_id', $vendor->vendor_id)
+                        ->where('status', 'received')
+                        ->where('validity_date', '>=', now())
+                        ->whereHas('lines', function($q) use ($item) {
+                            $q->where('item_id', $item->item_id);
+                        })->first();
+                    $hasPricing = (bool) $quotation;
+                    break;
+                    
+                case 'item_pricing':
+                    // Check item pricing
+                    $pricing = $item->prices()
+                        ->where('vendor_id', $vendor->vendor_id)
+                        ->where('price_type', 'purchase')
+                        ->active()
+                        ->where('min_quantity', '<=', $line->quantity)
+                        ->first();
+                    $hasPricing = (bool) $pricing;
+                    break;
+                    
+                case 'manual':
+                    $hasPricing = $manualPricesMap->has($line->line_id);
+                    break;
+            }
+            
+            if (!$hasPricing) {
+                $missingPricing[] = [
+                    'pr_line_id' => $line->line_id,
+                    'item_id' => $item->item_id,
+                    'item_code' => $item->item_code,
+                    'item_name' => $item->name
+                ];
+            }
+        }
+        
+        return [
+            'valid' => empty($missingPricing),
+            'message' => empty($missingPricing) ? 'All items have valid pricing' : 'Some items missing pricing',
+            'missing_items' => $missingPricing
+        ];
+    }
+
+    /**
+     * Create PO from PR
+     */
+    private function createPOFromPR($pr, $vendor, $request)
+    {
+        // Generate PO number
+        $poNumber = $this->poNumberGenerator->generate();
+        
+        // Determine currency
+        $currency = $request->currency_code ?? $vendor->preferred_currency ?? config('app.base_currency', 'USD');
+        $baseCurrency = config('app.base_currency', 'USD');
+        
+        // Get exchange rate
+        $exchangeRate = $request->exchange_rate ?? $this->getExchangeRateForCurrency($currency, $baseCurrency);
+        
+        // Get pricing for each line
+        $manualPricesMap = collect($request->manual_prices ?? [])->keyBy('pr_line_id');
+        
+        $subtotal = 0;
+        $taxTotal = 0;
+        
+        $poLines = [];
+        
+        foreach ($pr->lines as $prLine) {
+            $unitPrice = $this->getUnitPriceForLine($prLine, $vendor, $request->pricing_source, $manualPricesMap);
+            
+            $lineSubtotal = $unitPrice * $prLine->quantity;
+            $lineTax = 0; // Calculate if needed
+            $lineTotal = $lineSubtotal + $lineTax;
+            
+            $subtotal += $lineSubtotal;
+            $taxTotal += $lineTax;
+            
+            $poLines[] = [
+                'item_id' => $prLine->item_id,
+                'unit_price' => $unitPrice,
+                'quantity' => $prLine->quantity,
+                'uom_id' => $prLine->uom_id,
+                'subtotal' => $lineSubtotal,
+                'tax' => $lineTax,
+                'total' => $lineTotal,
+                'base_currency_unit_price' => $unitPrice * $exchangeRate,
+                'base_currency_subtotal' => $lineSubtotal * $exchangeRate,
+                'base_currency_tax' => $lineTax * $exchangeRate,
+                'base_currency_total' => $lineTotal * $exchangeRate
+            ];
+        }
+        
+        $totalAmount = $subtotal + $taxTotal;
+        
+        // Create PO
+        $po = PurchaseOrder::create([
+            'po_number' => $poNumber,
+            'po_date' => now(),
+            'vendor_id' => $vendor->vendor_id,
+            'payment_terms' => $request->payment_terms ?? ($vendor->payment_term . ' days'),
+            'delivery_terms' => $request->delivery_terms,
+            'expected_delivery' => $request->expected_delivery,
+            'status' => 'draft',
+            'total_amount' => $totalAmount,
+            'tax_amount' => $taxTotal,
+            'currency_code' => $currency,
+            'exchange_rate' => $exchangeRate,
+            'base_currency_total' => $totalAmount * $exchangeRate,
+            'base_currency_tax' => $taxTotal * $exchangeRate,
+            'base_currency' => $baseCurrency,
+            'reference_document' => "PR-{$pr->pr_number}"
+        ]);
+        
+        // Create PO lines
+        foreach ($poLines as $lineData) {
+            $po->lines()->create($lineData);
+        }
+        
+        return $po;
+    }
+
+    /**
+     * Create PO for vendor from selections
+     */
+    private function createPOForVendorFromSelections($pr, $vendor, $selections)
+    {
+        $poNumber = $this->poNumberGenerator->generate();
+        $currency = $vendor->preferred_currency ?? config('app.base_currency', 'USD');
+        $baseCurrency = config('app.base_currency', 'USD');
+        
+        // Get exchange rate
+        $exchangeRate = $this->getExchangeRateForCurrency($currency, $baseCurrency);
+        
+        // Calculate totals
+        $subtotal = 0;
+        $taxTotal = 0;
+        
+        foreach ($selections as $selection) {
+            $lineSubtotal = $selection['unit_price'] * $selection['quantity'];
+            $subtotal += $lineSubtotal;
+            // Add tax calculation if needed
+        }
+        
+        $totalAmount = $subtotal + $taxTotal;
+        
+        // Create PO
+        $po = PurchaseOrder::create([
+            'po_number' => $poNumber,
+            'po_date' => now(),
+            'vendor_id' => $vendor->vendor_id,
+            'payment_terms' => $vendor->payment_term . ' days',
+            'delivery_terms' => null,
+            'expected_delivery' => null,
+            'status' => 'draft',
+            'total_amount' => $totalAmount,
+            'tax_amount' => $taxTotal,
+            'currency_code' => $currency,
+            'exchange_rate' => $exchangeRate,
+            'base_currency_total' => $totalAmount * $exchangeRate,
+            'base_currency_tax' => $taxTotal * $exchangeRate,
+            'base_currency' => $baseCurrency,
+            'reference_document' => "PR-{$pr->pr_number}"
+        ]);
+        
+        // Create PO lines
+        foreach ($selections as $selection) {
+            $prLine = PRLine::findOrFail($selection['pr_line_id']);
+            
+            $lineSubtotal = $selection['unit_price'] * $selection['quantity'];
+            $lineTax = 0; // Calculate if needed
+            $lineTotal = $lineSubtotal + $lineTax;
+            
+            $po->lines()->create([
+                'item_id' => $prLine->item_id,
+                'unit_price' => $selection['unit_price'],
+                'quantity' => $selection['quantity'],
+                'uom_id' => $prLine->uom_id,
+                'subtotal' => $lineSubtotal,
+                'tax' => $lineTax,
+                'total' => $lineTotal,
+                'base_currency_unit_price' => $selection['unit_price'] * $exchangeRate,
+                'base_currency_subtotal' => $lineSubtotal * $exchangeRate,
+                'base_currency_tax' => $lineTax * $exchangeRate,
+                'base_currency_total' => $lineTotal * $exchangeRate
+            ]);
+        }
+        
+        return $po->load(['vendor', 'lines.item']);
+    }
+
+    /**
+     * Validate quantity split
+     */
+    private function validateQuantitySplit($pr, $vendorSelections)
+    {
+        $selectionsByLine = collect($vendorSelections)->groupBy('pr_line_id');
+        
+        foreach ($pr->lines as $prLine) {
+            $lineSelections = $selectionsByLine->get($prLine->line_id, collect());
+            $totalSelectedQty = $lineSelections->sum('quantity');
+            
+            if (abs($totalSelectedQty - $prLine->quantity) > 0.001) {
+                throw new \Exception("Quantity mismatch for item {$prLine->item->name}. Required: {$prLine->quantity}, Selected: {$totalSelectedQty}");
+            }
+        }
+    }
+
+    /**
+     * Get unit price for line based on pricing source
+     */
+    private function getUnitPriceForLine($prLine, $vendor, $pricingSource, $manualPricesMap)
+    {
+        switch ($pricingSource) {
+            case 'manual':
+                $manualPrice = $manualPricesMap->get($prLine->line_id);
+                return $manualPrice ? $manualPrice['unit_price'] : 0;
+                
+            case 'contract':
+                // Get price from contract (simplified - you might need more complex logic)
+                return $prLine->item->getBestPurchasePriceInCurrency(
+                    $vendor->vendor_id, 
+                    $prLine->quantity, 
+                    $vendor->preferred_currency ?? 'USD'
+                );
+                
+            case 'quotation':
+                // Get price from valid quotation
+                $quotation = VendorQuotation::where('vendor_id', $vendor->vendor_id)
+                    ->where('status', 'received')
+                    ->where('validity_date', '>=', now())
+                    ->whereHas('lines', function($q) use ($prLine) {
+                        $q->where('item_id', $prLine->item_id);
+                    })->first();
+                
+                if ($quotation) {
+                    $quotationLine = $quotation->lines()
+                        ->where('item_id', $prLine->item_id)
+                        ->first();
+                    return $quotationLine ? $quotationLine->unit_price : 0;
+                }
+                return 0;
+                
+            case 'item_pricing':
+                return $prLine->item->getBestPurchasePriceInCurrency(
+                    $vendor->vendor_id, 
+                    $prLine->quantity, 
+                    $vendor->preferred_currency ?? 'USD'
+                );
+                
+            default:
+                return 0;
+        }
+    }
+
+    /**
+     * Get exchange rate for currency
+     */
+    private function getExchangeRateForCurrency($fromCurrency, $toCurrency)
+    {
+        if ($fromCurrency === $toCurrency) {
+            return 1.0;
+        }
+        
+        $rate = CurrencyRate::getCurrentRate($fromCurrency, $toCurrency);
+        return $rate ?? 1.0;
+    }
 }

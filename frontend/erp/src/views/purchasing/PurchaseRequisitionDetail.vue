@@ -23,6 +23,24 @@
           <button v-if="['draft', 'pending'].includes(pr.status)" @click="showCancelConfirmation = true" class="btn btn-danger mr-2">
             <i class="fas fa-times"></i> Cancel PR
           </button>
+
+          <router-link v-if="pr.status === 'approved'"
+            :to="{ name: 'PRVendorRecommendations', params: { id: pr.pr_id } }"
+            class="btn btn-primary">
+            📊 Vendor Recommendations
+          </router-link>
+          
+          <router-link v-if="pr.status === 'approved'"
+            :to="{ name: 'ProcurementPathAnalysis', params: { id: pr.pr_id } }"
+            class="btn btn-outline">
+            🔍 Procurement Analysis
+          </router-link>
+          
+          <router-link v-if="pr.status === 'approved'"
+            :to="{ name: 'CreateMultiVendorPO', params: { id: pr.pr_id } }"
+            class="btn btn-secondary">
+            🏢 Multi-Vendor PO
+          </router-link>
           
           <button @click="printPR" class="btn btn-secondary">
             <i class="fas fa-print"></i> Print

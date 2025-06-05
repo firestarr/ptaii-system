@@ -882,6 +882,40 @@ const routes = [
                 component: () => import("../views/purchasing/PRToRFQList.vue"),
                 meta: { requiresAuth: true },
             },
+            {
+                path: "/purchasing/requisitions/:id/vendor-recommendations",
+                name: "PRVendorRecommendations", 
+                component: () => import("../views/purchasing/PRVendorRecommendations.vue"),
+                props: true,
+                meta: { requiresAuth: true }
+            },
+            {
+                path: "/purchasing/requisitions/:id/procurement-analysis",
+                name: "ProcurementPathAnalysis",
+                component: () => import("../views/purchasing/ProcurementPathAnalysis.vue"), 
+                props: true,
+                meta: { requiresAuth: true }
+            },
+            {
+                path: "/purchasing/requisitions/:id/create-multi-po",
+                name: "CreateMultiVendorPO",
+                component: () => import("../views/purchasing/MultiVendorPOWizard.vue"),
+                props: true, 
+                meta: { requiresAuth: true }
+            },
+            {
+                path: "/purchasing/vendor-comparison",
+                name: "VendorComparison",
+                component: () => import("../views/purchasing/VendorComparison.vue"),
+                meta: { requiresAuth: true }
+            },
+            {
+                path: "/purchasing/orders/create-from-pr/:prId",
+                name: "CreatePOFromPR", 
+                component: () => import("../views/purchasing/CreatePOFromPR.vue"),
+                props: true,
+                meta: { requiresAuth: true }
+            },
 
             //RFQ
             {
