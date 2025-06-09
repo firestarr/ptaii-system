@@ -78,7 +78,7 @@ class PdfOrderCaptureController extends Controller
                 'filename' => $pdfFile->getClientOriginalName(),
                 'file_path' => $pdfPath,
                 'file_size' => $pdfFile->getSize(),
-                'status' => 'processing', // Use string instead of constant for now
+                'status' => 'processing',
                 'user_id' => auth()->id(),
                 'processing_options' => $processingOptions
             ]);
@@ -89,15 +89,15 @@ class PdfOrderCaptureController extends Controller
                 'status' => $pdfCapture->status
             ]);
 
-            // Convert PDF to text using Groq AI
+            // Convert PDF to text using Groq AI with improved number parsing
             $extractedData = $this->extractDataWithGroqAI($pdfPath);
             
-            // Update capture record with extracted data - use valid status
+            // Update capture record with extracted data
             $updated = $pdfCapture->update([
                 'extracted_data' => $extractedData,
                 'ai_raw_response' => $extractedData,
                 'confidence_score' => $extractedData['confidence_score'] ?? null,
-                'status' => 'data_extracted' // Use status that exists in database
+                'status' => 'data_extracted'
             ]);
 
             Log::info('PDF capture updated with extracted data', [
@@ -113,10 +113,10 @@ class PdfOrderCaptureController extends Controller
             // Validate and create sales order
             $salesOrder = $this->createSalesOrderFromData($extractedData, $pdfCapture);
             
-            // Update capture record with sales order - use valid status
+            // Update capture record with sales order
             $finalUpdate = $pdfCapture->update([
                 'created_so_id' => $salesOrder->so_id,
-                'status' => 'so_created', // Use status that exists in database
+                'status' => 'so_created',
                 'processed_by' => auth()->id(),
                 'processed_at' => now()
             ]);
@@ -160,7 +160,7 @@ class PdfOrderCaptureController extends Controller
             if ($pdfCapture) {
                 try {
                     $pdfCapture->update([
-                        'status' => 'failed', // Use string status
+                        'status' => 'failed',
                         'processing_error' => $e->getMessage()
                     ]);
                     Log::info('PDF capture marked as failed', [
@@ -184,7 +184,7 @@ class PdfOrderCaptureController extends Controller
     }
 
     /**
-     * Extract data from PDF using Groq AI
+     * Extract data from PDF using Groq AI with improved number parsing
      */
     private function extractDataWithGroqAI($storedPath)
     {
@@ -220,7 +220,7 @@ class PdfOrderCaptureController extends Controller
             'messages' => [
                 [
                     'role' => 'system',
-                    'content' => 'You are an expert at extracting purchase order and sales order information from documents. Always respond with valid JSON only. No markdown formatting, no explanations, just pure JSON.'
+                    'content' => 'You are an expert at extracting purchase order information. Pay special attention to number formats - commas in quantities like 7,350 are thousands separators (=7350), not decimals. Always validate your extractions by checking if quantity × unit_price ≈ total_value. Return only valid JSON.'
                 ],
                 [
                     'role' => 'user',
@@ -231,7 +231,7 @@ class PdfOrderCaptureController extends Controller
             'max_tokens' => 4000
         ];
         
-        Log::info('Sending request to Groq AI', [
+        Log::info('Sending request to Groq AI with improved number parsing prompt', [
             'model' => $requestData['model'],
             'prompt_length' => strlen($prompt)
         ]);
@@ -280,16 +280,42 @@ class PdfOrderCaptureController extends Controller
             'decoded_data' => $decodedData
         ]);
         
-        return $decodedData;
+        // NEW: Add validation and correction step
+        $validatedData = $this->validateAndCorrectExtractedData($decodedData);
+        
+        Log::info('Data validation completed', [
+            'original_items_count' => count($decodedData['items'] ?? []),
+            'validated_items_count' => count($validatedData['items'] ?? []),
+            'validation_applied' => true
+        ]);
+        
+        return $validatedData;
     }
 
     /**
-     * Build Groq AI prompt for extracting sales order data
+     * Build improved Groq AI prompt with better table column recognition
+     * REPLACE the existing buildGroqAIPrompt method with this
      */
     private function buildGroqAIPrompt($pdfText)
     {
         return "
 You are an expert at extracting purchase order and sales order information from documents. 
+
+CRITICAL RULES FOR TABLE COLUMN IDENTIFICATION:
+- Carefully identify table headers: No., Material Code, Material Description, Delivery Date, Quantity, Qty Unit, Unit Price, Net Value
+- IGNORE the 'No.' column (line numbers like 10, 20, 30) - these are NOT quantities
+- The QUANTITY is in the 'Quantity' column, usually after the delivery date
+- Common table patterns:
+  * No. | Material Code | Description | Delivery Date | Quantity | Unit | Unit Price | Net Value
+  * 10  | VCQ5771      | WIRE CUSHION| 03.JUN.2025   | 7,350    | PC   | 0.00670   | 49.25
+  * 20  | VED4950      | CUSHION PE  | 03.JUN.2025   | 500      | PC   | 0.07950   | 39.75
+
+CRITICAL RULES FOR NUMBER EXTRACTION:
+- Numbers with commas like '7,350' or '1,500' are THOUSANDS separators (NOT decimals)
+- '7,350' means 7350 (seven thousand three hundred fifty)
+- '1,500' means 1500 (one thousand five hundred) 
+- Only periods (.) indicate decimal places like '0.00670' or '39.75'
+- Always validate quantities by checking if quantity × unit_price = total_value
 
 CRITICAL RULES FOR CUSTOMER IDENTIFICATION:
 For PURCHASE ORDERS (documents we receive):
@@ -297,17 +323,22 @@ For PURCHASE ORDERS (documents we receive):
 - This is usually at the TOP of the document, in the header or letterhead
 - Look for company names like 'Yamaha Music India', 'Toyota', etc. at the document header
 - IGNORE the 'Vendor' section - that's us (the supplier receiving the order)
-- IGNORE 'Deliver To' addresses if they contain supplier info
 
-DOCUMENT HEADER ANALYSIS:
-1. Find the company name at the very TOP of the document
-2. This is typically the company issuing the purchase order
-3. Extract their full company name, address, phone, email, tax ID
+VALIDATION RULES:
+- Cross-check extracted quantities with calculated totals
+- If quantity × unit_price ≠ total_value, re-examine the table structure
+- Pay special attention to comma usage in different number formats
+- Verify you're reading from the correct column (not line numbers)
 
-EXTRACTION RULES:
-- Extract the ISSUING company as the customer (from document header)
-- Extract order details (PO number, dates, terms)
-- Extract items from tables with quantities and prices
+TABLE PARSING INSTRUCTIONS:
+1. First identify the table headers
+2. Map each column position
+3. For each item row:
+   - Skip the line number (No. column)
+   - Extract Material Code from the correct column
+   - Extract Quantity from the Quantity column (NOT the No. column)
+   - Extract Unit Price from Unit Price column
+   - Validate: Quantity × Unit Price ≈ Net Value
 
 Analyze this document text and extract information:
 
@@ -340,33 +371,201 @@ Return ONLY valid JSON in this exact structure:
             \"item_code\": \"extract material code, item code, SKU\",
             \"name\": \"extract item name/description\",
             \"description\": \"extract detailed description\",
-            \"quantity\": \"extract quantity as number\",
-            \"unit_price\": \"extract unit price as number\",
+            \"quantity\": \"extract ONLY from Quantity column (convert 7,350 to 7350, 500 stays 500)\",
+            \"unit_price\": \"extract unit price as decimal number\",
             \"uom\": \"extract unit of measure (PC, KG, etc.)\",
             \"discount\": \"extract discount amount as number\",
             \"tax\": \"extract tax amount as number\",
-            \"total_value\": \"extract line total/net value as number\"
+            \"total_value\": \"extract line total/net value as number\",
+            \"validation_check\": \"verify if quantity × unit_price ≈ total_value\",
+            \"table_parsing_notes\": \"explain which column you used for quantity\"
         }
     ],
-    \"confidence_score\": \"rate your confidence 0-100\"
+    \"confidence_score\": \"rate your confidence 0-100\",
+    \"number_format_notes\": \"explain how you interpreted number formats\",
+    \"table_structure_notes\": \"describe the table structure and column mapping\"
 }
 
-SPECIFIC EXAMPLE FOR THIS TYPE OF DOCUMENT:
-- Document header shows: 'Yamaha Music India Private Limited' → This is the CUSTOMER
-- Vendor section shows: 'PT. ARMSTRONG INDUSTRI INDONESIA' → This is the supplier (us)
-- Customer = Yamaha (the company issuing the PO)
-- Vendor = PT. Armstrong (the company receiving the PO)
+SPECIFIC EXAMPLES OF CORRECT TABLE PARSING:
+Row: '20 VED4950 CUSHION PE 580X12X1 03.JUN.2025 500 PC 0.07950 39.75'
+- Line No: 20 (IGNORE this)
+- Material Code: VED4950
+- Description: CUSHION PE 580X12X1
+- Delivery Date: 03.JUN.2025
+- Quantity: 500 (USE this, NOT the line number 20)
+- Unit: PC
+- Unit Price: 0.07950
+- Net Value: 39.75
+- Validation: 500 × 0.07950 = 39.75 ✓ CORRECT
 
-IMPORTANT:
-- Focus on the document HEADER/LETTERHEAD for customer identification
-- Do NOT use vendor information as customer information
-- Convert dates from '25.APR.2025' format to '2025-04-25'
-- Extract ALL items from item tables
-- Return only valid JSON, no explanations
+WRONG EXAMPLE:
+❌ Using line number as quantity: quantity: 20, validation: 20 × 0.07950 = 1.59 ≠ 39.75
+
+CORRECT EXAMPLE:
+✅ Using actual quantity: quantity: 500, validation: 500 × 0.07950 = 39.75 ≈ 39.75
 
 Document text to analyze:
 {$pdfText}
 ";
+    }
+
+    /**
+     * Post-process and validate extracted data
+     */
+    private function validateAndCorrectExtractedData($extractedData)
+    {
+        if (!isset($extractedData['items']) || !is_array($extractedData['items'])) {
+            return $extractedData;
+        }
+
+        $correctedItems = [];
+        
+        foreach ($extractedData['items'] as $item) {
+            $correctedItem = $this->validateAndCorrectItemNumbers($item);
+            $correctedItems[] = $correctedItem;
+        }
+        
+        $extractedData['items'] = $correctedItems;
+        
+        return $extractedData;
+    }
+
+    /**
+     * Enhanced validation with better error detection
+     * REPLACE the existing validateAndCorrectItemNumbers method with this
+     */
+    private function validateAndCorrectItemNumbers($item)
+    {
+        $quantity = $item['quantity'] ?? 0;
+        $unitPrice = $item['unit_price'] ?? 0;
+        $totalValue = $item['total_value'] ?? 0;
+        
+        // Convert string numbers to proper numeric values
+        $quantity = $this->parseNumber($quantity);
+        $unitPrice = $this->parseNumber($unitPrice);
+        $totalValue = $this->parseNumber($totalValue);
+        
+        // Validate calculation: quantity × unit_price should ≈ total_value
+        $calculatedTotal = $quantity * $unitPrice;
+        $tolerance = 0.10; // 10% tolerance for rounding differences
+        
+        if ($totalValue > 0) {
+            $difference = abs($calculatedTotal - $totalValue);
+            $percentDifference = ($difference / $totalValue) * 100;
+            
+            if ($percentDifference > ($tolerance * 100)) {
+                Log::warning('Potential table parsing error detected', [
+                    'item_code' => $item['item_code'] ?? 'unknown',
+                    'original_quantity' => $item['quantity'],
+                    'parsed_quantity' => $quantity,
+                    'unit_price' => $unitPrice,
+                    'expected_total' => $totalValue,
+                    'calculated_total' => $calculatedTotal,
+                    'difference_percent' => $percentDifference,
+                    'likely_issue' => 'Possible wrong column used for quantity (line number vs actual quantity)'
+                ]);
+                
+                // Try intelligent correction based on total value
+                if ($unitPrice > 0) {
+                    $correctQuantity = round($totalValue / $unitPrice);
+                    $newCalculatedTotal = $correctQuantity * $unitPrice;
+                    $newDifference = abs($newCalculatedTotal - $totalValue);
+                    $newPercentDifference = ($newDifference / $totalValue) * 100;
+                    
+                    if ($newPercentDifference <= ($tolerance * 100)) {
+                        Log::info('Auto-corrected quantity based on total value', [
+                            'item_code' => $item['item_code'],
+                            'original_quantity' => $quantity,
+                            'corrected_quantity' => $correctQuantity,
+                            'validation' => 'passed',
+                            'correction_method' => 'total_value / unit_price'
+                        ]);
+                        $quantity = $correctQuantity;
+                    }
+                }
+                
+                // Additional check: if quantity is very small (like line numbers), flag it
+                if ($quantity < 100 && $totalValue > ($quantity * $unitPrice * 5)) {
+                    Log::warning('Quantity seems too small compared to total value', [
+                        'item_code' => $item['item_code'],
+                        'quantity' => $quantity,
+                        'total_value' => $totalValue,
+                        'suggestion' => 'Might be using line number instead of actual quantity'
+                    ]);
+                }
+            }
+        }
+        
+        $item['quantity'] = $quantity;
+        $item['unit_price'] = $unitPrice;
+        $item['total_value'] = $totalValue;
+        
+        return $item;
+    }
+
+    /**
+     * Parse number handling various formats
+     */
+    private function parseNumber($value)
+    {
+        if (is_numeric($value)) {
+            return (float) $value;
+        }
+        
+        if (is_string($value)) {
+            // Remove any whitespace
+            $value = trim($value);
+            
+            // Handle comma as thousands separator vs decimal separator
+            // If there's only one comma and it's followed by exactly 3 digits, it's thousands separator
+            if (preg_match('/^(\d{1,3}),(\d{3})$/', $value, $matches)) {
+                // Format like "7,350" - thousands separator
+                return (float) ($matches[1] . $matches[2]);
+            }
+            
+            // Handle multiple commas as thousands separators like "1,234,567"
+            if (preg_match('/^[\d,]+$/', $value) && substr_count($value, ',') >= 1) {
+                // Remove all commas and treat as integer
+                return (float) str_replace(',', '', $value);
+            }
+            
+            // Handle decimal with dot
+            if (preg_match('/^\d*\.\d+$/', $value)) {
+                return (float) $value;
+            }
+            
+            // Fallback: remove commas and convert
+            $cleaned = str_replace(',', '', $value);
+            if (is_numeric($cleaned)) {
+                return (float) $cleaned;
+            }
+        }
+        
+        return 0;
+    }
+
+    /**
+     * Try parsing as thousands separator format
+     */
+    private function parseAsThousandsSeparator($value)
+    {
+        $stringValue = (string) $value;
+        
+        // If it looks like "7.35", check if it should be "7350"
+        if (preg_match('/^(\d+)\.(\d{2,3})$/', $stringValue, $matches)) {
+            // If the decimal part is 2-3 digits, it might be thousands separator confusion
+            $integer = $matches[1];
+            $fractional = $matches[2];
+            
+            // For cases like "7.35" where 35 might be "350" 
+            if (strlen($fractional) == 2) {
+                return (float) ($integer . $fractional . '0');
+            } elseif (strlen($fractional) == 3) {
+                return (float) ($integer . $fractional);
+            }
+        }
+        
+        return $this->parseNumber($value);
     }
 
     /**
@@ -487,16 +686,7 @@ Document text to analyze:
         $response = str_replace(['\n', '\r', '\t'], ['', '', ''], $response);
         $response = preg_replace('/,\s*}/', '}', $response); // Remove trailing commas
         $response = preg_replace('/,\s*]/', ']', $response); // Remove trailing commas in arrays
-
-        // Fix missing commas between JSON key-value pairs by adding commas at line breaks where missing
-        // This is a heuristic and may not cover all cases
-        $response = preg_replace('/"\s*"\s*:/', '"," :', $response); // Fix adjacent quotes without comma
-        $response = preg_replace('/"\s*"\s*,/', '"," ,', $response);
-        $response = preg_replace('/"\s*"\s*}/', '"," }', $response);
-
-        // Add commas between key-value pairs if missing (between closing quote and next opening quote)
-        $response = preg_replace('/"(\s*)(")/', '",$2', $response);
-
+        
         return $response;
     }
 
@@ -1655,5 +1845,179 @@ Document text to analyze:
                 'message' => 'Customer matching debug failed: ' . $e->getMessage()
             ], 500);
         }
+    }
+
+    /**
+     * Debug number parsing functionality
+     */
+    public function debugNumberParsing(Request $request)
+    {
+        $testNumbers = [
+            '7,350',    // Should be 7350
+            '1,500',    // Should be 1500  
+            '500',      // Should be 500
+            '0.00670',  // Should be 0.00670
+            '49.25',    // Should be 49.25
+            '7.35',     // Might be 7350 or 7.35 depending on context
+            '12,345',   // Should be 12345
+            '1,234.56', // Should be 1234.56
+            '0.75',     // Should be 0.75
+            '10.50',    // Should be 10.50
+        ];
+        
+        $results = [];
+        
+        foreach ($testNumbers as $number) {
+            $results[] = [
+                'input' => $number,
+                'parseNumber' => $this->parseNumber($number),
+                'parseAsThousands' => $this->parseAsThousandsSeparator($number),
+            ];
+        }
+        
+        return response()->json([
+            'success' => true,
+            'test_cases' => $results,
+            'parser_info' => [
+                'comma_handling' => 'Commas are treated as thousands separators if followed by exactly 3 digits',
+                'decimal_handling' => 'Periods are always treated as decimal separators',
+                'validation_logic' => 'Numbers are validated against quantity × unit_price = total_value'
+            ]
+        ]);
+    }
+
+    /**
+     * Reprocess specific capture with improved validation
+     */
+    public function reprocessWithValidation($id)
+    {
+        $capture = PdfOrderCapture::findOrFail($id);
+        
+        try {
+            Log::info('Starting reprocess with validation', [
+                'capture_id' => $capture->id,
+                'original_status' => $capture->status
+            ]);
+            
+            DB::beginTransaction();
+
+            // Set status to processing
+            $capture->update([
+                'status' => 'processing',
+                'processing_error' => null
+            ]);
+
+            // Re-extract data with improved parsing
+            $extractedData = $this->extractDataWithGroqAI($capture->file_path);
+            
+            // Log comparison if original data exists
+            if ($capture->extracted_data) {
+                $this->logDataComparison($capture->extracted_data, $extractedData);
+            }
+            
+            $capture->update([
+                'extracted_data' => $extractedData,
+                'ai_raw_response' => $extractedData,
+                'confidence_score' => $extractedData['confidence_score'] ?? null,
+                'status' => 'data_extracted'
+            ]);
+
+            // If there was a sales order, delete it first
+            if ($capture->created_so_id) {
+                $existingSO = SalesOrder::find($capture->created_so_id);
+                if ($existingSO) {
+                    // Delete SO lines first
+                    $existingSO->salesOrderLines()->delete();
+                    $existingSO->delete();
+                    Log::info('Deleted existing sales order for reprocessing', [
+                        'so_id' => $capture->created_so_id
+                    ]);
+                }
+            }
+
+            // Create new sales order with corrected data
+            $salesOrder = $this->createSalesOrderFromData($extractedData, $capture);
+            
+            $capture->update([
+                'created_so_id' => $salesOrder->so_id,
+                'status' => 'so_created',
+                'processed_by' => auth()->id(),
+                'processed_at' => now()
+            ]);
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'PDF reprocessed with improved validation',
+                'data' => [
+                    'pdf_capture' => $capture->fresh(),
+                    'sales_order' => $salesOrder->load('salesOrderLines.item'),
+                    'validation_applied' => true
+                ]
+            ]);
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            
+            $capture->update([
+                'status' => 'failed',
+                'processing_error' => $e->getMessage()
+            ]);
+
+            Log::error('Reprocess with validation failed', [
+                'capture_id' => $capture->id,
+                'error' => $e->getMessage()
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Reprocess failed: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Log comparison between original and corrected data
+     */
+    private function logDataComparison($originalData, $newData)
+    {
+        $originalItems = $originalData['items'] ?? [];
+        $newItems = $newData['items'] ?? [];
+        
+        $comparisons = [];
+        
+        for ($i = 0; $i < max(count($originalItems), count($newItems)); $i++) {
+            $original = $originalItems[$i] ?? null;
+            $new = $newItems[$i] ?? null;
+            
+            if ($original && $new) {
+                $comparison = [
+                    'item_code' => $new['item_code'] ?? 'unknown',
+                    'quantity_change' => [
+                        'original' => $original['quantity'] ?? null,
+                        'corrected' => $new['quantity'] ?? null,
+                        'changed' => ($original['quantity'] ?? null) !== ($new['quantity'] ?? null)
+                    ],
+                    'unit_price_change' => [
+                        'original' => $original['unit_price'] ?? null,
+                        'corrected' => $new['unit_price'] ?? null,
+                        'changed' => ($original['unit_price'] ?? null) !== ($new['unit_price'] ?? null)
+                    ],
+                    'validation_check' => [
+                        'original_calculation' => ($original['quantity'] ?? 0) * ($original['unit_price'] ?? 0),
+                        'corrected_calculation' => ($new['quantity'] ?? 0) * ($new['unit_price'] ?? 0),
+                        'expected_total' => $new['total_value'] ?? 0
+                    ]
+                ];
+                
+                $comparisons[] = $comparison;
+            }
+        }
+        
+        Log::info('Data comparison after reprocessing', [
+            'items_compared' => count($comparisons),
+            'comparisons' => $comparisons
+        ]);
     }
 }
