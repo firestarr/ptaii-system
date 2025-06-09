@@ -487,7 +487,16 @@ Document text to analyze:
         $response = str_replace(['\n', '\r', '\t'], ['', '', ''], $response);
         $response = preg_replace('/,\s*}/', '}', $response); // Remove trailing commas
         $response = preg_replace('/,\s*]/', ']', $response); // Remove trailing commas in arrays
-        
+
+        // Fix missing commas between JSON key-value pairs by adding commas at line breaks where missing
+        // This is a heuristic and may not cover all cases
+        $response = preg_replace('/"\s*"\s*:/', '"," :', $response); // Fix adjacent quotes without comma
+        $response = preg_replace('/"\s*"\s*,/', '"," ,', $response);
+        $response = preg_replace('/"\s*"\s*}/', '"," }', $response);
+
+        // Add commas between key-value pairs if missing (between closing quote and next opening quote)
+        $response = preg_replace('/"(\s*)(")/', '",$2', $response);
+
         return $response;
     }
 
