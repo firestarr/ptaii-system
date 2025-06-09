@@ -148,6 +148,39 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('categories/tree', [ItemCategoryController::class, 'tree']);
     Route::resource('categories', ItemCategoryController::class);
 
+    // PDF Order Capture Routes
+    Route::prefix('pdf-order-capture')->group(function () {
+        // Main processing endpoint
+        Route::post('/', [App\Http\Controllers\Api\PdfOrderCaptureController::class, 'processPdf']);
+        
+        // History and listing
+        Route::get('/', [App\Http\Controllers\Api\PdfOrderCaptureController::class, 'index']);
+        Route::get('/{id}', [App\Http\Controllers\Api\PdfOrderCaptureController::class, 'show']);
+        
+        // Actions
+        Route::post('/{id}/retry', [App\Http\Controllers\Api\PdfOrderCaptureController::class, 'retry']);
+        Route::delete('/{id}', [App\Http\Controllers\Api\PdfOrderCaptureController::class, 'destroy']);
+        
+        // File operations
+        Route::get('/{id}/download', [App\Http\Controllers\Api\PdfOrderCaptureController::class, 'downloadFile']);
+        
+        // Preview without processing
+        Route::post('/preview', [App\Http\Controllers\Api\PdfOrderCaptureController::class, 'previewExtraction']);
+        
+        // Debug endpoints
+        Route::post('/debug/text-extraction', [App\Http\Controllers\Api\PdfOrderCaptureController::class, 'debugTextExtraction']);
+        Route::get('/debug/database-status', [App\Http\Controllers\Api\PdfOrderCaptureController::class, 'debugDatabaseStatus']);
+        Route::get('/debug/system-requirements', [App\Http\Controllers\Api\PdfOrderCaptureController::class, 'debugSystemRequirements']);
+        Route::post('/debug/customer-matching', [App\Http\Controllers\Api\PdfOrderCaptureController::class, 'debugCustomerMatching']);
+        
+        // Bulk operations
+        Route::post('/bulk/retry', [App\Http\Controllers\Api\PdfOrderCaptureController::class, 'bulkRetry']);
+        
+        // Statistics and health check
+        Route::get('/statistics/overview', [App\Http\Controllers\Api\PdfOrderCaptureController::class, 'getStatistics']);
+        Route::get('/health/ai-service', [App\Http\Controllers\Api\PdfOrderCaptureController::class, 'checkAiServiceHealth']);
+    });
+
     // Unit of Measure Routes
     Route::resource('uoms', UnitOfMeasureController::class);
 

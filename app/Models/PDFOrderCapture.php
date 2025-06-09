@@ -7,7 +7,7 @@ use Illuminate\Database\Eloquent\Model;
 use App\Models\Sales\SalesOrder;
 use App\Models\User;
 
-class PDFOrderCapture extends Model
+class PdfOrderCapture extends Model
 {
     use HasFactory;
 
@@ -17,6 +17,7 @@ class PDFOrderCapture extends Model
     protected $fillable = [
         'filename',
         'file_path',
+        'file_size',
         'ai_raw_response',
         'extracted_data',
         'status',
@@ -24,22 +25,28 @@ class PDFOrderCapture extends Model
         'created_so_id',
         'confidence_score',
         'processed_by',
-        'user_id'
+        'processed_at',
+        'user_id',
+        'processing_options'
     ];
 
     protected $casts = [
         'extracted_data' => 'array',
         'ai_raw_response' => 'array',
+        'processing_options' => 'array',
         'confidence_score' => 'float',
+        'processed_at' => 'datetime',
         'created_at' => 'datetime',
         'updated_at' => 'datetime'
     ];
 
-    // Status constants
+    // Status constants - sesuaikan dengan yang digunakan di controller
     const STATUS_UPLOADED = 'uploaded';
     const STATUS_PROCESSING = 'processing';
+    const STATUS_DATA_EXTRACTED = 'data_extracted';
     const STATUS_EXTRACTED = 'extracted';
     const STATUS_SO_CREATED = 'so_created';
+    const STATUS_COMPLETED = 'completed';
     const STATUS_FAILED = 'failed';
 
     /**
@@ -59,13 +66,22 @@ class PDFOrderCapture extends Model
     }
 
     /**
+     * Get the user who uploaded this capture
+     */
+    public function user()
+    {
+        return $this->belongsTo(User::class, 'user_id');
+    }
+
+    /**
      * Mark as completed with SO created
      */
     public function markAsCompleted($soId)
     {
         $this->update([
-            'status' => self::STATUS_SO_CREATED,
-            'created_so_id' => $soId
+            'status' => self::STATUS_COMPLETED,
+            'created_so_id' => $soId,
+            'processed_at' => now()
         ]);
     }
 
@@ -85,7 +101,15 @@ class PDFOrderCapture extends Model
      */
     public function isSuccessful()
     {
-        return $this->status === self::STATUS_SO_CREATED && !is_null($this->created_so_id);
+        return in_array($this->status, [self::STATUS_SO_CREATED, self::STATUS_COMPLETED]) && !is_null($this->created_so_id);
+    }
+
+    /**
+     * Check if currently processing
+     */
+    public function isProcessing()
+    {
+        return $this->status === self::STATUS_PROCESSING;
     }
 
     /**
@@ -109,7 +133,7 @@ class PDFOrderCapture extends Model
 
         $total = $query->count();
 
-        $completed = (clone $query)->where('status', self::STATUS_SO_CREATED)->count();
+        $completed = (clone $query)->whereIn('status', [self::STATUS_SO_CREATED, self::STATUS_COMPLETED])->count();
         $processing = (clone $query)->where('status', self::STATUS_PROCESSING)->count();
         $failed = (clone $query)->where('status', self::STATUS_FAILED)->count();
 

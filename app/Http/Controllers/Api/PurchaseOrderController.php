@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Http\Controllers\API;
+namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\PurchaseOrder;
@@ -9,6 +9,7 @@ use App\Http\Requests\PurchaseOrderRequest;
 use App\Services\PONumberGenerator;
 use App\Models\CurrencyRate;
 use App\Models\Vendor;
+use App\Models\PurchaseRequisition;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;

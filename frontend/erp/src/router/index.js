@@ -93,6 +93,7 @@ import PurchaseRequisitionForm from "../views/purchasing/PurchaseRequisitionForm
 import PurchaseRequisitionDetail from "../views/purchasing/PurchaseRequisitionDetail.vue";
 import PurchaseRequisitionApproval from "../views/purchasing/PurchaseRequisitionApproval.vue";
 import ConvertToRFQ from "../views/purchasing/ConvertToRFQ.vue";
+import CreatePOFromPR from "../views/purchasing/CreatePOFromPR.vue";
 
 //RFQ
 import RFQList from "../views/purchasing/RFQList.vue";
@@ -904,11 +905,18 @@ const routes = [
                 meta: { requiresAuth: true }
             },
             {
-                path: "/purchasing/vendor-comparison",
-                name: "VendorComparison",
-                component: () => import("../views/purchasing/VendorComparison.vue"),
+                path: "/purchasing/orders/create-from-pr/:prId",
+                name: "CreatePOFromPR", 
+                component: CreatePOFromPR,
+                props: true,
                 meta: { requiresAuth: true }
             },
+            // {
+            //     path: "/purchasing/vendor-comparison",
+            //     name: "VendorComparison",
+            //     component: () => import("../views/purchasing/VendorComparison.vue"),
+            //     meta: { requiresAuth: true }
+            // },
             {
                 path: "/purchasing/orders/create-from-pr/:prId",
                 name: "CreatePOFromPR", 

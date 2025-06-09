@@ -13,7 +13,15 @@ class VendorController extends Controller
 {
     public function index(Request $request)
     {
-        $vendors = Vendor::all();
+        $query = Vendor::query();
+
+        if ($request->has('status')) {
+            $query->where('status', $request->input('status'));
+        }
+
+        $perPage = $request->input('per_page', 100);
+        $vendors = $query->paginate($perPage);
+
         return response()->json(['data' => $vendors], 200);
     }
 
