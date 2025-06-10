@@ -1469,16 +1469,48 @@ Document text to analyze:
     public function previewExtraction(PdfOrderCaptureRequest $request)
     {
         try {
-            // Store PDF file temporarily
+            // Store PDF file temporarily (same method as processPdf)
             $pdfFile = $request->file('pdf_file');
-            $filename = 'temp/' . time() . '_' . $pdfFile->getClientOriginalName();
-            $storedPath = $pdfFile->storeAs('public', $filename);
+            
+            if (!$pdfFile) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'No PDF file uploaded or file is invalid.'
+                ], 422);
+            }
+            
+            \Log::info('Preview: Attempting to store uploaded PDF file', [
+                'original_name' => $pdfFile->getClientOriginalName(),
+                'size' => $pdfFile->getSize(),
+                'mime_type' => $pdfFile->getMimeType(),
+                'is_valid' => $pdfFile->isValid()
+            ]);
+            
+            // Ensure temp directory exists
+            $tempPath = storage_path('app/public/temp');
+            if (!file_exists($tempPath)) {
+                mkdir($tempPath, 0777, true);
+                \Log::info('Created temp directory for PDF preview', ['path' => $tempPath]);
+            }
+            
+            $filename = time() . '_' . $pdfFile->getClientOriginalName();
+            $storedPath = \Storage::disk('public')->putFileAs('temp', $pdfFile, $filename);
+            
+            \Log::info('Preview: PDF file stored', [
+                'path' => $storedPath,
+                'exists' => \Storage::disk('public')->exists($storedPath),
+                'full_path' => storage_path('app/public/' . $storedPath),
+                'file_exists_physical' => file_exists(storage_path('app/public/' . $storedPath))
+            ]);
             
             // Extract data using Groq AI
             $extractedData = $this->extractDataWithGroqAI($storedPath);
             
             // Clean up temporary file
-            Storage::delete($storedPath);
+            if (\Storage::disk('public')->exists($storedPath)) {
+                \Storage::disk('public')->delete($storedPath);
+                \Log::info('Preview: Cleaned up temporary file', ['path' => $storedPath]);
+            }
             
             return response()->json([
                 'success' => true,
@@ -1490,9 +1522,15 @@ Document text to analyze:
             ]);
             
         } catch (\Exception $e) {
+            \Log::error('Preview extraction error', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+                'file' => $request->file('pdf_file')?->getClientOriginalName()
+            ]);
+            
             // Clean up temporary file on error
-            if (isset($storedPath) && Storage::exists($storedPath)) {
-                Storage::delete($storedPath);
+            if (isset($storedPath) && \Storage::disk('public')->exists($storedPath)) {
+                \Storage::disk('public')->delete($storedPath);
             }
             
             return response()->json([

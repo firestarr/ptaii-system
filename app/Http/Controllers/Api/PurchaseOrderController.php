@@ -10,6 +10,7 @@ use App\Services\PONumberGenerator;
 use App\Models\CurrencyRate;
 use App\Models\Vendor;
 use App\Models\PurchaseRequisition;
+use App\Models\PRLine;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;

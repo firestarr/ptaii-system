@@ -416,9 +416,19 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/', [SalesForecastController::class, 'store']);
 
         // Finally define the parameter routes that will capture anything else
-        Route::get('/{id}', [SalesForecastController::class, 'show']);
-        Route::put('/{id}', [SalesForecastController::class, 'update']);
-        Route::delete('/{id}', [SalesForecastController::class, 'destroy']);
+        Route::get('/{id}', [SalesForecastController::class, 'show'])->where('id', '[0-9]+');
+        Route::put('/{id}', [SalesForecastController::class, 'update'])->where('id', '[0-9]+');
+        Route::delete('/{id}', [SalesForecastController::class, 'destroy'])->where('id', '[0-9]+');
+
+        // AI Excel Import routes
+        Route::post('/import-excel-ai', [SalesForecastController::class, 'importExcelWithAI']);
+        Route::post('/import-excel-ai-enhanced', [SalesForecastController::class, 'importExcelWithAIEnhanced']);
+        Route::post('/save-ai-extracted', [SalesForecastController::class, 'saveAIExtractedForecasts']);
+        Route::get('/ai-history', [SalesForecastController::class, 'getAIProcessingHistory']);
+        Route::get('/excel-templates/types', [SalesForecastController::class, 'getTemplateTypes']);
+        Route::get('/excel-templates/download', [SalesForecastController::class, 'downloadExcelTemplate']);
+        Route::post('/excel-files/validate', [SalesForecastController::class, 'validateExcelFile']);
+        Route::get('/duplicate-handling-options', [SalesForecastController::class, 'getDuplicateHandlingOptions']);
     });
 
     // Routes untuk Outstanding Sales Order

@@ -552,6 +552,19 @@
                                 </router-link>
                             </div>
                         </div>
+                        <!-- NEW AI Excel Import Section -->
+                        <div class="menu-section">
+                            <h3><i class="fas fa-robot"></i> AI Excel Processing</h3>
+                            <div class="menu-links">
+                                <router-link to="/sales/forecasts/import-excel-ai" class="menu-link">
+                                    <i class="fas fa-file-excel"></i>
+                                    <div>
+                                        <span>AI Excel Forecast Import</span>
+                                        <small>AI-powered Excel forecast extraction</small>
+                                    </div>
+                                </router-link>
+                            </div>
+                        </div>
                         <div class="menu-section">
                             <h3><i class="fas fa-eye"></i> Review & Processing</h3>
                             <div class="menu-links">
