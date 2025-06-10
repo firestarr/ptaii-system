@@ -14,6 +14,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 use Carbon\Carbon;
 use PhpOffice\PhpSpreadsheet\IOFactory;
 use PhpOffice\PhpSpreadsheet\Shared\Date;
@@ -902,14 +903,32 @@ class SalesForecastController extends Controller
 
             // Parse AI response to forecast data
             $extractedData = $this->parseAIResponseEnhanced($aiResult['data']);
-            
+
+            // The above line causes error because $aiResult['data'] is a string, not array
+            // Fix: use $aiResult['data'] as string, parse it, then check validity
+
+            // Remove the isset check for $aiResult['data'] because it's a string
+
+            // Parse AI response string
+            $extractedData = $this->parseAIResponseEnhanced($aiResult['data']);
+
+            // Validate parsed data
+            if (!isset($extractedData['forecasts']) || !is_array($extractedData['forecasts'])) {
+                Log::error('Parsed AI response missing forecasts key or invalid', ['extractedData' => $extractedData]);
+                return response()->json([
+                    'message' => 'AI processing returned invalid forecast data',
+                    'error' => 'Missing or invalid forecasts key in parsed AI response',
+                    'raw_data' => $excelData
+                ], 500);
+            }
+
             // Add duplicate analysis to the response
             $extractedData['duplicate_analysis'] = $duplicateAnalysis;
-            
+
             // Auto-save if requested and confidence is high enough
             $confidenceThreshold = $request->input('confidence_threshold', 0.8);
-            $shouldAutoSave = $request->input('auto_save', false) && 
-                            ($extractedData['confidence'] ?? 0) >= $confidenceThreshold;
+            $shouldAutoSave = $request->input('auto_save', false) &&
+                ($extractedData['confidence'] ?? 0) >= $confidenceThreshold;
 
             if ($shouldAutoSave) {
                 $duplicateHandling = $request->input('duplicate_handling', 'last');
@@ -1148,17 +1167,139 @@ class SalesForecastController extends Controller
             return response()->json(['errors' => $validator->errors()], 422);
         }
 
+        $tempFilePath = null;
+        
         try {
             $file = $request->file('excel_file');
-            $filePath = $file->store('temp_validation', 'local');
+            $originalName = $file->getClientOriginalName();
             
-            // Read Excel file structure
-            $excelData = $this->readExcelFile(storage_path('app/' . $filePath));
+            Log::info('Starting Excel validation for: ' . $originalName);
             
-            if (empty($excelData)) {
+            // Create temp directory using native PHP
+            $tempDir = storage_path('app' . DIRECTORY_SEPARATOR . 'temp_validation');
+            
+            // Ensure directory exists
+            if (!file_exists($tempDir)) {
+                if (!mkdir($tempDir, 0755, true)) {
+                    // Try alternative temp directory
+                    $tempDir = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'laravel_excel_validation';
+                    if (!file_exists($tempDir)) {
+                        if (!mkdir($tempDir, 0755, true)) {
+                            throw new \Exception('Cannot create temp directory. Tried: ' . storage_path('app/temp_validation') . ' and ' . $tempDir);
+                        }
+                    }
+                }
+            }
+            
+            // Generate unique filename
+            $filename = 'excel_' . time() . '_' . uniqid() . '.' . $file->getClientOriginalExtension();
+            $tempFilePath = $tempDir . DIRECTORY_SEPARATOR . $filename;
+            
+            Log::info('Attempting to store file at: ' . $tempFilePath);
+            
+            // Method 1: Try move_uploaded_file (best for uploaded files)
+            $uploadSuccess = false;
+            if (is_uploaded_file($file->getRealPath())) {
+                $uploadSuccess = move_uploaded_file($file->getRealPath(), $tempFilePath);
+                Log::info('move_uploaded_file result: ' . ($uploadSuccess ? 'SUCCESS' : 'FAILED'));
+            }
+            
+            // Method 2: Try copy if move_uploaded_file failed
+            if (!$uploadSuccess) {
+                Log::info('Trying copy method...');
+                $uploadSuccess = copy($file->getRealPath(), $tempFilePath);
+                Log::info('copy result: ' . ($uploadSuccess ? 'SUCCESS' : 'FAILED'));
+            }
+            
+            // Method 3: Try file_get_contents + file_put_contents
+            if (!$uploadSuccess) {
+                Log::info('Trying file_get_contents + file_put_contents method...');
+                $fileContent = file_get_contents($file->getRealPath());
+                if ($fileContent !== false) {
+                    $bytesWritten = file_put_contents($tempFilePath, $fileContent);
+                    $uploadSuccess = ($bytesWritten !== false && $bytesWritten > 0);
+                    Log::info('file_put_contents result: ' . ($uploadSuccess ? 'SUCCESS (' . $bytesWritten . ' bytes)' : 'FAILED'));
+                } else {
+                    Log::error('file_get_contents failed for: ' . $file->getRealPath());
+                }
+            }
+            
+            // Verify file was created
+            if (!$uploadSuccess || !file_exists($tempFilePath)) {
+                // Log detailed debug information
+                $debugInfo = [
+                    'original_path' => $file->getRealPath(),
+                    'original_exists' => file_exists($file->getRealPath()),
+                    'original_size' => file_exists($file->getRealPath()) ? filesize($file->getRealPath()) : 'N/A',
+                    'original_readable' => file_exists($file->getRealPath()) ? is_readable($file->getRealPath()) : false,
+                    'temp_dir' => $tempDir,
+                    'temp_dir_exists' => file_exists($tempDir),
+                    'temp_dir_writable' => is_writable($tempDir),
+                    'temp_file_path' => $tempFilePath,
+                    'temp_file_exists' => file_exists($tempFilePath),
+                    'temp_file_size' => file_exists($tempFilePath) ? filesize($tempFilePath) : 'N/A',
+                    'php_upload_errors' => [
+                        'UPLOAD_ERR_OK' => UPLOAD_ERR_OK,
+                        'file_error' => $file->getError(),
+                        'max_filesize' => ini_get('upload_max_filesize'),
+                        'max_post_size' => ini_get('post_max_size'),
+                        'temp_dir_ini' => ini_get('upload_tmp_dir')
+                    ]
+                ];
+                
+                Log::error('File upload failed', $debugInfo);
+                
+                throw new \Exception('Failed to store uploaded file. Debug info: ' . json_encode($debugInfo));
+            }
+            
+            $fileSize = filesize($tempFilePath);
+            Log::info('File stored successfully: ' . $tempFilePath . ' (Size: ' . $fileSize . ' bytes)');
+            
+            // Read Excel file
+            $excelData = $this->readExcelFile($tempFilePath);
+            
+            // Check for reading errors
+            if (isset($excelData['error'])) {
+                Log::error('Excel reading failed: ' . $excelData['error']);
+                
                 return response()->json([
                     'valid' => false,
-                    'message' => 'Could not read Excel file or file is empty'
+                    'message' => 'Could not read Excel file: ' . $excelData['error'],
+                    'debug_info' => [
+                        'original_name' => $originalName,
+                        'file_size' => $file->getSize(),
+                        'mime_type' => $file->getMimeType(),
+                        'temp_path' => $tempFilePath,
+                        'temp_file_exists' => file_exists($tempFilePath),
+                        'temp_file_size' => file_exists($tempFilePath) ? filesize($tempFilePath) : 'N/A',
+                        'error_details' => $excelData
+                    ]
+                ], 422);
+            }
+            
+            // Check if we got valid data structure
+            if (empty($excelData) || !isset($excelData['data']) || !isset($excelData['headers'])) {
+                return response()->json([
+                    'valid' => false,
+                    'message' => 'Excel file structure is invalid or empty',
+                    'debug_info' => [
+                        'original_name' => $originalName,
+                        'returned_data' => $excelData
+                    ]
+                ], 422);
+            }
+            
+            // Check if we have actual data rows
+            if (empty($excelData['data'])) {
+                return response()->json([
+                    'valid' => false,
+                    'message' => 'Excel file contains no data rows',
+                    'debug_info' => [
+                        'original_name' => $originalName,
+                        'headers_found' => $excelData['headers'],
+                        'total_rows_in_file' => $excelData['total_rows_in_file'] ?? 0,
+                        'data_rows_processed' => count($excelData['data'])
+                    ]
                 ], 422);
             }
             
@@ -1168,10 +1309,7 @@ class SalesForecastController extends Controller
             // Analyze duplicates
             $duplicateAnalysis = $this->analyzeDuplicates($excelData);
             
-            // Clean up temp file
-            \Storage::disk('local')->delete($filePath);
-            
-            // Determine overall validity (duplicates don't make file invalid, just noteworthy)
+            // Determine overall validity
             $overallValid = $validation['valid'];
             $overallMessage = $validation['message'];
             
@@ -1179,23 +1317,68 @@ class SalesForecastController extends Controller
                 $overallMessage .= " Note: {$duplicateAnalysis['duplicate_count']} duplicate item-period combinations found.";
             }
             
+            Log::info('Excel validation completed successfully. Valid: ' . ($overallValid ? 'Yes' : 'No'));
+            
             return response()->json([
                 'valid' => $overallValid,
                 'message' => $overallMessage,
                 'details' => $validation['details'],
                 'duplicate_analysis' => $duplicateAnalysis,
-                'preview' => array_slice($excelData['data'], 0, 5), // First 5 rows
-                'recommendations' => $this->getValidationRecommendations($validation, $duplicateAnalysis)
+                'preview' => array_slice($excelData['data'], 0, 5),
+                'recommendations' => $this->getValidationRecommendations($validation, $duplicateAnalysis),
+                'file_info' => [
+                    'original_name' => $originalName,
+                    'total_rows' => $excelData['total_rows_in_file'] ?? 0,
+                    'data_rows' => count($excelData['data']),
+                    'columns' => count($excelData['headers']),
+                    'headers' => $excelData['headers']
+                ]
             ], 200);
             
         } catch (\Exception $e) {
+            Log::error('Excel validation exception: ' . $e->getMessage());
+            Log::error('Stack trace: ' . $e->getTraceAsString());
+            
             return response()->json([
                 'valid' => false,
-                'message' => 'Failed to validate Excel file',
-                'error' => $e->getMessage()
+                'message' => 'Failed to validate Excel file: ' . $e->getMessage(),
+                'debug_info' => [
+                    'original_name' => $request->file('excel_file')?->getClientOriginalName(),
+                    'exception_type' => get_class($e),
+                    'line' => $e->getLine(),
+                    'file' => $e->getFile(),
+                    'temp_path' => $tempFilePath,
+                    'temp_file_exists' => $tempFilePath ? file_exists($tempFilePath) : false
+                ]
             ], 500);
+        } finally {
+            // Clean up temp file
+            if ($tempFilePath && file_exists($tempFilePath)) {
+                try {
+                    unlink($tempFilePath);
+                    Log::info('Cleaned up temp file: ' . $tempFilePath);
+                } catch (\Exception $e) {
+                    Log::warning('Could not delete temp file: ' . $e->getMessage());
+                }
+            }
         }
     }
+
+    /**
+     * Helper method to clean up temporary files
+     */
+    private function cleanupTempFile($storedPath)
+    {
+        try {
+            if ($storedPath && \Storage::disk('local')->exists($storedPath)) {
+                \Storage::disk('local')->delete($storedPath);
+                Log::info('Cleaned up temp file: ' . $storedPath);
+            }
+        } catch (\Exception $e) {
+            Log::warning('Could not delete temp file: ' . $e->getMessage());
+        }
+    }
+
 
     /**
      * Get duplicate handling options
@@ -1261,7 +1444,7 @@ class SalesForecastController extends Controller
     // ============================================================================
 
     /**
-     * Read Excel file and convert to structured data
+     * Read Excel file and convert to structured data - Fixed for modern PhpSpreadsheet
      *
      * @param  string  $filePath
      * @return array
@@ -1269,7 +1452,48 @@ class SalesForecastController extends Controller
     private function readExcelFile($filePath)
     {
         try {
-            $spreadsheet = IOFactory::load($filePath);
+            // Check if file exists
+            if (!file_exists($filePath)) {
+                Log::error('Excel file does not exist: ' . $filePath);
+                return [
+                    'error' => 'File does not exist',
+                    'path' => $filePath
+                ];
+            }
+
+            // Check if file is readable
+            if (!is_readable($filePath)) {
+                Log::error('Excel file is not readable: ' . $filePath);
+                return [
+                    'error' => 'File is not readable',
+                    'path' => $filePath
+                ];
+            }
+
+            // Get file size for debugging
+            $fileSize = filesize($filePath);
+            Log::info('Reading Excel file: ' . $filePath . ' (Size: ' . $fileSize . ' bytes)');
+
+            // Try to detect file type first
+            try {
+                $inputFileType = \PhpOffice\PhpSpreadsheet\IOFactory::identify($filePath);
+                Log::info('Detected Excel file type: ' . $inputFileType);
+            } catch (\Exception $e) {
+                Log::error('Could not identify Excel file type: ' . $e->getMessage());
+                return [
+                    'error' => 'Could not identify file type: ' . $e->getMessage()
+                ];
+            }
+
+            // Create appropriate reader
+            $reader = \PhpOffice\PhpSpreadsheet\IOFactory::createReader($inputFileType);
+            
+            // For large files, you might want to read only data (not formatting)
+            $reader->setReadDataOnly(true);
+            $reader->setReadEmptyCells(false);
+
+            // Load the spreadsheet
+            $spreadsheet = $reader->load($filePath);
             $worksheet = $spreadsheet->getActiveSheet();
             
             $data = [];
@@ -1277,43 +1501,105 @@ class SalesForecastController extends Controller
             $highestColumn = $worksheet->getHighestColumn();
             $highestColumnIndex = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::columnIndexFromString($highestColumn);
 
-            // Read headers (first row)
+            Log::info("Excel dimensions: {$highestRow} rows x {$highestColumnIndex} columns");
+
+            // Check if worksheet has any data
+            if ($highestRow < 1 || $highestColumnIndex < 1) {
+                Log::warning('Excel worksheet appears to be empty');
+                return [
+                    'error' => 'Worksheet appears to be empty',
+                    'rows' => $highestRow,
+                    'columns' => $highestColumnIndex
+                ];
+            }
+
+            // Read headers (first row) - FIXED METHOD
             $headers = [];
             for ($col = 1; $col <= $highestColumnIndex; $col++) {
-                $cellValue = $worksheet->getCellByColumnAndRow($col, 1)->getCalculatedValue();
-                $headers[] = trim((string)$cellValue);
+                try {
+                    // Use proper coordinate method instead of getCellByColumnAndRow
+                    $columnLetter = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($col);
+                    $cellCoordinate = $columnLetter . '1';
+                    $cellValue = $worksheet->getCell($cellCoordinate)->getCalculatedValue();
+                    $headers[] = trim((string)$cellValue);
+                } catch (\Exception $e) {
+                    Log::warning("Error reading header cell [{$col}, 1]: " . $e->getMessage());
+                    $headers[] = "Column_" . $col; // Fallback header name
+                }
             }
 
-            // Read data rows
-            for ($row = 2; $row <= $highestRow; $row++) {
+            Log::info('Excel headers: ' . json_encode($headers));
+
+            // Read data rows - FIXED METHOD
+            $rowsProcessed = 0;
+            for ($row = 2; $row <= $highestRow && $rowsProcessed < 1000; $row++) { // Limit to 1000 rows for safety
                 $rowData = [];
+                $hasData = false;
+                
                 for ($col = 1; $col <= $highestColumnIndex; $col++) {
-                    $cell = $worksheet->getCellByColumnAndRow($col, $row);
-                    $cellValue = $cell->getCalculatedValue();
-                    
-                    // Handle date cells
-                    if (Date::isDateTime($cell)) {
-                        $cellValue = Date::excelToDateTimeObject($cellValue)->format('Y-m-d');
+                    try {
+                        // Use proper coordinate method instead of getCellByColumnAndRow
+                        $columnLetter = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($col);
+                        $cellCoordinate = $columnLetter . $row;
+                        $cell = $worksheet->getCell($cellCoordinate);
+                        $cellValue = $cell->getCalculatedValue();
+                        
+                        // Handle date cells
+                        if (\PhpOffice\PhpSpreadsheet\Shared\Date::isDateTime($cell)) {
+                            try {
+                                $cellValue = \PhpOffice\PhpSpreadsheet\Shared\Date::excelToDateTimeObject($cellValue)->format('Y-m-d');
+                            } catch (\Exception $e) {
+                                Log::warning("Error converting date in cell [{$col}, {$row}]: " . $e->getMessage());
+                                $cellValue = (string)$cellValue; // Keep original value
+                            }
+                        }
+                        
+                        $rowData[] = $cellValue;
+                        
+                        // Check if this cell has meaningful data
+                        if (!empty(trim((string)$cellValue))) {
+                            $hasData = true;
+                        }
+                    } catch (\Exception $e) {
+                        Log::warning("Error reading cell [{$col}, {$row}]: " . $e->getMessage());
+                        $rowData[] = ''; // Empty value for problematic cells
                     }
-                    
-                    $rowData[] = $cellValue;
                 }
                 
-                // Skip empty rows
-                if (array_filter($rowData, function($value) { return !empty(trim($value)); })) {
-                    $data[] = array_combine($headers, $rowData);
+                // Only include rows that have at least some data
+                if ($hasData && count($rowData) === count($headers)) {
+                    try {
+                        $data[] = array_combine($headers, $rowData);
+                        $rowsProcessed++;
+                    } catch (\Exception $e) {
+                        Log::warning("Error combining row {$row} with headers: " . $e->getMessage());
+                    }
                 }
             }
 
-            return [
+            $result = [
                 'headers' => $headers,
                 'data' => $data,
-                'row_count' => count($data)
+                'row_count' => count($data),
+                'total_rows_in_file' => $highestRow,
+                'total_columns' => $highestColumnIndex
             ];
 
+            Log::info('Excel reading completed successfully. Processed ' . count($data) . ' data rows.');
+
+            return $result;
+
+        } catch (\PhpOffice\PhpSpreadsheet\Exception $e) {
+            Log::error('PhpSpreadsheet error: ' . $e->getMessage());
+            return [
+                'error' => 'PhpSpreadsheet error: ' . $e->getMessage()
+            ];
         } catch (\Exception $e) {
             Log::error('Excel reading error: ' . $e->getMessage());
-            return [];
+            Log::error('Stack trace: ' . $e->getTraceAsString());
+            return [
+                'error' => 'General error: ' . $e->getMessage()
+            ];
         }
     }
 

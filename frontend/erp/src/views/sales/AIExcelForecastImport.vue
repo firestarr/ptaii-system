@@ -846,65 +846,65 @@ export default {
         },
         
         // AI processing
-        async processWithAI() {
-            if (!this.canProcess) return;
-            
-            this.isProcessing = true;
-            this.showResults = true;
-            this.error = null;
-            this.currentStep = 1;
-            this.processingMessage = 'Reading Excel file...';
-            
-            try {
-                const formData = new FormData();
-                formData.append('excel_file', this.selectedFile);
-                formData.append('customer_id', this.formData.customer_id);
-                formData.append('forecast_issue_date', this.formData.forecast_issue_date);
-                formData.append('ai_model', this.formData.ai_model);
-                formData.append('confidence_threshold', this.formData.confidence_threshold);
-                formData.append('auto_save', this.formData.auto_save);
-                formData.append('duplicate_handling', this.formData.duplicate_handling);
-                
-                this.currentStep = 2;
-                this.processingMessage = 'AI is analyzing your data...';
-                
-                // Use enhanced endpoint
-                const response = await axios.post('/forecasts/import-excel-ai-enhanced', formData, {
-                    headers: {
-                        'Content-Type': 'multipart/form-data'
-                    },
-                    timeout: 120000
-                });
-                
-                this.currentStep = 3;
-                this.processingMessage = 'Extraction complete!';
-                
-                this.aiResults = response.data.data;
-                
-                // Update duplicate analysis if returned
-                if (this.aiResults.duplicate_analysis) {
-                    this.duplicateAnalysis = this.aiResults.duplicate_analysis;
-                }
-                
-                if (this.aiResults.auto_saved) {
-                    let message = `Successfully auto-saved ${this.aiResults.saved_count} forecasts!`;
-                    if (this.aiResults.duplicate_info?.length > 0) {
-                        message += ` (${this.aiResults.duplicate_info.length} duplicates processed)`;
-                    }
-                    this.showToast('success', message);
-                    await this.loadAIHistory();
-                } else {
-                    this.showToast('info', 'AI extraction complete. Please review the data before saving.');
-                }
-                
-            } catch (error) {
-                console.error('AI processing error:', error);
-                this.error = error.response?.data?.message || 'Failed to process Excel file with AI';
-                this.showToast('error', this.error);
-            } finally {
-                this.isProcessing = false;
+async processWithAI() {
+    if (!this.canProcess) return;
+    
+    this.isProcessing = true;
+    this.showResults = true;
+    this.error = null;
+    this.currentStep = 1;
+    this.processingMessage = 'Reading Excel file...';
+    
+    try {
+        const formData = new FormData();
+        formData.append('excel_file', this.selectedFile);
+        formData.append('customer_id', this.formData.customer_id);
+        formData.append('forecast_issue_date', this.formData.forecast_issue_date);
+        formData.append('ai_model', this.formData.ai_model);
+        formData.append('confidence_threshold', this.formData.confidence_threshold);
+        formData.append('auto_save', this.formData.auto_save ? 1 : 0);
+        formData.append('duplicate_handling', this.formData.duplicate_handling);
+        
+        this.currentStep = 2;
+        this.processingMessage = 'AI is analyzing your data...';
+        
+        // Use enhanced endpoint
+        const response = await axios.post('/forecasts/import-excel-ai-enhanced', formData, {
+            headers: {
+                'Content-Type': 'multipart/form-data'
+            },
+            timeout: 120000
+        });
+        
+        this.currentStep = 3;
+        this.processingMessage = 'Extraction complete!';
+        
+        this.aiResults = response.data.data;
+        
+        // Update duplicate analysis if returned
+        if (this.aiResults.duplicate_analysis) {
+            this.duplicateAnalysis = this.aiResults.duplicate_analysis;
+        }
+        
+        if (this.aiResults.auto_saved) {
+            let message = `Successfully auto-saved ${this.aiResults.saved_count} forecasts!`;
+            if (this.aiResults.duplicate_info?.length > 0) {
+                message += ` (${this.aiResults.duplicate_info.length} duplicates processed)`;
             }
-        },
+            this.showToast('success', message);
+            await this.loadAIHistory();
+        } else {
+            this.showToast('info', 'AI extraction complete. Please review the data before saving.');
+        }
+        
+    } catch (error) {
+        console.error('AI processing error:', error);
+        this.error = error.response?.data?.message || 'Failed to process Excel file with AI';
+        this.showToast('error', this.error);
+    } finally {
+        this.isProcessing = false;
+    }
+},
         
         // Save extracted data
         async saveExtractedData() {
