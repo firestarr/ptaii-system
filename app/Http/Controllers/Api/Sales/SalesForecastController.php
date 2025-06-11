@@ -774,8 +774,16 @@ class SalesForecastController extends Controller
             $filename = 'forecast_' . time() . '_' . $file->getClientOriginalName();
             $filePath = $file->storeAs('forecast_uploads', $filename, 'local');
 
+            // Log file path and existence before reading
+            $fullFilePath = storage_path('app/' . $filePath);
+            Log::debug('Reading Excel file at path', [
+                'filePath' => $fullFilePath,
+                'fileExists' => file_exists($fullFilePath),
+                'isReadable' => is_readable($fullFilePath)
+            ]);
+
             // Read Excel file and convert to structured data
-            $excelData = $this->readExcelFile(storage_path('app/' . $filePath));
+            $excelData = $this->readExcelFile($fullFilePath);
             
             if (empty($excelData)) {
                 return response()->json([
@@ -849,7 +857,7 @@ class SalesForecastController extends Controller
     }
 
     /**
-     * Enhanced AI import with duplicate handling
+     * Enhanced AI import with duplicate handling and better error handling
      *
      * @param  \Illuminate\Http\Request  $request
      * @return \Illuminate\Http\Response
@@ -877,12 +885,36 @@ class SalesForecastController extends Controller
             $filePath = $file->storeAs('forecast_uploads', $filename, 'local');
 
             // Read Excel file and convert to structured data
-            $excelData = $this->readExcelFile(storage_path('app/' . $filePath));
+            $excelData = $this->readExcelFile(storage_path('app/private/' . $filePath));
             
-            if (empty($excelData)) {
+            // Check if Excel reading was successful
+            if (empty($excelData) || !isset($excelData['data']) || !is_array($excelData['data'])) {
+                // Clean up uploaded file
+                Storage::disk('local')->delete($filePath);
+                
                 return response()->json([
                     'message' => 'Could not read Excel file or file is empty',
-                    'error' => 'Excel parsing failed'
+                    'error' => 'Excel parsing failed',
+                    'debug_info' => [
+                        'excel_data_type' => gettype($excelData),
+                        'excel_data_keys' => is_array($excelData) ? array_keys($excelData) : 'not_array',
+                        'file_size' => $file->getSize(),
+                        'file_name' => $file->getClientOriginalName()
+                    ]
+                ], 422);
+            }
+
+            // Validate that we have actual data
+            if (count($excelData['data']) === 0) {
+                Storage::disk('local')->delete($filePath);
+                
+                return response()->json([
+                    'message' => 'Excel file contains no data rows',
+                    'error' => 'Empty data set',
+                    'debug_info' => [
+                        'headers' => $excelData['headers'] ?? [],
+                        'row_count' => $excelData['row_count'] ?? 0
+                    ]
                 ], 422);
             }
 
@@ -894,43 +926,62 @@ class SalesForecastController extends Controller
             $aiResult = $this->processExcelWithGroqAI($excelData, $aiModel);
 
             if (!$aiResult['success']) {
+                // Clean up uploaded file
+                Storage::disk('local')->delete($filePath);
+                
                 return response()->json([
                     'message' => 'AI processing failed',
                     'error' => $aiResult['error'],
-                    'raw_data' => $excelData
+                    'debug_info' => [
+                        'ai_model' => $aiModel,
+                        'excel_headers' => $excelData['headers'] ?? [],
+                        'data_row_count' => count($excelData['data']),
+                        'groq_api_configured' => !empty(env('GROQ_API_KEY'))
+                    ]
+                ], 500);
+            }
+
+            // Check if AI result has the expected data
+            if (!isset($aiResult['data']) || empty($aiResult['data'])) {
+                Storage::disk('local')->delete($filePath);
+                
+                return response()->json([
+                    'message' => 'AI processing returned empty result',
+                    'error' => 'Invalid AI response - no data returned',
+                    'debug_info' => [
+                        'ai_result_keys' => array_keys($aiResult),
+                        'ai_model' => $aiModel
+                    ]
                 ], 500);
             }
 
             // Parse AI response to forecast data
             $extractedData = $this->parseAIResponseEnhanced($aiResult['data']);
-
-            // The above line causes error because $aiResult['data'] is a string, not array
-            // Fix: use $aiResult['data'] as string, parse it, then check validity
-
-            // Remove the isset check for $aiResult['data'] because it's a string
-
-            // Parse AI response string
-            $extractedData = $this->parseAIResponseEnhanced($aiResult['data']);
-
-            // Validate parsed data
+            
+            // Validate extracted data structure
             if (!isset($extractedData['forecasts']) || !is_array($extractedData['forecasts'])) {
-                Log::error('Parsed AI response missing forecasts key or invalid', ['extractedData' => $extractedData]);
+                Storage::disk('local')->delete($filePath);
+                
                 return response()->json([
-                    'message' => 'AI processing returned invalid forecast data',
-                    'error' => 'Missing or invalid forecasts key in parsed AI response',
-                    'raw_data' => $excelData
+                    'message' => 'AI failed to extract valid forecast data',
+                    'error' => 'Invalid extracted data format',
+                    'debug_info' => [
+                        'extracted_data_keys' => is_array($extractedData) ? array_keys($extractedData) : 'not_array',
+                        'ai_confidence' => $extractedData['confidence'] ?? 'unknown',
+                        'raw_ai_response_preview' => substr($aiResult['data'], 0, 500)
+                    ]
                 ], 500);
             }
-
+            
             // Add duplicate analysis to the response
             $extractedData['duplicate_analysis'] = $duplicateAnalysis;
-
+            
             // Auto-save if requested and confidence is high enough
             $confidenceThreshold = $request->input('confidence_threshold', 0.8);
-            $shouldAutoSave = $request->input('auto_save', false) &&
-                ($extractedData['confidence'] ?? 0) >= $confidenceThreshold;
+            $shouldAutoSave = $request->input('auto_save', false) && 
+                            ($extractedData['confidence'] ?? 0) >= $confidenceThreshold;
 
-            if ($shouldAutoSave) {
+            if ($shouldAutoSave && count($extractedData['forecasts']) > 0) {
                 $duplicateHandling = $request->input('duplicate_handling', 'last');
                 $saveResult = $this->saveForecastDataWithDuplicateHandling(
                     $extractedData['forecasts'],
@@ -939,6 +990,9 @@ class SalesForecastController extends Controller
                     $duplicateHandling
                 );
 
+                // Clean up uploaded file after successful save
+                Storage::disk('local')->delete($filePath);
+
                 return response()->json([
                     'message' => 'Excel processed and forecasts saved automatically',
                     'data' => [
@@ -946,35 +1000,57 @@ class SalesForecastController extends Controller
                         'extracted_forecasts' => $extractedData['forecasts'],
                         'saved_count' => $saveResult['saved_count'],
                         'errors' => $saveResult['errors'],
-                        'duplicate_info' => $saveResult['duplicate_info'],
+                        'duplicate_info' => $saveResult['duplicate_info'] ?? [],
                         'duplicate_analysis' => $duplicateAnalysis,
                         'auto_saved' => true
                     ]
                 ], 201);
             } else {
+                // Clean up uploaded file for manual review case
+                Storage::disk('local')->delete($filePath);
+                
                 // Return for manual review
                 return response()->json([
-                    'message' => 'Excel processed successfully, please review before saving',
+                    'message' => count($extractedData['forecasts']) > 0 ? 
+                        'Excel processed successfully, please review before saving' : 
+                        'Excel processed but no valid forecasts were extracted',
                     'data' => [
                         'ai_confidence' => $extractedData['confidence'],
                         'extracted_forecasts' => $extractedData['forecasts'],
                         'duplicate_analysis' => $duplicateAnalysis,
                         'requires_review' => true,
                         'auto_saved' => false,
-                        'raw_excel_data' => $excelData
+                        'extraction_issues' => count($extractedData['forecasts']) === 0 ? 
+                            ['No valid item codes or forecast periods found in the Excel file'] : []
                     ]
                 ], 200);
             }
 
         } catch (\Exception $e) {
+            // Clean up uploaded file on any error
+            if (isset($filePath)) {
+                Storage::disk('local')->delete($filePath);
+            }
+            
             Log::error('Excel AI Import Error: ' . $e->getMessage(), [
                 'file' => $request->file('excel_file')?->getClientOriginalName(),
-                'customer_id' => $request->customer_id
+                'customer_id' => $request->customer_id,
+                'stack_trace' => $e->getTraceAsString()
             ]);
 
             return response()->json([
                 'message' => 'Failed to process Excel file',
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
+                'debug_info' => [
+                    'error_line' => $e->getLine(),
+                    'error_file' => basename($e->getFile()),
+                    'request_data' => [
+                        'customer_id' => $request->customer_id,
+                        'ai_model' => $request->input('ai_model', 'llama3-8b-8192'),
+                        'file_name' => $request->file('excel_file')?->getClientOriginalName(),
+                        'file_size' => $request->file('excel_file')?->getSize()
+                    ]
+                ]
             ], 500);
         }
     }
@@ -1645,19 +1721,37 @@ class SalesForecastController extends Controller
             $groqApiKey = env('GROQ_API_KEY');
             
             if (!$groqApiKey) {
+                Log::error('GROQ_API_KEY not configured');
                 return [
                     'success' => false,
-                    'error' => 'GROQ_API_KEY not configured'
+                    'error' => 'GROQ_API_KEY not configured. Please set GROQ_API_KEY in your .env file.'
+                ];
+            }
+
+            // Validate Excel data structure
+            if (!isset($excelData['data']) || !is_array($excelData['data']) || count($excelData['data']) === 0) {
+                Log::error('Invalid Excel data structure for AI processing', [
+                    'excel_data_keys' => is_array($excelData) ? array_keys($excelData) : 'not_array'
+                ]);
+                return [
+                    'success' => false,
+                    'error' => 'Invalid Excel data structure - no data rows found'
                 ];
             }
 
             // Prepare prompt for AI
             $prompt = $this->buildEnhancedExcelAnalysisPrompt($excelData);
 
+            Log::info('Sending request to Groq AI', [
+                'model' => $model,
+                'data_rows' => count($excelData['data']),
+                'headers' => $excelData['headers'] ?? []
+            ]);
+
             $response = Http::withHeaders([
                 'Authorization' => 'Bearer ' . $groqApiKey,
                 'Content-Type' => 'application/json'
-            ])->timeout(60)->post('https://api.groq.com/openai/v1/chat/completions', [
+            ])->timeout(120)->post('https://api.groq.com/openai/v1/chat/completions', [
                 'model' => $model,
                 'messages' => [
                     [
@@ -1674,31 +1768,64 @@ class SalesForecastController extends Controller
             ]);
 
             if (!$response->successful()) {
+                $errorBody = $response->body();
+                Log::error('Groq API request failed', [
+                    'status' => $response->status(),
+                    'response_body' => $errorBody
+                ]);
+                
                 return [
                     'success' => false,
-                    'error' => 'Groq API request failed: ' . $response->body()
+                    'error' => 'Groq API request failed: HTTP ' . $response->status() . ' - ' . $errorBody
                 ];
             }
 
             $responseData = $response->json();
             
             if (!isset($responseData['choices'][0]['message']['content'])) {
+                Log::error('Invalid AI response format', [
+                    'response_structure' => array_keys($responseData),
+                    'choices_available' => isset($responseData['choices']),
+                    'choices_count' => isset($responseData['choices']) ? count($responseData['choices']) : 0
+                ]);
+                
                 return [
                     'success' => false,
-                    'error' => 'Invalid AI response format'
+                    'error' => 'Invalid AI response format - missing content in response'
                 ];
             }
 
+            $aiContent = $responseData['choices'][0]['message']['content'];
+            
+            // Validate that we got actual content
+            if (empty(trim($aiContent))) {
+                Log::error('AI returned empty content');
+                return [
+                    'success' => false,
+                    'error' => 'AI returned empty content'
+                ];
+            }
+
+            Log::info('AI processing completed successfully', [
+                'response_length' => strlen($aiContent),
+                'model_used' => $model
+            ]);
+
             return [
                 'success' => true,
-                'data' => $responseData['choices'][0]['message']['content']
+                'data' => $aiContent
             ];
 
         } catch (\Exception $e) {
-            Log::error('Groq AI processing error: ' . $e->getMessage());
+            Log::error('Groq AI processing error: ' . $e->getMessage(), [
+                'model' => $model,
+                'error_line' => $e->getLine(),
+                'stack_trace' => $e->getTraceAsString()
+            ]);
+            
             return [
                 'success' => false,
-                'error' => $e->getMessage()
+                'error' => 'AI processing failed: ' . $e->getMessage()
             ];
         }
     }
