@@ -10,7 +10,7 @@
         </div>
       </div>
   
-      <div v-if="loading" class="loading">
+      <div v-if="loading" class="loading">  
         <i class="fas fa-spinner fa-spin"></i> Loading data...
       </div>
   
@@ -325,41 +325,72 @@
       }
     },
     async created() {
-      const invoiceId = this.$route.params.id;
-      this.isEditing = !!invoiceId;
-      
-      try {
-        // Load vendors
-        const vendorsResponse = await axios.get('/vendors');
-        this.vendors = vendorsResponse.data.data;
-        
-        if (this.isEditing) {
-          // Load invoice data if editing
-          const invoiceResponse = await axios.get(`/vendor-invoices/${invoiceId}`);
-          const invoice = invoiceResponse.data.data.invoice;
-          
-          this.form = {
-            invoice_number: invoice.invoice_number,
-            invoice_date: invoice.invoice_date,
-            due_date: invoice.due_date || '',
-            receipt_ids: invoice.goodsReceipts.map(receipt => receipt.receipt_id),
-            currency_code: invoice.currency_code || 'USD',
-            exchange_rate: invoice.exchange_rate || 1,
-            create_journal_entry: false, // Default for editing
-            ap_account_id: 'AP001',
-            expense_account_id: 'EXP001',
-            tax_account_id: 'TAX001'
-          };
-          
-          this.selectedVendorId = invoice.vendor_id;
-          this.selectedReceipts = [...this.form.receipt_ids];
-        }
-      } catch (error) {
-        console.error('Error loading initial data:', error);
-      } finally {
-        this.loading = false;
+  const invoiceId = this.$route.params.id;
+  this.isEditing = !!invoiceId;
+  
+  try {
+    // Load vendors and filter out null/undefined values
+    const vendorsResponse = await axios.get('/vendors');
+    console.log('Full vendors response:', vendorsResponse.data); // Debug log
+    
+    // Handle the nested response structure berdasarkan struktur API Anda
+    let vendorsData = [];
+    
+    // Cek struktur response yang benar
+    if (vendorsResponse.data && vendorsResponse.data.data) {
+      if (Array.isArray(vendorsResponse.data.data.data)) {
+        // Structure: { data: { data: [...], current_page: 1, ... } }
+        vendorsData = vendorsResponse.data.data.data;
+        console.log('Using nested structure: response.data.data.data');
+      } else if (Array.isArray(vendorsResponse.data.data)) {
+        // Structure: { data: [...] } 
+        vendorsData = vendorsResponse.data.data;
+        console.log('Using flat structure: response.data.data');
       }
-    },
+    } else if (Array.isArray(vendorsResponse.data)) {
+      // Direct array response: response.data
+      vendorsData = vendorsResponse.data;
+      console.log('Using direct array: response.data');
+    }
+    
+    console.log('Extracted vendors data:', vendorsData); // Debug log
+    console.log('Vendors data length:', vendorsData.length); // Debug log
+    
+    // Filter dan assign ke this.vendors
+    this.vendors = vendorsData.filter(vendor => vendor != null && vendor.vendor_id);
+    console.log('Filtered vendors:', this.vendors); // Debug log
+    console.log('Final vendors count:', this.vendors.length); // Debug log
+    
+    if (this.isEditing) {
+      // Load invoice data if editing
+      const invoiceResponse = await axios.get(`/vendor-invoices/${invoiceId}`);
+      const invoice = invoiceResponse.data.data.invoice;
+      
+      this.form = {
+        invoice_number: invoice.invoice_number,
+        invoice_date: invoice.invoice_date,
+        due_date: invoice.due_date || '',
+        receipt_ids: invoice.goodsReceipts.map(receipt => receipt.receipt_id),
+        currency_code: invoice.currency_code || 'USD',
+        exchange_rate: invoice.exchange_rate || 1,
+        create_journal_entry: false, // Default for editing
+        ap_account_id: 'AP001',
+        expense_account_id: 'EXP001',
+        tax_account_id: 'TAX001'
+      };
+      
+      this.selectedVendorId = invoice.vendor_id;
+      this.selectedReceipts = [...this.form.receipt_ids];
+    }
+  } catch (error) {
+    console.error('Error loading initial data:', error);
+    console.error('Error details:', error.response?.data); // Additional debug info
+    // Set empty arrays as fallback
+    this.vendors = [];
+  } finally {
+    this.loading = false;
+  }
+},
     methods: {
       async vendorChanged() {
         if (!this.selectedVendorId) return;

@@ -431,6 +431,18 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/duplicate-handling-options', [SalesForecastController::class, 'getDuplicateHandlingOptions']);
     });
 
+    // AI Excel Forecast Processing Routes
+    Route::prefix('ai-excel-forecast')->group(function () {
+        Route::post('/process', [App\Http\Controllers\Api\sales\AIExcelForecastController::class, 'processExcelWithAI']);
+        Route::post('/save', [App\Http\Controllers\Api\sales\AIExcelForecastController::class, 'saveExtractedForecasts']);
+        Route::get('/history', [App\Http\Controllers\Api\sales\AIExcelForecastController::class, 'getProcessingHistory']);
+        Route::post('/debug-excel-extraction', [AIExcelForecastController::class, 'debugExcelExtraction']);
+        Route::post('/guaranteed-debug', [App\Http\Controllers\Api\Sales\AIExcelForecastController::class, 'guaranteedDebug']); // NEW - RECOMMENDED
+        Route::post('/simple-debug', [App\Http\Controllers\Api\Sales\AIExcelForecastController::class, 'simpleDebugRows']);
+        Route::post('/debug-excel', [App\Http\Controllers\Api\Sales\AIExcelForecastController::class, 'debugExcelExtraction']);
+        Route::post('/quick-debug', [App\Http\Controllers\Api\Sales\AIExcelForecastController::class, 'quickDebugRows']);
+    });
+
     // Routes untuk Outstanding Sales Order
     Route::get('sales-orders/{id}/outstanding-items', 'Api\Sales\SalesOrderController@getOutstandingItems');
     Route::get('sales-orders/outstanding', 'Api\Sales\SalesOrderController@getAllOutstandingSalesOrders');

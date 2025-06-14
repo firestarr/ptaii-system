@@ -58,7 +58,7 @@ import ForecastAccuracyAnalysis from "../views/sales/ForecastAccuracyAnalysis.vu
 import ForecastDashboard from "../views/sales/ForecastDashboard.vue";
 import UpdateActualsPage from "../views/sales/UpdateActualsPage.vue";
 import ForecastHistoryView from "../views/sales/ForecastHistoryView.vue";
-import AIExcelForecastImport from '@/views/sales/AIExcelForecastImport.vue';
+import AIExcellForecastImport from '@/views/sales/AIExcellForecastImport.vue';
 //SalesOrder
 import SalesOrderList from "../views/sales/SalesOrderList.vue";
 import SalesOrderDetail from "../views/sales/SalesOrderDetail.vue";
@@ -556,8 +556,8 @@ const routes = [
             },
             {
                 path: '/sales/forecasts/import-excel-ai',
-                name: 'AIExcelForecastImport',
-                component: AIExcelForecastImport,
+                name: 'AIExcellForecastImport',
+                component: AIExcellForecastImport,
                 meta: {
                     requiresAuth: true,
                     title: 'AI Excel Forecast Import',

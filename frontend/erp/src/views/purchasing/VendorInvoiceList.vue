@@ -108,10 +108,10 @@
           </thead>
           <tbody>
             <tr v-for="invoice in invoices" :key="invoice.invoice_id">
-              <td>{{ invoice.invoice_number }}</td>
+              <td>{{ invoice.invoice_number || 'N/A' }}</td>
               <td>{{ formatDate(invoice.invoice_date) }}</td>
               <td>{{ invoice.vendor ? invoice.vendor.name : 'N/A' }}</td>
-              <td>{{ invoice.currency_code }}</td>
+              <td>{{ invoice.currency_code || 'N/A' }}</td>
               <td>{{ formatCurrency(invoice.total_amount, invoice.currency_code) }}</td>
               <td>{{ formatDate(invoice.due_date) }}</td>
               <td>
@@ -136,7 +136,7 @@
                   class="btn-icon" title="Payment">
                   <i class="fas fa-money-bill-wave"></i>
                 </router-link>
-                <button v-if="invoice.status === 'pending' || invoice.status === 'cancelled'" 
+                <button v-if="(invoice.status === 'pending' || invoice.status === 'cancelled')" 
                   @click="confirmDelete(invoice)" 
                   class="btn-icon" title="Delete">
                   <i class="fas fa-trash"></i>
@@ -187,8 +187,8 @@
             </button>
           </div>
           <div class="modal-body">
-            <p>Are you sure you want to delete invoice <strong>{{ invoiceToDelete?.invoice_number }}</strong>?</p>
-            <p v-if="invoiceToDelete?.status === 'cancelled'" class="text-warning">
+            <p>Are you sure you want to delete invoice <strong>{{ invoiceToDelete ? invoiceToDelete.invoice_number : '' }}</strong>?</p>
+            <p v-if="invoiceToDelete && invoiceToDelete.status === 'cancelled'" class="text-warning">
               <i class="fas fa-exclamation-triangle"></i> 
               This invoice is already cancelled.
             </p>
@@ -284,9 +284,12 @@
       async loadVendors() {
         try {
           const response = await axios.get('/vendors');
-          this.vendors = response.data.data;
+          console.log('Vendors API response:', response);
+          // Defensive filter to remove null or malformed vendors
+          this.vendors = (response.data.data?.data || response.data.data || []).filter(vendor => vendor && vendor.vendor_id);
         } catch (error) {
           console.error('Error loading vendors:', error);
+          this.vendors = [];
         }
       },
       async loadInvoices(page) {
@@ -304,11 +307,22 @@
           
           const response = await axios.get('/vendor-invoices', { params });
           console.log('Vendor invoices API response:', response);
-          this.invoices = response.data.data.data;
-          this.totalPages = response.data.data.last_page;
-          this.totalItems = response.data.data.total;
+          
+          // Handle different possible response structures
+          const responseData = response.data.data || response.data;
+          const invoicesData = responseData.data || responseData;
+          
+          // Defensive filter to remove null or malformed invoices
+          this.invoices = (Array.isArray(invoicesData) ? invoicesData : []).filter(inv => inv && inv.invoice_id);
+          this.totalPages = responseData.last_page || 1;
+          this.totalItems = responseData.total || this.invoices.length;
+          
+          console.log('Processed invoices:', this.invoices);
         } catch (error) {
           console.error('Error loading invoices:', error);
+          this.invoices = [];
+          this.totalPages = 1;
+          this.totalItems = 0;
         } finally {
           this.loading = false;
         }
@@ -353,17 +367,25 @@
       },
       formatDate(dateString) {
         if (!dateString) return 'N/A';
-        const date = new Date(dateString);
-        return date.toLocaleDateString();
+        try {
+          const date = new Date(dateString);
+          return date.toLocaleDateString();
+        } catch (error) {
+          return 'N/A';
+        }
       },
       formatCurrency(amount, currency) {
         if (amount === null || amount === undefined) return 'N/A';
         
-        return new Intl.NumberFormat('en-US', {
-          style: 'currency',
-          currency: currency || 'USD',
-          minimumFractionDigits: 2
-        }).format(amount);
+        try {
+          return new Intl.NumberFormat('en-US', {
+            style: 'currency',
+            currency: currency || 'USD',
+            minimumFractionDigits: 2
+          }).format(amount);
+        } catch (error) {
+          return amount.toString();
+        }
       },
       getStatusClass(status) {
         const statusClasses = {
