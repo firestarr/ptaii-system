@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api\Accounting;
 
+use App\Http\Controllers\Controller;
 use App\Models\Accounting\FixedAsset;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;

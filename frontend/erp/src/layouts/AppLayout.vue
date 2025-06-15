@@ -811,26 +811,100 @@
 
                     <!-- Accounting Mega Menu -->
                     <div v-if="activeMegaMenu === 'accounting'" class="mega-menu-content">
-                        <div class="menu-section">
-                            <h3><i class="fas fa-calculator"></i> Financial Management</h3>
-                            <div class="menu-links">
-                                <router-link to="/currency-rates" class="menu-link">
-                                    <i class="fas fa-money-bill-wave"></i>
-                                    <div>
-                                        <span>Exchange Rates</span>
-                                        <small>Currency exchange rates</small>
-                                    </div>
-                                </router-link>
-                                <router-link to="/currency-converter" class="menu-link">
-                                    <i class="fas fa-exchange-alt"></i>
-                                    <div>
-                                        <span>Currency Converter</span>
-                                        <small>Convert currencies</small>
-                                    </div>
-                                </router-link>
+                    
+                    <!-- Financial Basics -->
+                    <div class="menu-section">
+                        <h3><i class="fas fa-coins"></i> Financial Basics</h3>
+                        <div class="menu-links">
+                        <router-link to="/currency-rates" class="menu-link">
+                            <i class="fas fa-money-bill-wave"></i>
+                            <div>
+                            <span>Exchange Rates</span>
+                            <small>Currency exchange rates</small>
                             </div>
+                        </router-link>
+                        <router-link to="/currency-converter" class="menu-link">
+                            <i class="fas fa-exchange-alt"></i>
+                            <div>
+                            <span>Currency Converter</span>
+                            <small>Convert currencies</small>
+                            </div>
+                        </router-link>
+                        <router-link to="/accounting/chart-of-accounts" class="menu-link">
+                            <i class="fas fa-book-open"></i>
+                            <div>
+                            <span>Chart of Accounts</span>
+                            <small>Financial accounts</small>
+                            </div>
+                        </router-link>
                         </div>
                     </div>
+
+                    <!-- Journal & Transactions -->
+                    <div class="menu-section">
+                        <h3><i class="fas fa-book"></i> Journal & Transactions</h3>
+                        <div class="menu-links">
+                        <router-link to="/accounting/journal-entries" class="menu-link">
+                            <i class="fas fa-book"></i>
+                            <div>
+                            <span>Journal Entries</span>
+                            <small>Financial transactions</small>
+                            </div>
+                        </router-link>
+                        <router-link to="/accounting/periods" class="menu-link">
+                            <i class="fas fa-calendar-alt"></i>
+                            <div>
+                            <span>Accounting Periods</span>
+                            <small>Manage accounting periods</small>
+                            </div>
+                        </router-link>
+                        </div>
+                    </div>
+
+                    <!-- Banking -->
+                    <div class="menu-section">
+                        <h3><i class="fas fa-university"></i> Banking</h3>
+                        <div class="menu-links">
+                        <router-link to="/accounting/bank-accounts" class="menu-link">
+                            <i class="fas fa-university"></i>
+                            <div>
+                            <span>Bank Accounts</span>
+                            <small>Manage bank accounts</small>
+                            </div>
+                        </router-link>
+                        <router-link to="/accounting/bank-reconciliations" class="menu-link">
+                            <i class="fas fa-balance-scale"></i>
+                            <div>
+                            <span>Bank Reconciliations</span>
+                            <small>Manage bank reconciliations</small>
+                            </div>
+                        </router-link>
+                        </div>
+                    </div>
+
+                    <!-- Asset Management -->
+                    <div class="menu-section">
+                        <h3><i class="fas fa-cubes"></i> Asset Management</h3>
+                        <div class="menu-links">
+                        <router-link to="/accounting/fixed-assets" class="menu-link">
+                            <i class="fas fa-cubes"></i>
+                            <div>
+                            <span>Fixed Assets</span>
+                            <small>Manage fixed assets</small>
+                            </div>
+                        </router-link>
+                        <router-link to="/accounting/asset-depreciations" class="menu-link">
+                            <i class="fas fa-hourglass-half"></i>
+                            <div>
+                            <span>Asset Depreciations</span>
+                            <small>Manage asset depreciations</small>
+                            </div>
+                        </router-link>
+                        </div>
+                    </div>
+
+                    </div>
+
 
                     <!-- Reports Mega Menu -->
                     <div v-if="activeMegaMenu === 'reports'" class="mega-menu-content">

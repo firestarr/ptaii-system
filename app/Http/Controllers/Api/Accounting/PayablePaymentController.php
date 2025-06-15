@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api\Accounting;
 
+use App\Http\Controllers\Controller;
 use App\Models\Accounting\VendorPayable;
 use App\Models\Accounting\PayablePayment;
 use App\Models\Accounting\JournalEntry;

@@ -1,4 +1,4 @@
-<template>
+<!--  --><template>
   <div class="multi-vendor-wizard">
     <!-- Wizard Steps -->
     <div class="wizard-steps">
@@ -260,13 +260,17 @@ export default {
     },
 
     toggleVendorSelection(prLineId, vendor) {
-      const selections = this.vendorSelections[prLineId] || []
+      const selections = this.vendorSelections[prLineId] ? [...this.vendorSelections[prLineId]] : []
       const index = selections.findIndex(v => v.vendor_id === vendor.vendor_id)
       
       if (index >= 0) {
         // Remove vendor
         selections.splice(index, 1)
-        this.$delete(this.quantitySplits[prLineId], vendor.vendor_id)
+        const { [vendor.vendor_id]: _, ...rest } = this.quantitySplits[prLineId]
+        this.quantitySplits = {
+          ...this.quantitySplits,
+          [prLineId]: rest
+        }
       } else {
         // Add vendor
         selections.push(vendor)
@@ -287,6 +291,11 @@ export default {
             }
           }
         }
+      }
+      
+      this.vendorSelections = {
+        ...this.vendorSelections,
+        [prLineId]: selections
       }
       
       this.updateQuantitySplit()
@@ -323,12 +332,21 @@ export default {
     },
 
     removeVendorSplit(prLineId, vendorId) {
-      const selections = this.vendorSelections[prLineId] || []
+      const selections = this.vendorSelections[prLineId] ? [...this.vendorSelections[prLineId]] : []
       const index = selections.findIndex(v => v.vendor_id === vendorId)
       
       if (index >= 0) {
         selections.splice(index, 1)
-        this.$delete(this.quantitySplits[prLineId], vendorId)
+        const { [vendorId]: _, ...rest } = this.quantitySplits[prLineId]
+        this.quantitySplits = {
+          ...this.quantitySplits,
+          [prLineId]: rest
+        }
+      }
+      
+      this.vendorSelections = {
+        ...this.vendorSelections,
+        [prLineId]: selections
       }
     },
 
@@ -367,32 +385,45 @@ export default {
         if (selections.length === 1) {
           // Single vendor - assign full quantity
           const vendor = selections[0]
-          this.$set(this.quantitySplits[item.pr_line_id], vendor.vendor_id, {
-            quantity: item.required_quantity,
-            unit_price: vendor.unit_price,
-            vendor_name: vendor.vendor_name
-          })
+          this.quantitySplits = {
+            ...this.quantitySplits,
+            [item.pr_line_id]: {
+              ...this.quantitySplits[item.pr_line_id],
+              [vendor.vendor_id]: {
+                quantity: item.required_quantity,
+                unit_price: vendor.unit_price,
+                vendor_name: vendor.vendor_name
+              }
+            }
+          }
         } else if (selections.length > 1) {
           // Multiple vendors - split equally
           const qtyPerVendor = item.required_quantity / selections.length
           
           selections.forEach(vendor => {
-            this.$set(this.quantitySplits[item.pr_line_id], vendor.vendor_id, {
-              quantity: qtyPerVendor,
-              unit_price: vendor.unit_price,
-              vendor_name: vendor.vendor_name
-            })
+            this.quantitySplits = {
+              ...this.quantitySplits,
+              [item.pr_line_id]: {
+                ...this.quantitySplits[item.pr_line_id],
+                [vendor.vendor_id]: {
+                  quantity: qtyPerVendor,
+                  unit_price: vendor.unit_price,
+                  vendor_name: vendor.vendor_name
+                }
+              }
+            }
           })
         }
       })
     },
 
+    // Replace the createPOs method (around line 432-456)
     async createPOs() {
-      this.loading = true
+      this.loading = true;
+      
       try {
-        // Prepare vendor selections for API
-        const vendorSelections = []
-        
+        const vendorSelections = [];
+
         Object.entries(this.groupedSelections).forEach(([vendorId, poData]) => {
           poData.items.forEach(item => {
             vendorSelections.push({
@@ -400,28 +431,59 @@ export default {
               vendor_id: parseInt(vendorId),
               quantity: item.quantity,
               unit_price: item.unit_price
-            })
-          })
-        })
-        
+            });
+          });
+        });
+
         const response = await axios.post('/purchase-orders/create-split-from-pr', {
           pr_id: parseInt(this.id),
           vendor_selections: vendorSelections
-        })
+        });
+
+        // Handle success response
+        const message = `Successfully created ${Object.keys(this.groupedSelections).length} Purchase Orders`;
         
-        this.$toast.success(`${response.data.data.length} Purchase Orders created successfully!`)
+        // Use toast for success message instead of showAlert
+        if (this.$toast) {
+          this.$toast.success(message);
+        } else {
+          // Fallback to console if toast is not available
+          console.log(message);
+          alert(message); // Basic fallback
+        }
         
-        // Navigate to PO list or show success page
-        this.$router.push({
-          name: 'PurchaseOrders',
-          query: { created_from_pr: this.id }
-        })
-        
+        // Navigate to purchase list page with delay
+        setTimeout(() => {
+          this.$router.push({
+            name: 'PurchaseOrders',
+            query: { created_from_pr: this.id }
+          });
+        }, 1500);
+
       } catch (error) {
-        this.$toast.error('Failed to create Purchase Orders')
-        console.error(error)
+        this.handleApiError(error);
       } finally {
-        this.loading = false
+        this.loading = false;
+      }
+    },
+
+    // Replace the handleApiError method (around line 458-470)
+    handleApiError(error) {
+      console.error('API Error:', error);
+      
+      let errorMessage = 'An unexpected error occurred. Please try again.';
+      
+      // Safely extract error message
+      if (error && error.response && error.response.data && error.response.data.message) {
+        errorMessage = error.response.data.message;
+      }
+      
+      // Use toast if available, otherwise fallback
+      if (this.$toast) {
+        this.$toast.error(errorMessage);
+      } else {
+        console.error(errorMessage);
+        alert(errorMessage); // Basic fallback
       }
     },
 

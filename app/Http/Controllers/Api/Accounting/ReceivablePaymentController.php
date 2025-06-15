@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api\Accounting;
 
+use App\Http\Controllers\Controller;
 use App\Models\Accounting\CustomerReceivable;
 use App\Models\Accounting\ReceivablePayment;
 use App\Models\Accounting\JournalEntry;

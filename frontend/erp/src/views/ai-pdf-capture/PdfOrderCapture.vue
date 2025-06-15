@@ -8,7 +8,7 @@
             <i class="fas fa-file-pdf"></i>
             PDF Order Capture
           </h1>
-          <p class="page-subtitle">Upload PDF files and automatically create sales orders using AI</p>
+          <p class="page-subtitle">Upload PDF files and automatically create sales orders using AI with smart page-based processing</p>
         </div>
         <div class="header-actions">
           <button @click="refreshData" class="btn btn-secondary" :disabled="isLoading">
@@ -167,8 +167,10 @@
               <th>Status</th>
               <th>Customer</th>
               <th>Items</th>
+              <th>Item Validation</th>
               <th>Confidence</th>
               <th>Sales Order</th>
+              <th>Pages/Processing</th>
               <th>Created</th>
               <th>Actions</th>
             </tr>
@@ -191,6 +193,10 @@
                   </div>
                   <div class="file-meta">
                     {{ capture.file_size_human }}
+                    <span v-if="isLargeFile(capture.file_size)" class="file-size-indicator large-file">
+                      <i class="fas fa-layer-group" title="Processed with chunking"></i>
+                      Large
+                    </span>
                   </div>
                 </div>
               </td>
@@ -224,6 +230,28 @@
                 </div>
                 <span v-else class="text-muted">-</span>
               </td>
+
+              <!-- Item Validation Column -->
+              <td class="item-validation">
+                <div v-if="capture.item_validation" class="validation-summary">
+                  <div v-if="capture.item_validation.existing_items && capture.item_validation.existing_items.length > 0" 
+                       class="validation-item success">
+                    <i class="fas fa-check-circle"></i>
+                    {{ capture.item_validation.existing_items.length }} found
+                  </div>
+                  <div v-if="capture.item_validation.missing_items && capture.item_validation.missing_items.length > 0" 
+                       class="validation-item danger">
+                    <i class="fas fa-times-circle"></i>
+                    {{ capture.item_validation.missing_items.length }} missing
+                  </div>
+                  <div v-if="capture.item_validation.fuzzy_matches && capture.item_validation.fuzzy_matches.length > 0" 
+                       class="validation-item warning">
+                    <i class="fas fa-question-circle"></i>
+                    {{ capture.item_validation.fuzzy_matches.length }} fuzzy
+                  </div>
+                </div>
+                <span v-else class="text-muted">-</span>
+              </td>
               
               <td class="confidence-score">
                 <div v-if="capture.confidence_score" class="confidence-display">
@@ -252,6 +280,26 @@
                 <span v-else class="text-muted">-</span>
               </td>
               
+              <td class="processing-info">
+                <div class="processing-details">
+                  <div v-if="isPageBasedProcessing(capture)" class="processing-method page-based">
+                    <i class="fas fa-file-alt" title="Processed page by page"></i>
+                    {{ getTotalPages(capture) }} pages
+                  </div>
+                  <div v-else-if="isChunkedProcessing(capture)" class="processing-method chunked">
+                    <i class="fas fa-layer-group" title="Processed with chunking"></i>
+                    Chunked
+                  </div>
+                  <div v-else class="processing-method single">
+                    <i class="fas fa-file-alt" title="Single request processing"></i>
+                    Standard
+                  </div>
+                  <div v-if="capture.extracted_data && capture.extracted_data.processing_notes" class="processing-notes">
+                    {{ getProcessingNotesSummary(capture.extracted_data.processing_notes) }}
+                  </div>
+                </div>
+              </td>
+              
               <td class="created-date">
                 <div class="date-display">
                   <div class="date-main">{{ formatDate(capture.created_at) }}</div>
@@ -267,6 +315,17 @@
                     title="View Details"
                   >
                     <i class="fas fa-eye"></i>
+                  </button>
+
+                  <!-- Create SO Button -->
+                  <button 
+                    v-if="capture.status === 'data_extracted' && !capture.created_so_id && canCreateSalesOrder(capture)"
+                    @click="createSalesOrder(capture.id)"
+                    class="btn-icon btn-success"
+                    title="Create Sales Order"
+                    :disabled="createSoLoading[capture.id]"
+                  >
+                    <i class="fas fa-plus" :class="{ 'fa-spin': createSoLoading[capture.id] }"></i>
                   </button>
                   
                   <button 
@@ -371,6 +430,7 @@
               <p>or <button @click="$refs.fileInput.click()" class="link-btn">browse files</button></p>
               <div class="upload-info">
                 <small>Supported: PDF files up to 10MB</small>
+                <small>Large files will be automatically processed page-by-page for better accuracy</small>
               </div>
             </div>
             
@@ -379,11 +439,25 @@
                 <i class="fas fa-file-pdf text-danger"></i>
                 <div class="file-details">
                   <div class="file-name">{{ selectedFile.name }}</div>
-                  <div class="file-size">{{ formatFileSize(selectedFile.size) }}</div>
+                  <div class="file-size">
+                    {{ formatFileSize(selectedFile.size) }}
+                    <span v-if="willUseChunking(selectedFile.size)" class="chunking-indicator">
+                      <i class="fas fa-file-alt"></i>
+                      Will use page-based processing
+                    </span>
+                  </div>
                 </div>
                 <button @click="clearSelectedFile" class="remove-btn">
                   <i class="fas fa-times"></i>
                 </button>
+              </div>
+              
+              <!-- Processing Time Estimate -->
+              <div v-if="willUseChunking(selectedFile.size)" class="processing-estimate">
+                <div class="estimate-info">
+                  <i class="fas fa-info-circle"></i>
+                  <span>Large file detected. Will be processed page-by-page for optimal accuracy.</span>
+                </div>
               </div>
             </div>
           </div>
@@ -391,13 +465,6 @@
           <!-- Processing Options -->
           <div class="processing-options">
             <h4>Processing Options</h4>
-            
-            <div class="option-group">
-              <label class="checkbox-label">
-                <input type="checkbox" v-model="uploadOptions.auto_create_missing_data">
-                <span>Auto-create missing customers and items</span>
-              </label>
-            </div>
             
             <div class="option-row">
               <div class="option-field">
@@ -420,12 +487,16 @@
                 </select>
               </div>
             </div>
-            
-            <div class="option-group">
-              <label class="checkbox-label">
-                <input type="checkbox" v-model="uploadOptions.processing_options.auto_approve">
-                <span>Auto-approve if confidence is high enough</span>
-              </label>
+
+            <!-- Page-based Processing Options for Large Files -->
+            <div v-if="selectedFile && willUseChunking(selectedFile.size)" class="chunking-options">
+              <h5>
+                <i class="fas fa-file-alt"></i>
+                Page-based Processing Settings
+              </h5>
+              <div class="chunking-info">
+                <p>This file will be processed page-by-page to ensure accurate extraction. Each page is analyzed separately and results are intelligently merged.</p>
+              </div>
             </div>
           </div>
         </div>
@@ -434,13 +505,9 @@
           <button @click="closeUploadModal" class="btn btn-secondary">
             Cancel
           </button>
-          <button @click="previewExtraction" class="btn btn-outline" :disabled="!selectedFile || isUploading">
-            <i class="fas fa-eye"></i>
-            Preview
-          </button>
-          <button @click="uploadAndProcess" class="btn btn-primary" :disabled="!selectedFile || isUploading">
+          <button @click="uploadAndExtract" class="btn btn-primary" :disabled="!selectedFile || isUploading">
             <i class="fas fa-upload" :class="{ 'fa-spin': isUploading }"></i>
-            {{ isUploading ? 'Processing...' : 'Upload & Process' }}
+            {{ isUploading ? getProcessingText() : 'Upload & Extract Data' }}
           </button>
         </div>
       </div>
@@ -450,7 +517,10 @@
     <div v-if="showDetailsModal" class="modal-overlay" @click="closeDetailsModal">
       <div class="modal-content modal-large" @click.stop>
         <div class="modal-header">
-          <h3>Capture Details</h3>
+          <h3>
+            <i class="fas fa-file-pdf"></i>
+            Capture Details & Preview
+          </h3>
           <button @click="closeDetailsModal" class="close-btn">
             <i class="fas fa-times"></i>
           </button>
@@ -458,6 +528,51 @@
         
         <div class="modal-body">
           <div v-if="selectedCapture" class="details-content">
+            
+            <!-- PREVIEW SUMMARY (NEW SECTION) -->
+            <div class="details-section" v-if="selectedCapture.status === 'data_extracted'">
+              <h4>📋 Extraction Preview</h4>
+              
+              <!-- Overall Status -->
+              <div class="preview-status">
+                <div v-if="canCreateSalesOrder(selectedCapture)" class="status-card success">
+                  <div class="status-icon">✅</div>
+                  <div class="status-content">
+                    <h5>Ready to Create Sales Order</h5>
+                    <p>All items found in database. No issues detected.</p>
+                  </div>
+                </div>
+                
+                <div v-else class="status-card warning">
+                  <div class="status-icon">⚠️</div>
+                  <div class="status-content">
+                    <h5>Action Required</h5>
+                    <p>Some items are missing from database. Please review below.</p>
+                  </div>
+                </div>
+              </div>
+              
+              <!-- Quick Stats -->
+              <div class="preview-stats">
+                <div class="stat-item">
+                  <span class="stat-label">Customer:</span>
+                  <span class="stat-value">{{ selectedCapture.extracted_customer?.name || 'Not detected' }}</span>
+                </div>
+                <div class="stat-item">
+                  <span class="stat-label">Total Items:</span>
+                  <span class="stat-value">{{ selectedCapture.extracted_items?.length || 0 }}</span>
+                </div>
+                <div class="stat-item" v-if="selectedCapture.item_validation">
+                  <span class="stat-label">Found in DB:</span>
+                  <span class="stat-value success">{{ selectedCapture.item_validation.existing_items?.length || 0 }}</span>
+                </div>
+                <div class="stat-item" v-if="selectedCapture.item_validation && selectedCapture.item_validation.missing_items?.length > 0">
+                  <span class="stat-label">Missing:</span>
+                  <span class="stat-value danger">{{ selectedCapture.item_validation.missing_items?.length || 0 }}</span>
+                </div>
+              </div>
+            </div>
+            
             <!-- Basic Info -->
             <div class="details-section">
               <h4>File Information</h4>
@@ -479,6 +594,124 @@
                 <div class="info-item">
                   <label>Confidence Score</label>
                   <span>{{ selectedCapture.confidence_score || 'N/A' }}%</span>
+                </div>
+                <div v-if="isPageBasedProcessing(selectedCapture)" class="info-item">
+                  <label>Processing Method</label>
+                  <span class="processing-method page-based">
+                    <i class="fas fa-file-alt"></i>
+                    Page-based Processing ({{ getTotalPages(selectedCapture) }} pages)
+                  </span>
+                </div>
+                <div v-else-if="isChunkedProcessing(selectedCapture)" class="info-item">
+                  <label>Processing Method</label>
+                  <span class="processing-method chunked">
+                    <i class="fas fa-layer-group"></i>
+                    Chunked Processing
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Item Validation Section -->
+            <div v-if="selectedCapture.item_validation" class="details-section">
+              <h4>Item Validation Results</h4>
+              
+              <!-- Missing Items -->
+              <div v-if="selectedCapture.item_validation.missing_items && selectedCapture.item_validation.missing_items.length > 0" 
+                   class="validation-section missing-items">
+                <h5 class="validation-title danger">
+                  <i class="fas fa-times-circle"></i>
+                  Missing Items ({{ selectedCapture.item_validation.missing_items.length }})
+                </h5>
+                <div class="missing-items-list">
+                  <div v-for="(item, index) in selectedCapture.item_validation.missing_items" 
+                       :key="index" 
+                       class="missing-item-card">
+                    <div class="item-header">
+                      <span class="item-code">{{ item.item_code || 'No Code' }}</span>
+                      <span class="item-name">{{ item.item_name || 'No Name' }}</span>
+                      <span v-if="item.source_page" class="page-info">
+                        <i class="fas fa-file-alt"></i>
+                        Page {{ item.source_page }}
+                      </span>
+                    </div>
+                    <div class="item-details">
+                      <span v-if="item.description">{{ item.description }}</span>
+                      <span v-if="item.quantity">Qty: {{ item.quantity }}</span>
+                      <span v-if="item.unit_price">Price: ${{ item.unit_price }}</span>
+                    </div>
+                  </div>
+                </div>
+                <div class="validation-warning">
+                  <i class="fas fa-exclamation-triangle"></i>
+                  These items must be created in the system before a sales order can be generated.
+                </div>
+              </div>
+
+              <!-- Existing Items -->
+              <div v-if="selectedCapture.item_validation.existing_items && selectedCapture.item_validation.existing_items.length > 0" 
+                   class="validation-section existing-items">
+                <h5 class="validation-title success">
+                  <i class="fas fa-check-circle"></i>
+                  Found Items ({{ selectedCapture.item_validation.existing_items.length }})
+                </h5>
+                <div class="existing-items-list">
+                  <div v-for="(item, index) in selectedCapture.item_validation.existing_items" 
+                       :key="index" 
+                       class="existing-item-card">
+                    <div class="item-header">
+                      <span class="item-code">{{ item.matched_item.item_code }}</span>
+                      <span class="item-name">{{ item.matched_item.name }}</span>
+                    </div>
+                    <div class="item-match-info">
+                      <span class="extracted-data">Extracted: {{ item.extracted_data.name }}</span>
+                      <span class="match-indicator">✓ Matched</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Fuzzy Matches -->
+              <div v-if="selectedCapture.item_validation.fuzzy_matches && selectedCapture.item_validation.fuzzy_matches.length > 0" 
+                   class="validation-section fuzzy-matches">
+                <h5 class="validation-title warning">
+                  <i class="fas fa-question-circle"></i>
+                  Fuzzy Matches ({{ selectedCapture.item_validation.fuzzy_matches.length }})
+                </h5>
+                <div class="fuzzy-matches-list">
+                  <div v-for="(match, index) in selectedCapture.item_validation.fuzzy_matches" 
+                       :key="index" 
+                       class="fuzzy-match-card">
+                    <div class="match-header">
+                      <span class="extracted-name">{{ match.extracted_name }}</span>
+                      <span class="similarity-score">{{ Math.round(match.similarity_score) }}% match</span>
+                    </div>
+                    <div class="matched-item">
+                      <span class="matched-code">{{ match.matched_item.item_code }}</span>
+                      <span class="matched-name">{{ match.matched_item.name }}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Processing Information -->
+            <div v-if="selectedCapture.extracted_data && selectedCapture.extracted_data.processing_notes" class="details-section">
+              <h4>Processing Information</h4>
+              <div class="processing-details-full">
+                <div class="processing-note">
+                  <strong>Method:</strong> 
+                  {{ isPageBasedProcessing(selectedCapture) ? 'Page-based Processing' : 
+                      isChunkedProcessing(selectedCapture) ? 'Chunked Processing' : 'Standard Processing' }}
+                </div>
+                <div class="processing-note">
+                  <strong>Details:</strong> {{ selectedCapture.extracted_data.processing_notes }}
+                </div>
+                <div v-if="selectedCapture.extracted_data.table_structure_notes" class="processing-note">
+                  <strong>Table Structure:</strong> {{ selectedCapture.extracted_data.table_structure_notes }}
+                </div>
+                <div v-if="selectedCapture.extracted_data.number_format_notes" class="processing-note">
+                  <strong>Number Format:</strong> {{ selectedCapture.extracted_data.number_format_notes }}
                 </div>
               </div>
             </div>
@@ -518,11 +751,22 @@
                     <div class="item-header">
                       <span class="item-name">{{ item.name }}</span>
                       <span class="item-qty">Qty: {{ item.quantity }}</span>
+                      <span v-if="item.source_page" class="page-info">
+                        <i class="fas fa-file-alt"></i>
+                        Page {{ item.source_page }}
+                      </span>
+                      <span v-else-if="item.source_chunk" class="chunk-info">
+                        <i class="fas fa-layer-group"></i>
+                        Chunk {{ item.source_chunk }}
+                      </span>
                     </div>
                     <div class="item-details">
                       <span v-if="item.unit_price">Price: ${{ item.unit_price }}</span>
                       <span v-if="item.uom">UOM: {{ item.uom }}</span>
                       <span v-if="item.description">{{ item.description }}</span>
+                    </div>
+                    <div v-if="item.validation_check" class="validation-info">
+                      <small>Validation: {{ item.validation_check }}</small>
                     </div>
                   </div>
                 </div>
@@ -541,9 +785,13 @@
         </div>
         
         <div class="modal-footer">
+          <!-- Always show Close button -->
           <button @click="closeDetailsModal" class="btn btn-secondary">
+            <i class="fas fa-times"></i>
             Close
           </button>
+          
+          <!-- Download PDF button -->
           <button 
             v-if="selectedCapture && selectedCapture.file_path"
             @click="downloadFile(selectedCapture.id)"
@@ -552,13 +800,69 @@
             <i class="fas fa-download"></i>
             Download PDF
           </button>
+          
+          <!-- Create Sales Order button (PRIMARY ACTION) -->
+          <button 
+            v-if="selectedCapture && selectedCapture.status === 'data_extracted' && !selectedCapture.created_so_id && canCreateSalesOrder(selectedCapture)"
+            @click="createSalesOrder(selectedCapture.id)"
+            class="btn btn-success btn-lg"
+            :disabled="createSoLoading[selectedCapture.id]"
+          >
+            <i class="fas fa-plus" :class="{ 'fa-spin': createSoLoading[selectedCapture.id] }"></i>
+            {{ createSoLoading[selectedCapture.id] ? 'Creating Sales Order...' : 'Create Sales Order' }}
+          </button>
+          
+          <!-- Warning message if cannot create SO -->
+          <div 
+            v-else-if="selectedCapture && selectedCapture.status === 'data_extracted' && !selectedCapture.created_so_id && !canCreateSalesOrder(selectedCapture)"
+            class="cannot-create-warning"
+          >
+            <i class="fas fa-exclamation-triangle"></i>
+            <span>Sales Order cannot be created: 
+              <strong v-if="selectedCapture.item_validation?.missing_items?.length > 0">
+                {{ selectedCapture.item_validation.missing_items.length }} items missing from database
+              </strong>
+              <strong v-else>Items validation required</strong>
+            </span>
+          </div>
+          
+          <!-- Already has Sales Order -->
+          <div 
+            v-else-if="selectedCapture && selectedCapture.created_so_id"
+            class="has-so-info"
+          >
+            <i class="fas fa-check-circle text-success"></i>
+            <span>Sales Order already created</span>
+            <router-link 
+              v-if="selectedCapture.sales_order"
+              :to="`/sales/orders/${selectedCapture.sales_order.so_id}`"
+              class="btn btn-primary btn-sm"
+            >
+              <i class="fas fa-external-link-alt"></i>
+              View SO #{{ selectedCapture.sales_order.so_number }}
+            </router-link>
+          </div>
+          
+          <!-- Retry button for failed captures -->
           <button 
             v-if="selectedCapture && selectedCapture.status === 'failed'"
             @click="retryCapture(selectedCapture.id)"
             class="btn btn-warning"
+            :disabled="retryLoading[selectedCapture.id]"
           >
-            <i class="fas fa-redo"></i>
+            <i class="fas fa-redo" :class="{ 'fa-spin': retryLoading[selectedCapture.id] }"></i>
             Retry Processing
+          </button>
+          
+          <!-- Reprocess with validation button -->
+          <button 
+            v-if="selectedCapture && ['data_extracted', 'failed'].includes(selectedCapture.status)"
+            @click="reprocessWithValidation(selectedCapture.id)"
+            class="btn btn-info"
+            :disabled="retryLoading[selectedCapture.id]"
+          >
+            <i class="fas fa-file-alt" :class="{ 'fa-spin': retryLoading[selectedCapture.id] }"></i>
+            Reprocess with Validation
           </button>
         </div>
       </div>
@@ -579,6 +883,7 @@ export default {
       bulkLoading: false,
       retryLoading: {},
       deleteLoading: {},
+      createSoLoading: {},
       
       // Data
       captures: [],
@@ -613,14 +918,17 @@ export default {
       selectedFile: null,
       isDragOver: false,
       uploadOptions: {
-        auto_create_missing_data: true,
         preferred_currency: 'USD',
         processing_options: {
           confidence_threshold: 80,
           auto_approve: false,
           use_ocr: true
         }
-      }
+      },
+      
+      // Chunking constants
+      CHUNKING_THRESHOLD: 5 * 1024 * 1024, // 5MB
+      LARGE_FILE_THRESHOLD: 2 * 1024 * 1024 // 2MB
     }
   },
   
@@ -754,39 +1062,14 @@ export default {
       }
     },
     
-    async previewExtraction() {
+    // FIXED: Upload and Extract (auto-open preview modal)
+    async uploadAndExtract() {
       if (!this.selectedFile) return
       
       this.isUploading = true
       try {
         const formData = new FormData()
         formData.append('pdf_file', this.selectedFile)
-        
-        const response = await axios.post('/pdf-order-capture/preview', formData, {
-          headers: { 'Content-Type': 'multipart/form-data' }
-        })
-        
-        // Show preview in a modal or separate component
-        console.log('Preview data:', response.data.data)
-        this.$toast?.success('Preview generated successfully')
-        // You can implement a preview modal here
-        
-      } catch (error) {
-        console.error('Preview failed:', error)
-        this.$toast?.error(error.response?.data?.message || 'Preview failed')
-      } finally {
-        this.isUploading = false
-      }
-    },
-    
-    async uploadAndProcess() {
-      if (!this.selectedFile) return
-      
-      this.isUploading = true
-      try {
-        const formData = new FormData()
-        formData.append('pdf_file', this.selectedFile)
-        formData.append('auto_create_missing_data', this.uploadOptions.auto_create_missing_data ? '1' : '0')
         formData.append('preferred_currency', this.uploadOptions.preferred_currency)
         formData.append('processing_options', JSON.stringify(this.uploadOptions.processing_options))
         
@@ -794,14 +1077,29 @@ export default {
           headers: { 'Content-Type': 'multipart/form-data' }
         })
         
-        this.$toast?.success('PDF uploaded and processing started')
+        this.$toast?.success('PDF uploaded and data extracted successfully')
         this.closeUploadModal()
         await this.loadData()
         
-        // Navigate to sales order if created
-        if (response.data.data.sales_order) {
-          this.$router.push(`/sales/orders/${response.data.data.sales_order.so_id}`)
+        // Get the extracted data directly from response (no need for additional API call)
+        const captureData = response.data.data.pdf_capture
+        const itemValidation = response.data.data.item_validation
+        
+        // Show appropriate message based on validation results
+        if (itemValidation && itemValidation.missing_items && itemValidation.missing_items.length > 0) {
+          this.$toast?.warning(`${itemValidation.missing_items.length} items not found in database. Please review the details.`)
+        } else {
+          this.$toast?.info('All items found! You can now create a sales order.')
         }
+        
+        // Set the capture data directly and show modal (no API call needed)
+        this.selectedCapture = {
+          ...captureData,
+          item_validation: itemValidation,
+          extracted_customer: captureData.extracted_data?.customer || null,
+          extracted_items: captureData.extracted_data?.items || []
+        }
+        this.showDetailsModal = true
         
       } catch (error) {
         console.error('Upload failed:', error)
@@ -809,6 +1107,88 @@ export default {
       } finally {
         this.isUploading = false
       }
+    },
+    
+    // FIXED: Create Sales Order (separate function)
+    async createSalesOrder(captureId) {
+      // Confirm action
+      const capture = this.captures.find(c => c.id === captureId) || this.selectedCapture
+      if (!capture) {
+        this.$toast?.error('Capture not found')
+        return
+      }
+      
+      // Double-check if can create
+      if (!this.canCreateSalesOrder(capture)) {
+        let reason = 'Unknown reason'
+        if (capture.status !== 'data_extracted') {
+          reason = 'Data must be extracted first'
+        } else if (capture.created_so_id) {
+          reason = 'Sales order already exists'
+        } else if (capture.item_validation?.missing_items?.length > 0) {
+          reason = `${capture.item_validation.missing_items.length} items missing from database`
+        }
+        
+        this.$toast?.error(`Cannot create sales order: ${reason}`)
+        return
+      }
+      
+      const confirmed = confirm(`Create sales order from this PDF?\n\nCustomer: ${capture.extracted_customer?.name || 'Unknown'}\nItems: ${capture.extracted_items?.length || 0}`)
+      if (!confirmed) return
+      
+      this.$set(this.createSoLoading, captureId, true)
+      try {
+        const response = await axios.post(`/pdf-order-capture/${captureId}/create-sales-order`)
+        
+        this.$toast?.success('Sales order created successfully!')
+        await this.loadData()
+        
+        // Navigate to sales order if created
+        if (response.data.data.sales_order) {
+          const soId = response.data.data.sales_order.so_id
+          this.$toast?.info(`Redirecting to Sales Order #${response.data.data.sales_order.so_number}...`)
+          
+          // Close modal if open
+          if (this.showDetailsModal) {
+            this.closeDetailsModal()
+          }
+          
+          // Redirect after short delay
+          setTimeout(() => {
+            this.$router.push(`/sales/orders/${soId}`)
+          }, 1500)
+        }
+        
+      } catch (error) {
+        console.error('Create sales order failed:', error)
+        const errorMessage = error.response?.data?.message || 'Failed to create sales order'
+        this.$toast?.error(errorMessage)
+        
+        // Show specific error details if available
+        if (error.response?.data?.data?.missing_items) {
+          const missingItems = error.response.data.data.missing_items
+          const itemNames = missingItems.map(i => i.item_code || i.item_name).slice(0, 3).join(', ')
+          const extraCount = missingItems.length > 3 ? ` and ${missingItems.length - 3} more` : ''
+          this.$toast?.warning(`Missing items: ${itemNames}${extraCount}`)
+        }
+      } finally {
+        this.$set(this.createSoLoading, captureId, false)
+      }
+    },
+
+    // FIXED: Check if sales order can be created
+    canCreateSalesOrder(capture) {
+      // Must be in data_extracted status
+      if (capture.status !== 'data_extracted') return false
+      
+      // Must not already have a sales order created
+      if (capture.created_so_id || capture.sales_order) return false
+      
+      // Check item validation - no missing items allowed
+      if (!capture.item_validation) return false
+      
+      const missingItems = capture.item_validation.missing_items || []
+      return missingItems.length === 0
     },
     
     // Action Functions
@@ -821,6 +1201,33 @@ export default {
       } catch (error) {
         console.error('Retry failed:', error)
         this.$toast?.error(error.response?.data?.message || 'Retry failed')
+      } finally {
+        this.$set(this.retryLoading, captureId, false)
+      }
+    },
+
+    async reprocessWithValidation(captureId) {
+      this.$set(this.retryLoading, captureId, true)
+      try {
+        const response = await axios.post(`/pdf-order-capture/${captureId}/reprocess-with-validation`)
+        this.$toast?.success('Reprocessing completed with enhanced validation')
+        await this.loadData()
+        
+        // Show success info about page-based processing if used
+        if (response.data.data.page_chunking_used) {
+          this.$toast?.info('Large file was processed page-by-page for better accuracy')
+        }
+        
+        // Close modal and show new details
+        if (this.showDetailsModal) {
+          this.closeDetailsModal()
+          setTimeout(() => {
+            this.viewDetails(response.data.data.pdf_capture)
+          }, 500)
+        }
+      } catch (error) {
+        console.error('Reprocess failed:', error)
+        this.$toast?.error(error.response?.data?.message || 'Reprocess failed')
       } finally {
         this.$set(this.retryLoading, captureId, false)
       }
@@ -863,11 +1270,31 @@ export default {
       }
     },
     
+    // FIXED: View Details method
     async viewDetails(capture) {
       try {
-        const response = await axios.get(`/pdf-order-capture/${capture.id}`)
-        this.selectedCapture = response.data.data
+        // If capture is already a full object with data, use it directly
+        if (capture && capture.extracted_data && capture.item_validation) {
+          this.selectedCapture = {
+            ...capture,
+            extracted_customer: capture.extracted_data?.customer || null,
+            extracted_items: capture.extracted_data?.items || []
+          }
+          this.showDetailsModal = true
+          return
+        }
+        
+        // Otherwise, fetch from API (for existing captures from table)
+        const captureId = capture.id || capture
+        const response = await axios.get(`/pdf-order-capture/${captureId}`)
+        
+        this.selectedCapture = {
+          ...response.data.data,
+          extracted_customer: response.data.data.extracted_data?.customer || null,
+          extracted_items: response.data.data.extracted_data?.items || []
+        }
         this.showDetailsModal = true
+        
       } catch (error) {
         console.error('Failed to load details:', error)
         this.$toast?.error('Failed to load capture details')
@@ -933,6 +1360,90 @@ export default {
       this.selectedCapture = null
     },
     
+    // Chunking-related helper functions
+    isLargeFile(fileSize) {
+      return fileSize > this.LARGE_FILE_THRESHOLD
+    },
+    
+    willUseChunking(fileSize) {
+      return fileSize > this.CHUNKING_THRESHOLD
+    },
+    
+    isPageBasedProcessing(capture) {
+      if (!capture.extracted_data) return false
+      
+      const processingNotes = capture.extracted_data.processing_notes || ''
+      const tableNotes = capture.extracted_data.table_structure_notes || ''
+      
+      return processingNotes.includes('pages') || 
+             tableNotes.includes('pages') ||
+             (capture.extracted_data.items && 
+              capture.extracted_data.items.some(item => item.source_page))
+    },
+    
+    isChunkedProcessing(capture) {
+      if (this.isPageBasedProcessing(capture)) return false // Page-based takes precedence
+      
+      if (!capture.extracted_data) return false
+      
+      const processingNotes = capture.extracted_data.processing_notes || ''
+      const tableNotes = capture.extracted_data.table_structure_notes || ''
+      
+      return processingNotes.includes('chunks') || 
+             tableNotes.includes('chunks') ||
+             (capture.extracted_data.items && 
+              capture.extracted_data.items.some(item => item.source_chunk))
+    },
+    
+    getTotalPages(capture) {
+      if (!capture.extracted_data || !capture.extracted_data.processing_notes) return '?'
+      
+      const pageMatch = capture.extracted_data.processing_notes.match(/(\d+)\s+pages?/)
+      if (pageMatch) {
+        return pageMatch[1]
+      }
+      
+      // Count unique source pages from items
+      if (capture.extracted_data.items) {
+        const pages = new Set()
+        capture.extracted_data.items.forEach(item => {
+          if (item.source_page) {
+            pages.add(item.source_page)
+          }
+        })
+        return pages.size > 0 ? pages.size : '?'
+      }
+      
+      return '?'
+    },
+    
+    getProcessingNotesSummary(notes) {
+      if (!notes) return ''
+      
+      // Extract key information from processing notes
+      const pageMatch = notes.match(/(\d+)\s+pages?/)
+      if (pageMatch) {
+        return `${pageMatch[1]} pages`
+      }
+      
+      const chunkMatch = notes.match(/(\d+)\s+chunks?/)
+      if (chunkMatch) {
+        return `${chunkMatch[1]} chunks`
+      }
+      
+      return notes.length > 30 ? notes.substring(0, 27) + '...' : notes
+    },
+    
+    getProcessingText() {
+      if (!this.selectedFile) return 'Processing...'
+      
+      if (this.willUseChunking(this.selectedFile.size)) {
+        return 'Extracting from pages...'
+      }
+      
+      return 'Extracting data...'
+    },
+    
     // Helper Functions
     getStatusClass(status) {
       const statusClasses = {
@@ -942,6 +1453,7 @@ export default {
         validating: 'status-info',
         creating_order: 'status-warning',
         completed: 'status-success',
+        so_created: 'status-success',
         failed: 'status-danger',
         cancelled: 'status-secondary'
       }
@@ -956,6 +1468,7 @@ export default {
         validating: 'Validating',
         creating_order: 'Creating Order',
         completed: 'Completed',
+        so_created: 'Completed',
         failed: 'Failed',
         cancelled: 'Cancelled'
       }
@@ -1265,6 +1778,28 @@ export default {
   color: var(--text-muted);
 }
 
+/* Item Validation Styles */
+.item-validation {
+  min-width: 120px;
+}
+
+.validation-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.validation-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.8rem;
+}
+
+.validation-item.success { color: #059669; }
+.validation-item.danger { color: #dc2626; }
+.validation-item.warning { color: #d97706; }
+
 .confidence-display {
   display: flex;
   align-items: center;
@@ -1352,10 +1887,12 @@ export default {
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
 }
 
+.btn-icon.btn-success { border-color: #10b981; color: #10b981; }
 .btn-icon.btn-warning { border-color: #f59e0b; color: #f59e0b; }
 .btn-icon.btn-secondary { border-color: var(--gray-400); color: var(--gray-600); }
 .btn-icon.btn-danger { border-color: #ef4444; color: #ef4444; }
 
+.btn-icon.btn-success:hover { background: #d1fae5; }
 .btn-icon.btn-warning:hover { background: #fef3c7; }
 .btn-icon.btn-secondary:hover { background: var(--gray-100); }
 .btn-icon.btn-danger:hover { background: #fee2e2; }
@@ -1464,6 +2001,16 @@ export default {
   color: var(--primary-color);
 }
 
+.btn-success {
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  color: white;
+}
+
+.btn-success:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 25px rgba(16, 185, 129, 0.3);
+}
+
 .btn-warning {
   background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
   color: white;
@@ -1484,9 +2031,25 @@ export default {
   box-shadow: 0 8px 25px rgba(239, 68, 68, 0.3);
 }
 
+.btn-info {
+  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+  color: white;
+}
+
+.btn-info:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 25px rgba(59, 130, 246, 0.3);
+}
+
 .btn-sm {
   padding: 0.5rem 1rem;
   font-size: 0.8rem;
+}
+
+.btn-lg {
+  padding: 0.875rem 2rem;
+  font-size: 1rem;
+  font-weight: 600;
 }
 
 /* Modals */
@@ -1513,10 +2076,11 @@ export default {
   overflow: hidden;
   display: flex;
   flex-direction: column;
+  background: #ffffff
 }
 
 .modal-large {
-  max-width: 800px;
+  max-width: 900px;
 }
 
 .modal-header {
@@ -1530,6 +2094,9 @@ export default {
 .modal-header h3 {
   margin: 0;
   color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
 }
 
 .close-btn {
@@ -1560,9 +2127,11 @@ export default {
 .modal-footer {
   display: flex;
   justify-content: flex-end;
+  align-items: center;
   gap: 1rem;
   padding: 1.5rem;
   border-top: 1px solid var(--border-color);
+  flex-wrap: wrap;
 }
 
 /* Upload Area */
@@ -1662,10 +2231,6 @@ export default {
   color: var(--text-primary);
 }
 
-.option-group {
-  margin-bottom: 1rem;
-}
-
 .option-row {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -1693,17 +2258,110 @@ export default {
   color: var(--text-primary);
 }
 
-.checkbox-label {
+/* NEW: Preview Section Styles */
+.preview-status {
+  margin-bottom: 1.5rem;
+}
+
+.status-card {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
-  cursor: pointer;
+  gap: 1rem;
+  padding: 1rem;
+  border-radius: 8px;
+  border: 1px solid;
+}
+
+.status-card.success {
+  background: #ecfdf5; /* Solid green background instead of transparent */
+  border-color: #10b981;
+  color: #065f46;
+}
+
+.status-card.warning {
+  background: #fffbeb; /* Solid yellow background instead of transparent */
+  border-color: #f59e0b;
+  color: #92400e;
+}
+
+.status-icon {
+  font-size: 2rem;
+}
+
+.status-content h5 {
+  margin: 0 0 0.25rem 0;
+  font-weight: 600;
+}
+
+.status-content p {
+  margin: 0;
+  font-size: 0.9rem;
+}
+
+.preview-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1rem;
+  padding: 1rem;
+  background: var(--bg-secondary);
+  border-radius: 8px;
+}
+
+.stat-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.stat-label {
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+.stat-value {
+  font-weight: 600;
   color: var(--text-primary);
 }
 
-.checkbox-label input[type="checkbox"] {
-  width: 18px;
-  height: 18px;
+.stat-value.success {
+  color: #059669;
+}
+
+.stat-value.danger {
+  color: #dc2626;
+}
+
+/* Also update the cannot-create-warning and has-so-info styles for consistency */
+.cannot-create-warning {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: #fffbeb; /* Solid yellow background */
+  color: #92400e;
+  padding: 0.75rem 1rem;
+  border-radius: 6px;
+  border: 1px solid #f59e0b;
+  font-size: 0.9rem;
+  flex: 1;
+  min-width: 300px;
+}
+
+.has-so-info {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  background: #ecfdf5; /* Solid green background */
+  color: #065f46;
+  padding: 0.75rem 1rem;
+  border-radius: 6px;
+  border: 1px solid #10b981;
+  font-size: 0.9rem;
+  flex: 1;
+  min-width: 300px;
+}
+
+.text-success {
+  color: #059669;
 }
 
 /* Details Modal */
@@ -1760,6 +2418,148 @@ export default {
   font-weight: 500;
 }
 
+/* Validation Section Styles */
+.validation-section {
+  margin-bottom: 1.5rem;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.validation-title {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 1rem;
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.validation-title.success {
+  background: #d1fae5;
+  color: #065f46;
+  border-bottom: 1px solid #10b981;
+}
+
+.validation-title.danger {
+  background: #fee2e2;
+  color: #991b1b;
+  border-bottom: 1px solid #ef4444;
+}
+
+.validation-title.warning {
+  background: #fef3c7;
+  color: #92400e;
+  border-bottom: 1px solid #f59e0b;
+}
+
+.missing-items-list, .existing-items-list, .fuzzy-matches-list {
+  padding: 1rem;
+}
+
+.missing-item-card, .existing-item-card, .fuzzy-match-card {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  padding: 1rem;
+  margin-bottom: 0.5rem;
+}
+
+.missing-item-card:last-child, .existing-item-card:last-child, .fuzzy-match-card:last-child {
+  margin-bottom: 0;
+}
+
+.item-header, .match-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.5rem;
+}
+
+.item-code {
+  font-weight: 600;
+  color: var(--text-primary);
+  background: var(--card-bg);
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+  font-size: 0.8rem;
+}
+
+.item-name {
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.page-info, .chunk-info {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  background: var(--card-bg);
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+}
+
+.item-details {
+  display: flex;
+  gap: 1rem;
+  font-size: 0.9rem;
+  color: var(--text-muted);
+}
+
+.item-match-info {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.8rem;
+}
+
+.extracted-data {
+  color: var(--text-muted);
+}
+
+.match-indicator {
+  color: #059669;
+  font-weight: 500;
+}
+
+.similarity-score {
+  background: #fef3c7;
+  color: #92400e;
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+  font-size: 0.8rem;
+  font-weight: 500;
+}
+
+.matched-item {
+  display: flex;
+  gap: 1rem;
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+}
+
+.matched-code {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.matched-name {
+  color: var(--text-primary);
+}
+
+.validation-warning {
+  background: #fffbeb; /* Solid yellow background */
+  border: 1px solid #f59e0b;
+  border-radius: 6px;
+  padding: 1rem;
+  margin-top: 1rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: #92400e;
+  font-weight: 500;
+}
+
 .extracted-section {
   margin-bottom: 1.5rem;
 }
@@ -1777,18 +2577,6 @@ export default {
   padding: 1rem;
 }
 
-.item-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 0.5rem;
-}
-
-.item-name {
-  font-weight: 500;
-  color: var(--text-primary);
-}
-
 .item-qty {
   font-size: 0.9rem;
   color: var(--text-muted);
@@ -1797,11 +2585,8 @@ export default {
   border-radius: 4px;
 }
 
-.item-details {
-  display: flex;
-  gap: 1rem;
-  font-size: 0.9rem;
-  color: var(--text-muted);
+.validation-info {
+  margin-top: 0.5rem;
 }
 
 .error-message {
@@ -1821,6 +2606,95 @@ export default {
 
 .text-danger {
   color: #ef4444;
+}
+
+/* Processing Methods */
+.processing-method {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.8rem;
+  font-weight: 500;
+}
+
+.processing-method.page-based { color: #3b82f6; }
+.processing-method.chunked { color: #f59e0b; }
+.processing-method.single { color: var(--text-muted); }
+
+.processing-notes {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  margin-top: 0.25rem;
+}
+
+.processing-details-full {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.processing-note {
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+}
+
+.chunking-options {
+  background: #f0f9ff;
+  border: 1px solid #3b82f6;
+  border-radius: 8px;
+  padding: 1rem;
+  margin-top: 1rem;
+}
+
+.chunking-options h5 {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0 0 0.5rem 0;
+  color: #1e40af;
+}
+
+.chunking-info p {
+  margin: 0;
+  color: #1e40af;
+  font-size: 0.9rem;
+}
+
+.processing-estimate {
+  background: #f0f9ff;
+  border: 1px solid #3b82f6;
+  border-radius: 8px;
+  padding: 1rem;
+  margin-top: 1rem;
+}
+
+.estimate-info {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: #1e40af;
+  font-size: 0.9rem;
+}
+
+.chunking-indicator {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.7rem;
+  color: #3b82f6;
+  margin-left: 0.5rem;
+}
+
+.file-size-indicator {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.7rem;
+  margin-left: 0.5rem;
+}
+
+.file-size-indicator.large-file {
+  color: #f59e0b;
 }
 
 /* Responsive */
@@ -1890,6 +2764,16 @@ export default {
   
   .info-grid {
     grid-template-columns: 1fr;
+  }
+  
+  .modal-footer {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  
+  .cannot-create-warning,
+  .has-so-info {
+    min-width: auto;
   }
 }
 </style>

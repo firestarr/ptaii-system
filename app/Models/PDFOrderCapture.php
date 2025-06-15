@@ -20,6 +20,7 @@ class PdfOrderCapture extends Model
         'file_size',
         'ai_raw_response',
         'extracted_data',
+        'item_validation',
         'status',
         'processing_error',
         'created_so_id',
@@ -32,6 +33,7 @@ class PdfOrderCapture extends Model
 
     protected $casts = [
         'extracted_data' => 'array',
+        'item_validation' => 'array',
         'ai_raw_response' => 'array',
         'processing_options' => 'array',
         'confidence_score' => 'float',

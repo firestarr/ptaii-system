@@ -21,12 +21,12 @@ use Illuminate\Support\Facades\Validator;
 class PdfOrderCaptureController extends Controller
 {
     /**
-     * Upload and process PDF to create sales order
+     * Upload and extract PDF data (Preview only - no SO creation)
      */
     public function processPdf(PdfOrderCaptureRequest $request)
     {
         $pdfCapture = null;
-        
+
         try {
             // Decode processing_options if present and is string
             $processingOptions = $request->input('processing_options', []);
@@ -41,39 +41,39 @@ class PdfOrderCaptureController extends Controller
 
             // Store PDF file
             $pdfFile = $request->file('pdf_file');
-            
+
             if (!$pdfFile) {
                 return response()->json([
                     'success' => false,
                     'message' => 'No PDF file uploaded or file is invalid.'
                 ], 422);
             }
-            
+
             \Log::info('Attempting to store uploaded PDF file', [
                 'original_name' => $pdfFile->getClientOriginalName(),
                 'size' => $pdfFile->getSize(),
                 'mime_type' => $pdfFile->getMimeType(),
                 'is_valid' => $pdfFile->isValid()
             ]);
-            
+
             // Ensure directory exists
             $storagePath = storage_path('app/public/order_pdfs');
             if (!file_exists($storagePath)) {
                 mkdir($storagePath, 0777, true);
                 \Log::info('Created directory for PDF storage', ['path' => $storagePath]);
             }
-            
+
             $filename = time() . '_' . $pdfFile->getClientOriginalName();
             $pdfPath = \Storage::disk('public')->putFileAs('order_pdfs', $pdfFile, $filename);
-            
+
             \Log::info('PDF file stored', [
                 'path' => $pdfPath,
                 'exists' => \Storage::disk('public')->exists($pdfPath),
                 'full_path' => storage_path('app/public/' . $pdfPath),
                 'file_exists_physical' => file_exists(storage_path('app/public/' . $pdfPath))
             ]);
-            
-            // Create PDF capture record FIRST (outside transaction for now)
+
+            // Create PDF capture record with "extracted" status (not processing SO yet)
             $pdfCapture = PdfOrderCapture::create([
                 'filename' => $pdfFile->getClientOriginalName(),
                 'file_path' => $pdfPath,
@@ -89,57 +89,40 @@ class PdfOrderCaptureController extends Controller
                 'status' => $pdfCapture->status
             ]);
 
-            // Convert PDF to text using Groq AI with improved number parsing
+            // Convert PDF to text using Groq AI with page-based chunking
             $extractedData = $this->extractDataWithGroqAI($pdfPath);
-            
+
+            // Validate items exist in database
+            $itemValidation = $this->validateItemsExist($extractedData);
+
             // Update capture record with extracted data
             $updated = $pdfCapture->update([
                 'extracted_data' => $extractedData,
                 'ai_raw_response' => $extractedData,
                 'confidence_score' => $extractedData['confidence_score'] ?? null,
-                'status' => 'data_extracted'
+                'status' => 'data_extracted',
+                'item_validation' => $itemValidation
             ]);
 
             Log::info('PDF capture updated with extracted data', [
                 'capture_id' => $pdfCapture->id,
                 'update_success' => $updated,
                 'status' => $pdfCapture->fresh()->status,
-                'confidence_score' => $pdfCapture->fresh()->confidence_score
+                'confidence_score' => $pdfCapture->fresh()->confidence_score,
+                'missing_items_count' => count($itemValidation['missing_items'] ?? [])
             ]);
-
-            // Start transaction for sales order creation
-            DB::beginTransaction();
-
-            // Validate and create sales order
-            $salesOrder = $this->createSalesOrderFromData($extractedData, $pdfCapture);
-            
-            // Update capture record with sales order
-            $finalUpdate = $pdfCapture->update([
-                'created_so_id' => $salesOrder->so_id,
-                'status' => 'so_created',
-                'processed_by' => auth()->id(),
-                'processed_at' => now()
-            ]);
-
-            Log::info('PDF capture marked as completed', [
-                'capture_id' => $pdfCapture->id,
-                'so_id' => $salesOrder->so_id,
-                'final_update_success' => $finalUpdate,
-                'final_status' => $pdfCapture->fresh()->status
-            ]);
-
-            DB::commit();
 
             // Reload the capture to ensure we have latest data
             $pdfCapture->refresh();
 
             return response()->json([
                 'success' => true,
-                'message' => 'PDF processed and sales order created successfully',
+                'message' => 'PDF processed and data extracted successfully',
                 'data' => [
                     'pdf_capture' => $pdfCapture,
-                    'sales_order' => $salesOrder->load('salesOrderLines.item'),
-                    'extracted_data' => $extractedData
+                    'extracted_data' => $extractedData,
+                    'item_validation' => $itemValidation,
+                    'can_create_sales_order' => empty($itemValidation['missing_items'])
                 ]
             ], 201);
 
@@ -152,11 +135,6 @@ class PdfOrderCaptureController extends Controller
                 'capture_id' => $pdfCapture?->id
             ]);
 
-            // Rollback transaction if it was started
-            if (DB::transactionLevel() > 0) {
-                DB::rollBack();
-            }
-            
             if ($pdfCapture) {
                 try {
                     $pdfCapture->update([
@@ -184,14 +162,298 @@ class PdfOrderCaptureController extends Controller
     }
 
     /**
-     * Extract data from PDF using Groq AI with improved number parsing
+     * Create Sales Order from extracted data (separate step)
+     */
+    public function createSalesOrderFromCapture($captureId)
+    {
+        try {
+            $pdfCapture = PdfOrderCapture::findOrFail($captureId);
+            
+            if ($pdfCapture->status !== 'data_extracted') {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'PDF must be in data_extracted status to create sales order'
+                ], 400);
+            }
+
+            if ($pdfCapture->created_so_id) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Sales order already created for this PDF'
+                ], 400);
+            }
+
+            $extractedData = $pdfCapture->extracted_data;
+            $itemValidation = $pdfCapture->item_validation ?? $this->validateItemsExist($extractedData);
+
+            // Check if there are missing items
+            if (!empty($itemValidation['missing_items'])) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Cannot create sales order. Some items are missing from the database.',
+                    'data' => [
+                        'missing_items' => $itemValidation['missing_items'],
+                        'existing_items' => $itemValidation['existing_items']
+                    ]
+                ], 422);
+            }
+
+            // Use DB::transaction for atomicity
+            $salesOrder = DB::transaction(function () use ($extractedData, $pdfCapture) {
+                // Update status to creating
+                $pdfCapture->update(['status' => 'creating_order']);
+
+                // Validate and create sales order
+                $salesOrder = $this->createSalesOrderFromData($extractedData, $pdfCapture);
+
+                // Update capture record with sales order
+                $finalUpdate = $pdfCapture->update([
+                    'created_so_id' => $salesOrder->so_id,
+                    'status' => 'so_created',
+                    'processed_by' => auth()->id(),
+                    'processed_at' => now()
+                ]);
+
+                Log::info('PDF capture marked as completed', [
+                    'capture_id' => $pdfCapture->id,
+                    'so_id' => $salesOrder->so_id,
+                    'final_update_success' => $finalUpdate,
+                    'final_status' => $pdfCapture->fresh()->status
+                ]);
+
+                return $salesOrder;
+            });
+
+            // Reload the capture to ensure we have latest data
+            $pdfCapture->refresh();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Sales order created successfully from PDF data',
+                'data' => [
+                    'pdf_capture' => $pdfCapture,
+                    'sales_order' => $salesOrder->load('salesOrderLines.item'),
+                    'extracted_data' => $extractedData
+                ]
+            ], 201);
+
+        } catch (\Exception $e) {
+            Log::error('Create Sales Order from Capture Error', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+                'capture_id' => $captureId
+            ]);
+
+            // Rollback transaction if it was started
+            if (DB::transactionLevel() > 0) {
+                DB::rollBack();
+            }
+
+            if (isset($pdfCapture)) {
+                try {
+                    $pdfCapture->update([
+                        'status' => 'failed',
+                        'processing_error' => $e->getMessage()
+                    ]);
+                } catch (\Exception $updateError) {
+                    Log::error('Failed to update capture status to failed', [
+                        'capture_id' => $pdfCapture->id,
+                        'update_error' => $updateError->getMessage()
+                    ]);
+                }
+            }
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to create sales order: ' . $e->getMessage(),
+                'capture_id' => $captureId
+            ], 500);
+        }
+    }
+
+    /**
+     * Validate if items exist in database
+     */
+    private function validateItemsExist($extractedData)
+    {
+        $validation = [
+            'missing_items' => [],
+            'existing_items' => [],
+            'fuzzy_matches' => []
+        ];
+
+        if (!isset($extractedData['items']) || !is_array($extractedData['items'])) {
+            return $validation;
+        }
+
+        foreach ($extractedData['items'] as $index => $itemData) {
+            $itemCode = $itemData['item_code'] ?? null;
+            $itemName = $itemData['name'] ?? null;
+
+            $existingItem = null;
+
+            // Try to find by item_code first
+            if ($itemCode) {
+                $existingItem = Item::where('item_code', $itemCode)->first();
+            }
+
+            // Try to find by exact name if item_code not found
+            if (!$existingItem && $itemName) {
+                $existingItem = Item::where('name', $itemName)->first();
+            }
+
+            // Try fuzzy matching for name
+            if (!$existingItem && $itemName) {
+                $existingItem = $this->findItemByFuzzyName($itemName);
+                if ($existingItem) {
+                    $validation['fuzzy_matches'][] = [
+                        'extracted_name' => $itemName,
+                        'matched_item' => [
+                            'item_id' => $existingItem->item_id,
+                            'item_code' => $existingItem->item_code,
+                            'name' => $existingItem->name
+                        ],
+                        'similarity_score' => $this->calculateNameSimilarity($itemName, $existingItem->name)
+                    ];
+                }
+            }
+
+            if ($existingItem) {
+                $validation['existing_items'][] = [
+                    'index' => $index,
+                    'extracted_data' => $itemData,
+                    'matched_item' => [
+                        'item_id' => $existingItem->item_id,
+                        'item_code' => $existingItem->item_code,
+                        'name' => $existingItem->name,
+                        'description' => $existingItem->description,
+                        'sale_price' => $existingItem->sale_price
+                    ]
+                ];
+            } else {
+                $validation['missing_items'][] = [
+                    'index' => $index,
+                    'item_code' => $itemCode,
+                    'item_name' => $itemName,
+                    'description' => $itemData['description'] ?? null,
+                    'quantity' => $itemData['quantity'] ?? null,
+                    'unit_price' => $itemData['unit_price'] ?? null,
+                    'source_page' => $itemData['source_page'] ?? null
+                ];
+            }
+        }
+
+        Log::info('Item validation completed', [
+            'total_items' => count($extractedData['items']),
+            'existing_items' => count($validation['existing_items']),
+            'missing_items' => count($validation['missing_items']),
+            'fuzzy_matches' => count($validation['fuzzy_matches'])
+        ]);
+
+        return $validation;
+    }
+
+    /**
+     * Find item using fuzzy name matching
+     */
+    private function findItemByFuzzyName($extractedName)
+    {
+        // Clean the extracted name for comparison
+        $cleanExtracted = $this->cleanItemName($extractedName);
+        
+        // Get all items and try fuzzy matching
+        $items = Item::all();
+        
+        foreach ($items as $item) {
+            $cleanDbName = $this->cleanItemName($item->name);
+            
+            // Check for exact match after cleaning
+            if ($cleanExtracted === $cleanDbName) {
+                return $item;
+            }
+            
+            // Check if one contains the other (with minimum length)
+            if (strlen($cleanExtracted) >= 5 && strlen($cleanDbName) >= 5) {
+                if (stripos($cleanDbName, $cleanExtracted) !== false || 
+                    stripos($cleanExtracted, $cleanDbName) !== false) {
+                    return $item;
+                }
+            }
+            
+            // Calculate similarity percentage
+            $similarity = $this->calculateNameSimilarity($cleanExtracted, $cleanDbName);
+            
+            if ($similarity >= 85) { // 85% similarity threshold
+                Log::info('Item matched by similarity', [
+                    'extracted' => $extractedName,
+                    'matched' => $item->name,
+                    'similarity' => $similarity
+                ]);
+                return $item;
+            }
+        }
+        
+        return null;
+    }
+
+    /**
+     * Clean item name for comparison
+     */
+    private function cleanItemName($name)
+    {
+        // Convert to uppercase and remove common suffixes/prefixes
+        $cleaned = strtoupper(trim($name));
+        
+        // Remove extra spaces and punctuation
+        $cleaned = preg_replace('/[^\w\s]/', '', $cleaned);
+        $cleaned = preg_replace('/\s+/', ' ', $cleaned);
+        
+        return trim($cleaned);
+    }
+
+    /**
+     * Calculate name similarity percentage
+     */
+    private function calculateNameSimilarity($name1, $name2)
+    {
+        // Use multiple similarity algorithms and take the best score
+        $similarities = [];
+        
+        // Levenshtein distance based similarity
+        $maxLen = max(strlen($name1), strlen($name2));
+        if ($maxLen > 0) {
+            $similarities[] = (1 - levenshtein($name1, $name2) / $maxLen) * 100;
+        }
+        
+        // Similar text percentage
+        $percent = 0;
+        similar_text($name1, $name2, $percent);
+        $similarities[] = $percent;
+        
+        // Word-based similarity (check how many words are common)
+        $words1 = explode(' ', $name1);
+        $words2 = explode(' ', $name2);
+        
+        $commonWords = array_intersect($words1, $words2);
+        $totalWords = count(array_unique(array_merge($words1, $words2)));
+        
+        if ($totalWords > 0) {
+            $similarities[] = (count($commonWords) / $totalWords) * 100;
+        }
+        
+        // Return the highest similarity score
+        return max($similarities);
+    }
+
+    /**
+     * Extract data from PDF using Groq AI with page-based chunking
      */
     private function extractDataWithGroqAI($storedPath)
     {
         // Convert stored path to full system path with proper separators
         $fullPath = storage_path('app/public' . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, $storedPath));
         
-        Log::info('Starting PDF text extraction', [
+        Log::info('Starting PDF text extraction with page-based chunking', [
             'stored_path' => $storedPath,
             'full_path' => $fullPath,
             'file_exists' => file_exists($fullPath),
@@ -203,16 +465,517 @@ class PdfOrderCaptureController extends Controller
             throw new \Exception('PDF file not found at: ' . $fullPath);
         }
         
-        // Extract text from PDF
-        $pdfText = $this->extractTextFromPdf($fullPath);
+        // Get total pages and determine processing strategy
+        $totalPages = $this->getPdfPageCount($fullPath);
         
-        // Log the extracted text for debugging
-        Log::info('Extracted PDF text for AI processing', [
-            'file_path' => $storedPath,
-            'text_length' => strlen($pdfText),
-            'text_preview' => substr($pdfText, 0, 500)
+        Log::info('PDF page analysis', [
+            'total_pages' => $totalPages,
+            'file_path' => $storedPath
         ]);
         
+        // Use page-based chunking for multi-page PDFs
+        if ($totalPages > 1) {
+            Log::info('Multi-page PDF detected, using page-based chunking', [
+                'total_pages' => $totalPages
+            ]);
+            
+            return $this->extractDataWithPageBasedChunking($fullPath, $totalPages);
+        } else {
+            Log::info('Single-page PDF detected, using standard processing', [
+                'total_pages' => $totalPages
+            ]);
+            
+            // Single page - use standard processing
+            $pdfText = $this->extractTextFromPdf($fullPath);
+            return $this->extractDataSingleRequest($pdfText);
+        }
+    }
+
+    /**
+     * Get PDF page count
+     */
+    private function getPdfPageCount($pdfPath)
+    {
+        try {
+            // Try multiple methods to get page count
+            $escapedPath = escapeshellarg($pdfPath);
+            
+            // Method 1: Using pdfinfo (most reliable)
+            $pageCountCmd = "pdfinfo {$escapedPath} | grep 'Pages:' | awk '{print $2}'";
+            $pageCount = trim(shell_exec($pageCountCmd));
+            
+            if (is_numeric($pageCount) && $pageCount > 0) {
+                return (int) $pageCount;
+            }
+            
+            // Method 2: Using pdftotext to estimate pages
+            $textOutput = shell_exec("pdftotext {$escapedPath} -");
+            if ($textOutput) {
+                // Estimate pages based on form feed characters or content length
+                $formFeeds = substr_count($textOutput, "\f");
+                if ($formFeeds > 0) {
+                    return $formFeeds + 1; // Form feeds + 1 = total pages
+                }
+                
+                // Fallback: estimate based on content length
+                $estimatedPages = max(1, ceil(strlen($textOutput) / 3000)); // ~3000 chars per page
+                return min($estimatedPages, 20); // Cap at 20 pages for safety
+            }
+            
+            // Method 3: Try using qpdf if available
+            $qpdfCount = shell_exec("qpdf --show-npages {$escapedPath} 2>/dev/null");
+            if (is_numeric(trim($qpdfCount))) {
+                return (int) trim($qpdfCount);
+            }
+            
+            Log::warning('Could not determine page count, defaulting to 1', [
+                'pdf_path' => $pdfPath
+            ]);
+            
+            return 1; // Default fallback
+            
+        } catch (\Exception $e) {
+            Log::warning('Error getting PDF page count', [
+                'error' => $e->getMessage(),
+                'pdf_path' => $pdfPath
+            ]);
+            return 1; // Default fallback
+        }
+    }
+
+    /**
+     * Extract data using page-based chunking
+     */
+    private function extractDataWithPageBasedChunking($pdfPath, $totalPages)
+    {
+        try {
+            Log::info('Starting page-based chunking extraction', [
+                'total_pages' => $totalPages,
+                'pdf_path' => $pdfPath
+            ]);
+            
+            $allPageResults = [];
+            $headerInfo = null;
+            
+            // Extract text from each page
+            for ($pageNum = 1; $pageNum <= $totalPages; $pageNum++) {
+                Log::info("Processing page {$pageNum}/{$totalPages}");
+                
+                try {
+                    $pageText = $this->extractTextFromPage($pdfPath, $pageNum);
+                    
+                    if (empty(trim($pageText))) {
+                        Log::warning("Page {$pageNum} is empty, skipping");
+                        continue;
+                    }
+                    
+                    // Process this page
+                    $pageResult = $this->processPage($pageText, $pageNum, $totalPages, $headerInfo);
+                    
+                    if ($pageResult) {
+                        // Store header info from first page for context
+                        if ($pageNum === 1 && !$headerInfo) {
+                            $headerInfo = $this->extractHeaderInfo($pageResult);
+                        }
+                        
+                        $allPageResults[] = $pageResult;
+                    }
+                    
+                } catch (\Exception $e) {
+                    Log::warning("Failed to process page {$pageNum}", [
+                        'error' => $e->getMessage(),
+                        'page' => $pageNum
+                    ]);
+                    // Continue with other pages
+                }
+                
+                // Add delay between requests to avoid rate limiting
+                if ($pageNum < $totalPages) {
+                    sleep(1);
+                }
+            }
+            
+            if (empty($allPageResults)) {
+                throw new \Exception('No pages were successfully processed');
+            }
+            
+            // Merge results from all pages
+            $mergedResult = $this->mergePageResults($allPageResults);
+            
+            Log::info('Page-based chunking completed successfully', [
+                'total_pages' => $totalPages,
+                'pages_processed' => count($allPageResults),
+                'total_items_extracted' => count($mergedResult['items'] ?? []),
+                'confidence_score' => $mergedResult['confidence_score'] ?? null
+            ]);
+            
+            return $mergedResult;
+            
+        } catch (\Exception $e) {
+            Log::error('Page-based chunking extraction failed', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+                'total_pages' => $totalPages
+            ]);
+            throw $e;
+        }
+    }
+
+    /**
+     * Extract text from specific PDF page
+     */
+    private function extractTextFromPage($pdfPath, $pageNum)
+    {
+        $escapedPath = escapeshellarg($pdfPath);
+        
+        // Try different extraction methods for specific page
+        $methods = [
+            "pdftotext -f {$pageNum} -l {$pageNum} -layout {$escapedPath} -",
+            "pdftotext -f {$pageNum} -l {$pageNum} {$escapedPath} -",
+            "pdftotext -f {$pageNum} -l {$pageNum} -raw {$escapedPath} -"
+        ];
+        
+        foreach ($methods as $command) {
+            try {
+                Log::debug("Trying extraction method for page {$pageNum}", [
+                    'command' => $command
+                ]);
+                
+                $output = shell_exec($command);
+                
+                if ($output && strlen(trim($output)) > 20) {
+                    Log::info("Successfully extracted text from page {$pageNum}", [
+                        'method' => explode(' ', $command)[0],
+                        'text_length' => strlen($output),
+                        'first_100_chars' => substr($output, 0, 100)
+                    ]);
+                    return $output;
+                }
+            } catch (\Exception $e) {
+                Log::warning("Page extraction method failed for page {$pageNum}", [
+                    'method' => $command,
+                    'error' => $e->getMessage()
+                ]);
+                continue;
+            }
+        }
+        
+        Log::warning("All extraction methods failed for page {$pageNum}");
+        return '';
+    }
+
+    /**
+     * Process a single page using Groq AI
+     */
+    private function processPage($pageText, $pageNum, $totalPages, $headerInfo = null)
+    {
+        $prompt = $this->buildPagePrompt($pageText, $pageNum, $totalPages, $headerInfo);
+        
+        $requestData = [
+            'model' => config('groq.default_model'),
+            'messages' => [
+                [
+                    'role' => 'system',
+                    'content' => "You are an expert at extracting purchase order information. This is page {$pageNum} of {$totalPages}. Focus on extracting items and data from this specific page. Pay attention to number formats - commas in quantities like 7,350 are thousands separators (=7350), not decimals. Return only valid JSON."
+                ],
+                [
+                    'role' => 'user',
+                    'content' => $prompt
+                ]
+            ],
+            'temperature' => 0.1,
+            'max_tokens' => 2000
+        ];
+        
+        Log::info("Sending page {$pageNum} to Groq AI", [
+            'page_number' => $pageNum,
+            'total_pages' => $totalPages,
+            'prompt_length' => strlen($prompt)
+        ]);
+        
+        $response = Http::withHeaders([
+            'Authorization' => 'Bearer ' . config('groq.api_key'),
+            'Content-Type' => 'application/json',
+        ])
+        ->timeout(config('groq.request_timeout', 30))
+        ->post(config('groq.base_url') . '/chat/completions', $requestData);
+
+        if (!$response->successful()) {
+            Log::error("Groq AI request failed for page {$pageNum}", [
+                'status' => $response->status(),
+                'body' => $response->body()
+            ]);
+            throw new \Exception("Groq AI request failed for page {$pageNum}: " . $response->body());
+        }
+
+        $responseData = $response->json();
+        $aiResponse = $responseData['choices'][0]['message']['content'];
+        
+        Log::info("Received response from Groq AI for page {$pageNum}", [
+            'page_number' => $pageNum,
+            'raw_response' => $aiResponse,
+            'response_length' => strlen($aiResponse)
+        ]);
+        
+        // Clean and parse JSON response
+        $aiResponse = $this->cleanJsonResponse($aiResponse);
+        
+        $decodedData = json_decode($aiResponse, true);
+        
+        if (json_last_error() !== JSON_ERROR_NONE) {
+            Log::error("JSON decode error for page {$pageNum}", [
+                'page_number' => $pageNum,
+                'error' => json_last_error_msg(),
+                'response' => $aiResponse
+            ]);
+            throw new \Exception("Invalid JSON response from AI for page {$pageNum}: " . json_last_error_msg());
+        }
+        
+        // Validate and correct extracted data for this page
+        $validatedData = $this->validateAndCorrectExtractedData($decodedData);
+        
+        Log::info("Page {$pageNum} processing completed", [
+            'page_number' => $pageNum,
+            'items_extracted' => count($validatedData['items'] ?? [])
+        ]);
+        
+        return $validatedData;
+    }
+
+    /**
+     * Build prompt for page processing
+     */
+    private function buildPagePrompt($pageText, $pageNum, $totalPages, $headerInfo = null)
+    {
+        $headerContext = '';
+        if ($headerInfo && $pageNum > 1) {
+            $headerContext = "
+CONTEXT FROM FIRST PAGE:
+- Customer: {$headerInfo['customer_name']}
+- Order Number: {$headerInfo['order_number']}
+- Date: {$headerInfo['order_date']}
+- Currency: {$headerInfo['currency']}
+
+";
+        }
+
+        return "
+{$headerContext}You are processing page {$pageNum} of {$totalPages} from a purchase order document.
+
+IMPORTANT: This is page {$pageNum} of a multi-page document. Focus on extracting:
+" . ($pageNum === 1 ? "
+1. Header information (customer, order details, etc.) - THIS IS THE FIRST PAGE
+2. Items/products found on this page
+" : "
+1. Items/products found on this page (continuation from previous pages)
+2. Any additional order information if present
+") . "
+
+CRITICAL RULES FOR TABLE COLUMN IDENTIFICATION:
+- Carefully identify table headers: No., Material Code, Material Description, Delivery Date, Quantity, Qty Unit, Unit Price, Net Value
+- IGNORE the 'No.' column (line numbers like 10, 20, 30) - these are NOT quantities
+- The QUANTITY is in the 'Quantity' column, usually after the delivery date
+- Numbers with commas like '7,350' or '1,500' are THOUSANDS separators (NOT decimals)
+
+For page {$pageNum} of {$totalPages}, return ONLY valid JSON in this structure:
+
+{
+    \"page_info\": {
+        \"page_number\": {$pageNum},
+        \"total_pages\": {$totalPages}
+    },
+    \"document_type\": \"PURCHASE_ORDER or SALES_ORDER or INVOICE (if determinable)\",
+    \"order_info\": {
+        \"order_number\": \"extract P.O. No, Order No if found on this page\",
+        \"order_date\": \"extract date in YYYY-MM-DD format if found\",
+        \"expected_delivery\": \"extract delivery date in YYYY-MM-DD format if found\",
+        \"currency\": \"extract currency code if found\",
+        \"payment_terms\": \"extract payment terms if found\",
+        \"delivery_terms\": \"extract delivery terms if found\"
+    },
+    \"customer\": {
+        \"name\": \"extract customer name if found on this page\",
+        \"code\": \"extract customer code if found\",
+        \"address\": \"extract customer address if found\",
+        \"phone\": \"extract customer phone if found\",
+        \"email\": \"extract customer email if found\",
+        \"tax_id\": \"extract customer tax ID if found\"
+    },
+    \"items\": [
+        {
+            \"item_code\": \"extract material code, item code, SKU\",
+            \"name\": \"extract item name/description\",
+            \"description\": \"extract detailed description\",
+            \"quantity\": \"extract ONLY from Quantity column (convert 7,350 to 7350)\",
+            \"unit_price\": \"extract unit price as decimal number\",
+            \"uom\": \"extract unit of measure (PC, KG, etc.)\",
+            \"discount\": \"extract discount amount as number\",
+            \"tax\": \"extract tax amount as number\",
+            \"total_value\": \"extract line total/net value as number\",
+            \"validation_check\": \"verify if quantity × unit_price ≈ total_value\"
+        }
+    ],
+    \"confidence_score\": \"rate your confidence 0-100 for this page\",
+    \"page_notes\": \"any notes about this specific page\"
+}
+
+If no items are found on this page, return empty items array.
+If customer/order info is not on this page, return empty strings or null.
+
+Page {$pageNum} text to analyze:
+{$pageText}
+";
+    }
+
+    /**
+     * Extract header information from first page result
+     */
+    private function extractHeaderInfo($firstPageResult)
+    {
+        return [
+            'customer_name' => $firstPageResult['customer']['name'] ?? '',
+            'order_number' => $firstPageResult['order_info']['order_number'] ?? '',
+            'order_date' => $firstPageResult['order_info']['order_date'] ?? '',
+            'currency' => $firstPageResult['order_info']['currency'] ?? '',
+            'payment_terms' => $firstPageResult['order_info']['payment_terms'] ?? '',
+            'delivery_terms' => $firstPageResult['order_info']['delivery_terms'] ?? ''
+        ];
+    }
+
+    /**
+     * Merge results from multiple pages
+     */
+    private function mergePageResults($pageResults)
+    {
+        $merged = [
+            'document_type' => '',
+            'order_info' => [
+                'order_number' => '',
+                'order_date' => '',
+                'expected_delivery' => '',
+                'currency' => '',
+                'payment_terms' => '',
+                'delivery_terms' => ''
+            ],
+            'customer' => [
+                'name' => '',
+                'code' => '',
+                'address' => '',
+                'phone' => '',
+                'email' => '',
+                'tax_id' => ''
+            ],
+            'vendor_info' => [
+                'name' => '',
+                'address' => ''
+            ],
+            'items' => [],
+            'confidence_score' => 0,
+            'number_format_notes' => 'Processed using page-based chunking',
+            'table_structure_notes' => 'Data extracted from multiple PDF pages',
+            'processing_notes' => 'Large document processed in ' . count($pageResults) . ' pages'
+        ];
+        
+        $totalConfidence = 0;
+        $confidenceCount = 0;
+        
+        foreach ($pageResults as $pageIndex => $page) {
+            $pageNum = $pageIndex + 1;
+            
+            // Merge document type (take first non-empty)
+            if (empty($merged['document_type']) && !empty($page['document_type'])) {
+                $merged['document_type'] = $page['document_type'];
+            }
+            
+            // Merge order info (prioritize first page, then take first non-empty values)
+            foreach ($merged['order_info'] as $key => $value) {
+                if (empty($merged['order_info'][$key]) && !empty($page['order_info'][$key])) {
+                    $merged['order_info'][$key] = $page['order_info'][$key];
+                }
+            }
+            
+            // Merge customer info (prioritize first page, then take first non-empty values)
+            foreach ($merged['customer'] as $key => $value) {
+                if (empty($merged['customer'][$key]) && !empty($page['customer'][$key])) {
+                    $merged['customer'][$key] = $page['customer'][$key];
+                }
+            }
+            
+            // Merge vendor info (take first non-empty values)
+            foreach ($merged['vendor_info'] as $key => $value) {
+                if (empty($merged['vendor_info'][$key]) && !empty($page['vendor_info'][$key])) {
+                    $merged['vendor_info'][$key] = $page['vendor_info'][$key];
+                }
+            }
+            
+            // Merge items (combine all items from all pages)
+            if (!empty($page['items']) && is_array($page['items'])) {
+                foreach ($page['items'] as $item) {
+                    // Add page info to item for debugging
+                    $item['source_page'] = $pageNum;
+                    $merged['items'][] = $item;
+                }
+            }
+            
+            // Calculate average confidence
+            if (isset($page['confidence_score']) && is_numeric($page['confidence_score'])) {
+                $totalConfidence += $page['confidence_score'];
+                $confidenceCount++;
+            }
+        }
+        
+        // Calculate average confidence score
+        if ($confidenceCount > 0) {
+            $merged['confidence_score'] = round($totalConfidence / $confidenceCount);
+        }
+        
+        // Remove duplicate items based on item_code
+        $merged['items'] = $this->removeDuplicateItems($merged['items']);
+        
+        Log::info('Page merge completed', [
+            'pages_processed' => count($pageResults),
+            'total_items' => count($merged['items']),
+            'average_confidence' => $merged['confidence_score'],
+            'customer_found' => !empty($merged['customer']['name']),
+            'order_number_found' => !empty($merged['order_info']['order_number'])
+        ]);
+        
+        return $merged;
+    }
+
+    /**
+     * Remove duplicate items based on item_code
+     */
+    private function removeDuplicateItems($items)
+    {
+        $uniqueItems = [];
+        $seenCodes = [];
+        
+        foreach ($items as $item) {
+            $itemCode = $item['item_code'] ?? '';
+            
+            if (empty($itemCode) || !in_array($itemCode, $seenCodes)) {
+                $uniqueItems[] = $item;
+                if (!empty($itemCode)) {
+                    $seenCodes[] = $itemCode;
+                }
+            } else {
+                Log::info('Duplicate item removed during page merge', [
+                    'item_code' => $itemCode,
+                    'item_name' => $item['name'] ?? 'unknown',
+                    'source_page' => $item['source_page'] ?? 'unknown'
+                ]);
+            }
+        }
+        
+        return $uniqueItems;
+    }
+
+    /**
+     * Extract data using single request for single-page PDFs
+     */
+    private function extractDataSingleRequest($pdfText)
+    {
         $prompt = $this->buildGroqAIPrompt($pdfText);
         
         $requestData = [
@@ -231,8 +994,7 @@ class PdfOrderCaptureController extends Controller
             'max_tokens' => 4000
         ];
         
-        Log::info('Sending request to Groq AI with improved number parsing prompt', [
-            'model' => $requestData['model'],
+        Log::info('Sending single page request to Groq AI', [
             'prompt_length' => strlen($prompt)
         ]);
         
@@ -262,10 +1024,6 @@ class PdfOrderCaptureController extends Controller
         // Clean and parse JSON response
         $aiResponse = $this->cleanJsonResponse($aiResponse);
         
-        Log::info('Cleaned AI response', [
-            'cleaned_response' => $aiResponse
-        ]);
-        
         $decodedData = json_decode($aiResponse, true);
         
         if (json_last_error() !== JSON_ERROR_NONE) {
@@ -276,137 +1034,14 @@ class PdfOrderCaptureController extends Controller
             throw new \Exception('Invalid JSON response from AI: ' . json_last_error_msg());
         }
         
-        Log::info('Successfully decoded AI response', [
-            'decoded_data' => $decodedData
-        ]);
-        
-        // NEW: Add validation and correction step
+        // Validate and correct extracted data
         $validatedData = $this->validateAndCorrectExtractedData($decodedData);
         
-        Log::info('Data validation completed', [
-            'original_items_count' => count($decodedData['items'] ?? []),
-            'validated_items_count' => count($validatedData['items'] ?? []),
-            'validation_applied' => true
+        Log::info('Single page processing completed', [
+            'items_extracted' => count($validatedData['items'] ?? [])
         ]);
         
         return $validatedData;
-    }
-
-    /**
-     * Build improved Groq AI prompt with better table column recognition
-     * REPLACE the existing buildGroqAIPrompt method with this
-     */
-    private function buildGroqAIPrompt($pdfText)
-    {
-        return "
-You are an expert at extracting purchase order and sales order information from documents. 
-
-CRITICAL RULES FOR TABLE COLUMN IDENTIFICATION:
-- Carefully identify table headers: No., Material Code, Material Description, Delivery Date, Quantity, Qty Unit, Unit Price, Net Value
-- IGNORE the 'No.' column (line numbers like 10, 20, 30) - these are NOT quantities
-- The QUANTITY is in the 'Quantity' column, usually after the delivery date
-- Common table patterns:
-  * No. | Material Code | Description | Delivery Date | Quantity | Unit | Unit Price | Net Value
-  * 10  | VCQ5771      | WIRE CUSHION| 03.JUN.2025   | 7,350    | PC   | 0.00670   | 49.25
-  * 20  | VED4950      | CUSHION PE  | 03.JUN.2025   | 500      | PC   | 0.07950   | 39.75
-
-CRITICAL RULES FOR NUMBER EXTRACTION:
-- Numbers with commas like '7,350' or '1,500' are THOUSANDS separators (NOT decimals)
-- '7,350' means 7350 (seven thousand three hundred fifty)
-- '1,500' means 1500 (one thousand five hundred) 
-- Only periods (.) indicate decimal places like '0.00670' or '39.75'
-- Always validate quantities by checking if quantity × unit_price = total_value
-
-CRITICAL RULES FOR CUSTOMER IDENTIFICATION:
-For PURCHASE ORDERS (documents we receive):
-- The CUSTOMER = The company that ISSUED/SENT the purchase order (the buyer)
-- This is usually at the TOP of the document, in the header or letterhead
-- Look for company names like 'Yamaha Music India', 'Toyota', etc. at the document header
-- IGNORE the 'Vendor' section - that's us (the supplier receiving the order)
-
-VALIDATION RULES:
-- Cross-check extracted quantities with calculated totals
-- If quantity × unit_price ≠ total_value, re-examine the table structure
-- Pay special attention to comma usage in different number formats
-- Verify you're reading from the correct column (not line numbers)
-
-TABLE PARSING INSTRUCTIONS:
-1. First identify the table headers
-2. Map each column position
-3. For each item row:
-   - Skip the line number (No. column)
-   - Extract Material Code from the correct column
-   - Extract Quantity from the Quantity column (NOT the No. column)
-   - Extract Unit Price from Unit Price column
-   - Validate: Quantity × Unit Price ≈ Net Value
-
-Analyze this document text and extract information:
-
-Return ONLY valid JSON in this exact structure:
-
-{
-    \"document_type\": \"PURCHASE_ORDER or SALES_ORDER or INVOICE\",
-    \"order_info\": {
-        \"order_number\": \"extract P.O. No, Order No, SO No, etc.\",
-        \"order_date\": \"extract date in YYYY-MM-DD format\",
-        \"expected_delivery\": \"extract delivery date in YYYY-MM-DD format\",
-        \"currency\": \"extract currency code (USD, EUR, etc.)\",
-        \"payment_terms\": \"extract payment terms\",
-        \"delivery_terms\": \"extract delivery terms like FOB, CIF, etc.\"
-    },
-    \"customer\": {
-        \"name\": \"extract the ISSUING company name from document header\",
-        \"code\": \"extract customer code if any\",
-        \"address\": \"extract ISSUING company address (from header, not deliver-to)\",
-        \"phone\": \"extract ISSUING company phone\",
-        \"email\": \"extract ISSUING company email\",
-        \"tax_id\": \"extract ISSUING company tax ID, GSTIN, VAT number, etc.\"
-    },
-    \"vendor_info\": {
-        \"name\": \"extract supplier/vendor name from vendor section\",
-        \"address\": \"extract vendor address\"
-    },
-    \"items\": [
-        {
-            \"item_code\": \"extract material code, item code, SKU\",
-            \"name\": \"extract item name/description\",
-            \"description\": \"extract detailed description\",
-            \"quantity\": \"extract ONLY from Quantity column (convert 7,350 to 7350, 500 stays 500)\",
-            \"unit_price\": \"extract unit price as decimal number\",
-            \"uom\": \"extract unit of measure (PC, KG, etc.)\",
-            \"discount\": \"extract discount amount as number\",
-            \"tax\": \"extract tax amount as number\",
-            \"total_value\": \"extract line total/net value as number\",
-            \"validation_check\": \"verify if quantity × unit_price ≈ total_value\",
-            \"table_parsing_notes\": \"explain which column you used for quantity\"
-        }
-    ],
-    \"confidence_score\": \"rate your confidence 0-100\",
-    \"number_format_notes\": \"explain how you interpreted number formats\",
-    \"table_structure_notes\": \"describe the table structure and column mapping\"
-}
-
-SPECIFIC EXAMPLES OF CORRECT TABLE PARSING:
-Row: '20 VED4950 CUSHION PE 580X12X1 03.JUN.2025 500 PC 0.07950 39.75'
-- Line No: 20 (IGNORE this)
-- Material Code: VED4950
-- Description: CUSHION PE 580X12X1
-- Delivery Date: 03.JUN.2025
-- Quantity: 500 (USE this, NOT the line number 20)
-- Unit: PC
-- Unit Price: 0.07950
-- Net Value: 39.75
-- Validation: 500 × 0.07950 = 39.75 ✓ CORRECT
-
-WRONG EXAMPLE:
-❌ Using line number as quantity: quantity: 20, validation: 20 × 0.07950 = 1.59 ≠ 39.75
-
-CORRECT EXAMPLE:
-✅ Using actual quantity: quantity: 500, validation: 500 × 0.07950 = 39.75 ≈ 39.75
-
-Document text to analyze:
-{$pdfText}
-";
     }
 
     /**
@@ -432,7 +1067,6 @@ Document text to analyze:
 
     /**
      * Enhanced validation with better error detection
-     * REPLACE the existing validateAndCorrectItemNumbers method with this
      */
     private function validateAndCorrectItemNumbers($item)
     {
@@ -462,6 +1096,7 @@ Document text to analyze:
                     'expected_total' => $totalValue,
                     'calculated_total' => $calculatedTotal,
                     'difference_percent' => $percentDifference,
+                    'source_page' => $item['source_page'] ?? 'unknown',
                     'likely_issue' => 'Possible wrong column used for quantity (line number vs actual quantity)'
                 ]);
                 
@@ -478,20 +1113,11 @@ Document text to analyze:
                             'original_quantity' => $quantity,
                             'corrected_quantity' => $correctQuantity,
                             'validation' => 'passed',
-                            'correction_method' => 'total_value / unit_price'
+                            'correction_method' => 'total_value / unit_price',
+                            'source_page' => $item['source_page'] ?? 'unknown'
                         ]);
                         $quantity = $correctQuantity;
                     }
-                }
-                
-                // Additional check: if quantity is very small (like line numbers), flag it
-                if ($quantity < 100 && $totalValue > ($quantity * $unitPrice * 5)) {
-                    Log::warning('Quantity seems too small compared to total value', [
-                        'item_code' => $item['item_code'],
-                        'quantity' => $quantity,
-                        'total_value' => $totalValue,
-                        'suggestion' => 'Might be using line number instead of actual quantity'
-                    ]);
                 }
             }
         }
@@ -542,30 +1168,6 @@ Document text to analyze:
         }
         
         return 0;
-    }
-
-    /**
-     * Try parsing as thousands separator format
-     */
-    private function parseAsThousandsSeparator($value)
-    {
-        $stringValue = (string) $value;
-        
-        // If it looks like "7.35", check if it should be "7350"
-        if (preg_match('/^(\d+)\.(\d{2,3})$/', $stringValue, $matches)) {
-            // If the decimal part is 2-3 digits, it might be thousands separator confusion
-            $integer = $matches[1];
-            $fractional = $matches[2];
-            
-            // For cases like "7.35" where 35 might be "350" 
-            if (strlen($fractional) == 2) {
-                return (float) ($integer . $fractional . '0');
-            } elseif (strlen($fractional) == 3) {
-                return (float) ($integer . $fractional);
-            }
-        }
-        
-        return $this->parseNumber($value);
     }
 
     /**
@@ -691,6 +1293,122 @@ Document text to analyze:
     }
 
     /**
+     * Build improved Groq AI prompt with better table column recognition
+     */
+    private function buildGroqAIPrompt($pdfText)
+    {
+        return "
+You are an expert at extracting purchase order and sales order information from documents. 
+
+CRITICAL RULES FOR TABLE COLUMN IDENTIFICATION:
+- Carefully identify table headers: No., Material Code, Material Description, Delivery Date, Quantity, Qty Unit, Unit Price, Net Value
+- IGNORE the 'No.' column (line numbers like 10, 20, 30) - these are NOT quantities
+- The QUANTITY is in the 'Quantity' column, usually after the delivery date
+- Common table patterns:
+  * No. | Material Code | Description | Delivery Date | Quantity | Unit | Unit Price | Net Value
+  * 10  | VCQ5771      | WIRE CUSHION| 03.JUN.2025   | 7,350    | PC   | 0.00670   | 49.25
+  * 20  | VED4950      | CUSHION PE  | 03.JUN.2025   | 500      | PC   | 0.07950   | 39.75
+
+CRITICAL RULES FOR NUMBER EXTRACTION:
+- Numbers with commas like '7,350' or '1,500' are THOUSANDS separators (NOT decimals)
+- '7,350' means 7350 (seven thousand three hundred fifty)
+- '1,500' means 1500 (one thousand five hundred) 
+- Only periods (.) indicate decimal places like '0.00670' or '39.75'
+- Always validate quantities by checking if quantity × unit_price = total_value
+
+CRITICAL RULES FOR CUSTOMER IDENTIFICATION:
+For PURCHASE ORDERS (documents we receive):
+- The CUSTOMER = The company that ISSUED/SENT the purchase order (the buyer)
+- This is usually at the TOP of the document, in the header or letterhead
+- Look for company names like 'Yamaha Music India', 'Toyota', etc. at the document header
+- IGNORE the 'Vendor' section - that's us (the supplier receiving the order)
+
+VALIDATION RULES:
+- Cross-check extracted quantities with calculated totals
+- If quantity × unit_price ≠ total_value, re-examine the table structure
+- Pay special attention to comma usage in different number formats
+- Verify you're reading from the correct column (not line numbers)
+
+TABLE PARSING INSTRUCTIONS:
+1. First identify the table headers
+2. Map each column position
+3. For each item row:
+   - Skip the line number (No. column)
+   - Extract Material Code from the correct column
+   - Extract Quantity from the Quantity column (NOT the No. column)
+   - Extract Unit Price from Unit Price column
+   - Validate: Quantity × Unit Price ≈ Net Value
+
+Analyze this document text and extract information:
+
+Return ONLY valid JSON in this exact structure:
+
+{
+    \"document_type\": \"PURCHASE_ORDER or SALES_ORDER or INVOICE\",
+    \"order_info\": {
+        \"order_number\": \"extract P.O. No, Order No, SO No, etc.\",
+        \"order_date\": \"extract date in YYYY-MM-DD format\",
+        \"expected_delivery\": \"extract delivery date in YYYY-MM-DD format\",
+        \"currency\": \"extract currency code (USD, EUR, etc.)\",
+        \"payment_terms\": \"extract payment terms\",
+        \"delivery_terms\": \"extract delivery terms like FOB, CIF, etc.\"
+    },
+    \"customer\": {
+        \"name\": \"extract the ISSUING company name from document header\",
+        \"code\": \"extract customer code if any\",
+        \"address\": \"extract ISSUING company address (from header, not deliver-to)\",
+        \"phone\": \"extract ISSUING company phone\",
+        \"email\": \"extract ISSUING company email\",
+        \"tax_id\": \"extract ISSUING company tax ID, GSTIN, VAT number, etc.\"
+    },
+    \"vendor_info\": {
+        \"name\": \"extract supplier/vendor name from vendor section\",
+        \"address\": \"extract vendor address\"
+    },
+    \"items\": [
+        {
+            \"item_code\": \"extract material code, item code, SKU\",
+            \"name\": \"extract item name/description\",
+            \"description\": \"extract detailed description\",
+            \"quantity\": \"extract ONLY from Quantity column (convert 7,350 to 7350, 500 stays 500)\",
+            \"unit_price\": \"extract unit price as decimal number\",
+            \"uom\": \"extract unit of measure (PC, KG, etc.)\",
+            \"discount\": \"extract discount amount as number\",
+            \"tax\": \"extract tax amount as number\",
+            \"total_value\": \"extract line total/net value as number\",
+            \"validation_check\": \"verify if quantity × unit_price ≈ total_value\",
+            \"table_parsing_notes\": \"explain which column you used for quantity\"
+        }
+    ],
+    \"confidence_score\": \"rate your confidence 0-100\",
+    \"number_format_notes\": \"explain how you interpreted number formats\",
+    \"table_structure_notes\": \"describe the table structure and column mapping\"
+}
+
+SPECIFIC EXAMPLES OF CORRECT TABLE PARSING:
+Row: '20 VED4950 CUSHION PE 580X12X1 03.JUN.2025 500 PC 0.07950 39.75'
+- Line No: 20 (IGNORE this)
+- Material Code: VED4950
+- Description: CUSHION PE 580X12X1
+- Delivery Date: 03.JUN.2025
+- Quantity: 500 (USE this, NOT the line number 20)
+- Unit: PC
+- Unit Price: 0.07950
+- Net Value: 39.75
+- Validation: 500 × 0.07950 = 39.75 ✓ CORRECT
+
+WRONG EXAMPLE:
+❌ Using line number as quantity: quantity: 20, validation: 20 × 0.07950 = 1.59 ≠ 39.75
+
+CORRECT EXAMPLE:
+✅ Using actual quantity: quantity: 500, validation: 500 × 0.07950 = 39.75 ≈ 39.75
+
+Document text to analyze:
+{$pdfText}
+";
+    }
+
+    /**
      * Create sales order from extracted data
      */
     private function createSalesOrderFromData($extractedData, $pdfCapture)
@@ -701,16 +1419,16 @@ Document text to analyze:
 
         // For Purchase Orders received, use the document logic
         $customerData = $extractedData['customer'];
-        
+
         // If document type is Purchase Order and customer name is empty but vendor_info exists,
         // it means AI might have confused the parties
-        if (isset($extractedData['document_type']) && 
+        if (isset($extractedData['document_type']) &&
             $extractedData['document_type'] === 'PURCHASE_ORDER' &&
             empty(trim($customerData['name'] ?? '')) &&
             !empty($extractedData['vendor_info']['name'] ?? '')) {
-            
+
             Log::info('Detected potential customer/vendor confusion, using document issuer as customer');
-            
+
             // Try to extract customer from document header or issuer
             $customerData = $this->identifyCustomerFromDocument($extractedData);
         }
@@ -733,10 +1451,10 @@ Document text to analyze:
 
         // Find or create customer
         $customer = $this->findOrCreateCustomer($customerData);
-        
+
         // Generate SO number if not provided
-        $soNumber = $extractedData['order_info']['order_number'] ?? 
-                   'SO-PDF-' . date('Ymd') . '-' . str_pad($pdfCapture->id, 4, '0', STR_PAD_LEFT);
+        $soNumber = $extractedData['order_info']['order_number'] ??
+            'SO-PDF-' . date('Ymd') . '-' . str_pad($pdfCapture->id, 4, '0', STR_PAD_LEFT);
 
         // Get currency and exchange rate
         $currencyCode = $extractedData['order_info']['currency'] ?? config('app.base_currency', 'USD');
@@ -748,22 +1466,30 @@ Document text to analyze:
         $expectedDelivery = $this->parseDate($extractedData['order_info']['expected_delivery']);
 
         // Create sales order
-        $salesOrder = SalesOrder::create([
-            'so_number' => $soNumber,
-            'so_date' => $orderDate,
-            'customer_id' => $customer->customer_id,
-            'payment_terms' => $extractedData['order_info']['payment_terms'],
-            'delivery_terms' => $extractedData['order_info']['delivery_terms'],
-            'expected_delivery' => $expectedDelivery,
-            'status' => 'Draft',
-            'currency_code' => $currencyCode,
-            'exchange_rate' => $exchangeRate,
-            'base_currency' => $baseCurrency,
-            'total_amount' => 0,
-            'tax_amount' => 0,
-            'base_currency_total' => 0,
-            'base_currency_tax' => 0
-        ]);
+        try {
+            $salesOrder = SalesOrder::create([
+                'so_number' => $soNumber,
+                'so_date' => $orderDate,
+                'customer_id' => $customer->customer_id,
+                'payment_terms' => $extractedData['order_info']['payment_terms'],
+                'delivery_terms' => $extractedData['order_info']['delivery_terms'],
+                'expected_delivery' => $expectedDelivery,
+                'status' => 'Draft',
+                'currency_code' => $currencyCode,
+                'exchange_rate' => $exchangeRate,
+                'base_currency' => $baseCurrency,
+                'total_amount' => 0,
+                'tax_amount' => 0,
+                'base_currency_total' => 0,
+                'base_currency_tax' => 0
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Failed to create SalesOrder', [
+                'error' => $e->getMessage(),
+                'extracted_data' => $extractedData
+            ]);
+            throw $e;
+        }
 
         // Create sales order lines
         $totalAmount = 0;
@@ -779,16 +1505,25 @@ Document text to analyze:
                     'item_data' => $itemData,
                     'error' => $e->getMessage()
                 ]);
+                throw $e;
             }
         }
 
         // Update order totals
-        $salesOrder->update([
-            'total_amount' => $totalAmount,
-            'tax_amount' => $taxAmount,
-            'base_currency_total' => $totalAmount * $exchangeRate,
-            'base_currency_tax' => $taxAmount * $exchangeRate
-        ]);
+        try {
+            $salesOrder->update([
+                'total_amount' => $totalAmount,
+                'tax_amount' => $taxAmount,
+                'base_currency_total' => $totalAmount * $exchangeRate,
+                'base_currency_tax' => $taxAmount * $exchangeRate
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Failed to update SalesOrder totals', [
+                'error' => $e->getMessage(),
+                'sales_order_id' => $salesOrder->so_id
+            ]);
+            throw $e;
+        }
 
         return $salesOrder;
     }
@@ -915,7 +1650,7 @@ Document text to analyze:
     }
 
     /**
-     * Find or create customer with fuzzy matching
+     * Find or create customer with fuzzy matching (Modified to NOT create new customers)
      */
     private function findOrCreateCustomer($customerData)
     {
@@ -1078,40 +1813,6 @@ Document text to analyze:
     }
 
     /**
-     * Calculate name similarity percentage
-     */
-    private function calculateNameSimilarity($name1, $name2)
-    {
-        // Use multiple similarity algorithms and take the best score
-        $similarities = [];
-        
-        // Levenshtein distance based similarity
-        $maxLen = max(strlen($name1), strlen($name2));
-        if ($maxLen > 0) {
-            $similarities[] = (1 - levenshtein($name1, $name2) / $maxLen) * 100;
-        }
-        
-        // Similar text percentage
-        $percent = 0;
-        similar_text($name1, $name2, $percent);
-        $similarities[] = $percent;
-        
-        // Word-based similarity (check how many words are common)
-        $words1 = explode(' ', $name1);
-        $words2 = explode(' ', $name2);
-        
-        $commonWords = array_intersect($words1, $words2);
-        $totalWords = count(array_unique(array_merge($words1, $words2)));
-        
-        if ($totalWords > 0) {
-            $similarities[] = (count($commonWords) / $totalWords) * 100;
-        }
-        
-        // Return the highest similarity score
-        return max($similarities);
-    }
-
-    /**
      * Find customer by keywords (for well-known companies)
      */
     private function findCustomerByKeywords($extractedName)
@@ -1173,74 +1874,94 @@ Document text to analyze:
     }
 
     /**
-     * Create sales order line
+     * Create sales order line (Modified to NOT create items if missing)
      */
     private function createSalesOrderLine($salesOrder, $itemData, $exchangeRate, $customer)
     {
-        // Find or create item
-        $item = $this->findOrCreateItem($itemData);
-        
-        // Find or create UOM
-        $uom = $this->findOrCreateUOM($itemData['uom'] ?? 'PCS');
-        
-        // Get unit price
-        $unitPrice = $itemData['unit_price'] ?? $item->sale_price ?? 0;
+        try {
+            // Find existing item - DO NOT CREATE if missing
+            $item = $this->findExistingItem($itemData);
+            
+            if (!$item) {
+                throw new \Exception('Item not found in database: ' . ($itemData['item_code'] ?? $itemData['name'] ?? 'Unknown'));
+            }
 
-        $quantity = $itemData['quantity'];
-        $discount = $itemData['discount'] ?? 0;
-        $tax = $itemData['tax'] ?? 0;
-        
-        $subtotal = $unitPrice * $quantity;
-        $total = $subtotal - $discount + $tax;
+            // Find or create UOM
+            $uom = $this->findOrCreateUOM($itemData['uom'] ?? 'PCS');
 
-        // Calculate base currency values
-        $baseUnitPrice = $unitPrice * $exchangeRate;
-        $baseSubtotal = $subtotal * $exchangeRate;
-        $baseDiscount = $discount * $exchangeRate;
-        $baseTax = $tax * $exchangeRate;
-        $baseTotal = $total * $exchangeRate;
+            // Get unit price
+            $unitPrice = $itemData['unit_price'] ?? $item->sale_price ?? 0;
 
-        return SOLine::create([
-            'so_id' => $salesOrder->so_id,
-            'item_id' => $item->item_id,
-            'unit_price' => $unitPrice,
-            'quantity' => $quantity,
-            'uom_id' => $uom->uom_id,
-            'discount' => $discount,
-            'subtotal' => $subtotal,
-            'tax' => $tax,
-            'total' => $total,
-            'base_currency_unit_price' => $baseUnitPrice,
-            'base_currency_subtotal' => $baseSubtotal,
-            'base_currency_discount' => $baseDiscount,
-            'base_currency_tax' => $baseTax,
-            'base_currency_total' => $baseTotal
-        ]);
+            $quantity = $itemData['quantity'];
+            $discount = $itemData['discount'] ?? 0;
+            $tax = $itemData['tax'] ?? 0;
+
+            $subtotal = $unitPrice * $quantity;
+            $total = $subtotal - $discount + $tax;
+
+            // Calculate base currency values
+            $baseUnitPrice = $unitPrice * $exchangeRate;
+            $baseSubtotal = $subtotal * $exchangeRate;
+            $baseDiscount = $discount * $exchangeRate;
+            $baseTax = $tax * $exchangeRate;
+            $baseTotal = $total * $exchangeRate;
+
+            return SOLine::create([
+                'so_id' => $salesOrder->so_id,
+                'item_id' => $item->item_id,
+                'unit_price' => $unitPrice,
+                'quantity' => $quantity,
+                'uom_id' => $uom->uom_id,
+                'discount' => $discount,
+                'subtotal' => $subtotal,
+                'tax' => $tax,
+                'total' => $total,
+                'base_currency_unit_price' => $baseUnitPrice,
+                'base_currency_subtotal' => $baseSubtotal,
+                'base_currency_discount' => $baseDiscount,
+                'base_currency_tax' => $baseTax,
+                'base_currency_total' => $baseTotal
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Failed to create SOLine', [
+                'error' => $e->getMessage(),
+                'item_data' => $itemData,
+                'sales_order_id' => $salesOrder->so_id
+            ]);
+            throw $e;
+        }
     }
 
     /**
-     * Find or create item
+     * Find existing item (DO NOT CREATE)
      */
-    private function findOrCreateItem($itemData)
+    private function findExistingItem($itemData)
     {
-        // Try to find existing item
-        $item = Item::where('name', 'like', '%' . $itemData['name'] . '%')
-                   ->orWhere('item_code', $itemData['item_code'] ?? '')
-                   ->first();
+        $itemCode = $itemData['item_code'] ?? null;
+        $itemName = $itemData['name'] ?? null;
 
-        if (!$item) {
-            // Create new item
-            $item = Item::create([
-                'item_code' => $itemData['item_code'] ?? 'ITEM-' . time(),
-                'name' => $itemData['name'],
-                'description' => $itemData['description'],
-                'is_sellable' => true,
-                'sale_price' => $itemData['unit_price'] ?? 0,
-                'sale_price_currency' => config('app.base_currency', 'USD')
-            ]);
+        if ($itemCode) {
+            // Try to find by item_code first
+            $item = Item::where('item_code', $itemCode)->first();
+            if ($item) {
+                return $item;
+            }
         }
 
-        return $item;
+        if ($itemName) {
+            // Try to find by name if item_code not found
+            $item = Item::where('name', 'like', '%' . $itemName . '%')->first();
+            if ($item) {
+                return $item;
+            }
+        }
+
+        // Try fuzzy matching
+        if ($itemName) {
+            return $this->findItemByFuzzyName($itemName);
+        }
+
+        return null; // DO NOT CREATE - return null if not found
     }
 
     /**
@@ -1299,6 +2020,12 @@ Document text to analyze:
         $captures = $query->orderBy('created_at', 'desc')
                          ->paginate($request->per_page ?? 20);
 
+        // Append item_validation explicitly to each capture in the paginated data
+        $captures->getCollection()->transform(function ($capture) {
+            $capture->item_validation = $capture->item_validation ?? null;
+            return $capture;
+        });
+
         return response()->json([
             'success' => true,
             'data' => $captures
@@ -1313,6 +2040,9 @@ Document text to analyze:
         $capture = PdfOrderCapture::with(['salesOrder.salesOrderLines.item', 'processor'])
                                  ->findOrFail($id);
 
+        // Append item_validation explicitly
+        $capture->item_validation = $capture->item_validation ?? null;
+
         return response()->json([
             'success' => true,
             'data' => $capture
@@ -1326,10 +2056,10 @@ Document text to analyze:
     {
         $capture = PdfOrderCapture::findOrFail($id);
         
-        if ($capture->status !== 'failed') {
+        if (!in_array($capture->status, ['failed', 'data_extracted'])) {
             return response()->json([
                 'success' => false,
-                'message' => 'Only failed captures can be retried'
+                'message' => 'Only failed or data_extracted captures can be retried'
             ], 400);
         }
 
@@ -1341,24 +2071,18 @@ Document text to analyze:
                 'processing_error' => null
             ]);
 
-            // Re-extract data
+            // Re-extract data with page-based chunking support
             $extractedData = $this->extractDataWithGroqAI($capture->file_path);
+            
+            // Validate items exist
+            $itemValidation = $this->validateItemsExist($extractedData);
             
             $capture->update([
                 'extracted_data' => $extractedData,
                 'ai_raw_response' => $extractedData,
                 'confidence_score' => $extractedData['confidence_score'] ?? null,
-                'status' => 'extracted'
-            ]);
-
-            // Create sales order
-            $salesOrder = $this->createSalesOrderFromData($extractedData, $capture);
-            
-            $capture->update([
-                'created_so_id' => $salesOrder->so_id,
-                'status' => 'so_created',
-                'processed_by' => auth()->id(),
-                'processed_at' => now()
+                'status' => 'data_extracted',
+                'item_validation' => $itemValidation
             ]);
 
             DB::commit();
@@ -1367,8 +2091,10 @@ Document text to analyze:
                 'success' => true,
                 'message' => 'PDF reprocessed successfully',
                 'data' => [
-                    'pdf_capture' => $capture,
-                    'sales_order' => $salesOrder->load('salesOrderLines.item')
+                    'pdf_capture' => $capture->fresh(),
+                    'extracted_data' => $extractedData,
+                    'item_validation' => $itemValidation,
+                    'can_create_sales_order' => empty($itemValidation['missing_items'])
                 ]
             ]);
 
@@ -1464,80 +2190,12 @@ Document text to analyze:
     }
 
     /**
-     * Preview extraction without creating sales order
+     * Preview extraction without creating sales order (DEPRECATED - use processPdf instead)
      */
     public function previewExtraction(PdfOrderCaptureRequest $request)
     {
-        try {
-            // Store PDF file temporarily (same method as processPdf)
-            $pdfFile = $request->file('pdf_file');
-            
-            if (!$pdfFile) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'No PDF file uploaded or file is invalid.'
-                ], 422);
-            }
-            
-            \Log::info('Preview: Attempting to store uploaded PDF file', [
-                'original_name' => $pdfFile->getClientOriginalName(),
-                'size' => $pdfFile->getSize(),
-                'mime_type' => $pdfFile->getMimeType(),
-                'is_valid' => $pdfFile->isValid()
-            ]);
-            
-            // Ensure temp directory exists
-            $tempPath = storage_path('app/public/temp');
-            if (!file_exists($tempPath)) {
-                mkdir($tempPath, 0777, true);
-                \Log::info('Created temp directory for PDF preview', ['path' => $tempPath]);
-            }
-            
-            $filename = time() . '_' . $pdfFile->getClientOriginalName();
-            $storedPath = \Storage::disk('public')->putFileAs('temp', $pdfFile, $filename);
-            
-            \Log::info('Preview: PDF file stored', [
-                'path' => $storedPath,
-                'exists' => \Storage::disk('public')->exists($storedPath),
-                'full_path' => storage_path('app/public/' . $storedPath),
-                'file_exists_physical' => file_exists(storage_path('app/public/' . $storedPath))
-            ]);
-            
-            // Extract data using Groq AI
-            $extractedData = $this->extractDataWithGroqAI($storedPath);
-            
-            // Clean up temporary file
-            if (\Storage::disk('public')->exists($storedPath)) {
-                \Storage::disk('public')->delete($storedPath);
-                \Log::info('Preview: Cleaned up temporary file', ['path' => $storedPath]);
-            }
-            
-            return response()->json([
-                'success' => true,
-                'message' => 'Data extracted successfully',
-                'data' => [
-                    'extracted_data' => $extractedData,
-                    'confidence_score' => $extractedData['confidence_score'] ?? null
-                ]
-            ]);
-            
-        } catch (\Exception $e) {
-            \Log::error('Preview extraction error', [
-                'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString(),
-                'file' => $request->file('pdf_file')?->getClientOriginalName()
-            ]);
-            
-            // Clean up temporary file on error
-            if (isset($storedPath) && \Storage::disk('public')->exists($storedPath)) {
-                \Storage::disk('public')->delete($storedPath);
-            }
-            
-            return response()->json([
-                'success' => false,
-                'message' => 'Failed to extract data: ' . $e->getMessage()
-            ], 500);
-        }
+        // This method is now essentially the same as processPdf since we changed the flow
+        return $this->processPdf($request);
     }
 
     /**
@@ -1558,7 +2216,7 @@ Document text to analyze:
         }
 
         $captures = PdfOrderCapture::whereIn('id', $request->capture_ids)
-                                  ->where('status', 'failed')
+                                  ->whereIn('status', ['failed', 'data_extracted'])
                                   ->get();
 
         $results = [];
@@ -1631,308 +2289,14 @@ Document text to analyze:
     }
 
     /**
-     * Debug PDF text extraction (for testing)
-     */
-    public function debugTextExtraction(Request $request)
-    {
-        try {
-            $pdfFile = $request->file('pdf_file');
-            
-            if (!$pdfFile || $pdfFile->getMimeType() !== 'application/pdf') {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Please upload a valid PDF file'
-                ], 422);
-            }
-            
-            // Store PDF file temporarily
-            $filename = 'debug/' . time() . '_' . $pdfFile->getClientOriginalName();
-            $pdfPath = $pdfFile->storeAs('public', $filename);
-            $fullPath = storage_path('app/' . $pdfPath);
-            
-            // Check if pdftotext is available
-            $pdfToTextCheck = shell_exec('which pdftotext 2>/dev/null');
-            $pdfToTextInstalled = !empty(trim($pdfToTextCheck));
-            
-            // Try different extraction methods and capture results
-            $extractionResults = [];
-            
-            if ($pdfToTextInstalled) {
-                $methods = [
-                    'default' => "pdftotext '{$fullPath}' -",
-                    'layout' => "pdftotext -layout '{$fullPath}' -",
-                    'raw' => "pdftotext -raw '{$fullPath}' -",
-                    'utf8' => "pdftotext -enc UTF-8 '{$fullPath}' -"
-                ];
-                
-                foreach ($methods as $methodName => $command) {
-                    $output = shell_exec($command);
-                    $extractionResults[$methodName] = [
-                        'success' => !empty($output) && strlen(trim($output)) > 10,
-                        'length' => $output ? strlen($output) : 0,
-                        'first_200_chars' => $output ? substr($output, 0, 200) : null
-                    ];
-                }
-            }
-            
-            // Try our main extraction method
-            $finalResult = null;
-            $finalError = null;
-            
-            try {
-                $finalResult = $this->extractTextFromPdf($fullPath);
-            } catch (\Exception $e) {
-                $finalError = $e->getMessage();
-            }
-            
-            // Clean up
-            Storage::delete($pdfPath);
-            
-            return response()->json([
-                'success' => true,
-                'data' => [
-                    'filename' => $pdfFile->getClientOriginalName(),
-                    'file_size' => $pdfFile->getSize(),
-                    'pdftotext_installed' => $pdfToTextInstalled,
-                    'pdftotext_path' => trim($pdfToTextCheck ?: 'Not found'),
-                    'extraction_methods' => $extractionResults,
-                    'final_extraction' => [
-                        'success' => $finalResult !== null,
-                        'error' => $finalError,
-                        'text_length' => $finalResult ? strlen($finalResult) : 0,
-                        'text_preview' => $finalResult ? substr($finalResult, 0, 500) : null
-                    ]
-                ]
-            ]);
-            
-        } catch (\Exception $e) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Text extraction debug failed: ' . $e->getMessage(),
-                'trace' => $e->getTraceAsString()
-            ], 500);
-        }
-    }
-
-    /**
-     * Check system requirements for PDF processing
-     */
-    public function debugSystemRequirements()
-    {
-        try {
-            // Check for pdftotext
-            $pdfToText = shell_exec('which pdftotext 2>/dev/null');
-            $pdfToTextVersion = shell_exec('pdftotext -v 2>&1');
-            
-            // Check PHP extensions
-            $extensions = [
-                'fileinfo' => extension_loaded('fileinfo'),
-                'mbstring' => extension_loaded('mbstring'),
-                'curl' => extension_loaded('curl')
-            ];
-            
-            // Check writable directories
-            $directories = [
-                'storage/app/public' => is_writable(storage_path('app/public')),
-                'storage/logs' => is_writable(storage_path('logs')),
-                'temp' => is_writable(sys_get_temp_dir())
-            ];
-            
-            // Check shell_exec availability
-            $shellExecDisabled = in_array('shell_exec', explode(',', ini_get('disable_functions')));
-            
-            return response()->json([
-                'success' => true,
-                'data' => [
-                    'pdf_tools' => [
-                        'pdftotext_installed' => !empty(trim($pdfToText)),
-                        'pdftotext_path' => trim($pdfToText ?: 'Not found'),
-                        'pdftotext_version' => trim($pdfToTextVersion ?: 'N/A')
-                    ],
-                    'php_extensions' => $extensions,
-                    'directories' => $directories,
-                    'system' => [
-                        'shell_exec_enabled' => !$shellExecDisabled,
-                        'php_version' => PHP_VERSION,
-                        'os' => PHP_OS,
-                        'upload_max_filesize' => ini_get('upload_max_filesize'),
-                        'post_max_size' => ini_get('post_max_size')
-                    ]
-                ]
-            ]);
-            
-        } catch (\Exception $e) {
-            return response()->json([
-                'success' => false,
-                'message' => 'System requirements check failed: ' . $e->getMessage()
-            ], 500);
-        }
-    }
-
-    /**
-     * Debug database table status
-     */
-    public function debugDatabaseStatus()
-    {
-        try {
-            // Check if table exists
-            $tableExists = DB::getSchemaBuilder()->hasTable('pdf_order_captures');
-            
-            // Get table columns if exists
-            $columns = [];
-            if ($tableExists) {
-                $columns = DB::getSchemaBuilder()->getColumnListing('pdf_order_captures');
-            }
-            
-            // Get recent records count
-            $totalRecords = $tableExists ? PdfOrderCapture::count() : 0;
-            $recentRecords = $tableExists ? PdfOrderCapture::orderBy('created_at', 'desc')->limit(5)->get() : [];
-            
-            // Get current constraints info
-            $constraints = [];
-            if ($tableExists) {
-                try {
-                    $constraints = DB::select("
-                        SELECT constraint_name, constraint_type 
-                        FROM information_schema.table_constraints 
-                        WHERE table_name = 'pdf_order_captures'
-                    ");
-                } catch (\Exception $e) {
-                    $constraints = ['error' => $e->getMessage()];
-                }
-            }
-            
-            return response()->json([
-                'success' => true,
-                'data' => [
-                    'table_exists' => $tableExists,
-                    'columns' => $columns,
-                    'total_records' => $totalRecords,
-                    'recent_records' => $recentRecords,
-                    'model_fillable' => (new PdfOrderCapture())->getFillable(),
-                    'database_constraints' => $constraints,
-                    'valid_statuses' => [
-                        'uploaded', 'processing', 'data_extracted', 
-                        'so_created', 'failed', 'cancelled'
-                    ]
-                ]
-            ]);
-            
-        } catch (\Exception $e) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Database debug failed: ' . $e->getMessage(),
-                'trace' => $e->getTraceAsString()
-            ], 500);
-        }
-    }
-
-    /**
-     * Test customer matching
-     */
-    public function debugCustomerMatching(Request $request)
-    {
-        $extractedName = $request->input('name', 'Yamaha Music India');
-        
-        try {
-            // Get all customers for reference
-            $allCustomers = Customer::select('customer_id', 'customer_code', 'name')->get();
-            
-            // Test fuzzy matching
-            $matchedCustomer = $this->findCustomerByFuzzyName($extractedName);
-            
-            // Test name cleaning
-            $cleanedName = $this->cleanCompanyName($extractedName);
-            
-            // Test similarity scores with all customers
-            $similarities = [];
-            foreach ($allCustomers as $customer) {
-                $cleanDbName = $this->cleanCompanyName($customer->name);
-                $similarity = $this->calculateNameSimilarity($cleanedName, $cleanDbName);
-                $similarities[] = [
-                    'customer_id' => $customer->customer_id,
-                    'customer_name' => $customer->name,
-                    'cleaned_name' => $cleanDbName,
-                    'similarity' => round($similarity, 2)
-                ];
-            }
-            
-            // Sort by similarity
-            usort($similarities, function($a, $b) {
-                return $b['similarity'] <=> $a['similarity'];
-            });
-            
-            return response()->json([
-                'success' => true,
-                'data' => [
-                    'extracted_name' => $extractedName,
-                    'cleaned_name' => $cleanedName,
-                    'matched_customer' => $matchedCustomer ? [
-                        'id' => $matchedCustomer->customer_id,
-                        'name' => $matchedCustomer->name,
-                        'code' => $matchedCustomer->customer_code
-                    ] : null,
-                    'all_customers_count' => $allCustomers->count(),
-                    'top_similarities' => array_slice($similarities, 0, 10)
-                ]
-            ]);
-            
-        } catch (\Exception $e) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Customer matching debug failed: ' . $e->getMessage()
-            ], 500);
-        }
-    }
-
-    /**
-     * Debug number parsing functionality
-     */
-    public function debugNumberParsing(Request $request)
-    {
-        $testNumbers = [
-            '7,350',    // Should be 7350
-            '1,500',    // Should be 1500  
-            '500',      // Should be 500
-            '0.00670',  // Should be 0.00670
-            '49.25',    // Should be 49.25
-            '7.35',     // Might be 7350 or 7.35 depending on context
-            '12,345',   // Should be 12345
-            '1,234.56', // Should be 1234.56
-            '0.75',     // Should be 0.75
-            '10.50',    // Should be 10.50
-        ];
-        
-        $results = [];
-        
-        foreach ($testNumbers as $number) {
-            $results[] = [
-                'input' => $number,
-                'parseNumber' => $this->parseNumber($number),
-                'parseAsThousands' => $this->parseAsThousandsSeparator($number),
-            ];
-        }
-        
-        return response()->json([
-            'success' => true,
-            'test_cases' => $results,
-            'parser_info' => [
-                'comma_handling' => 'Commas are treated as thousands separators if followed by exactly 3 digits',
-                'decimal_handling' => 'Periods are always treated as decimal separators',
-                'validation_logic' => 'Numbers are validated against quantity × unit_price = total_value'
-            ]
-        ]);
-    }
-
-    /**
-     * Reprocess specific capture with improved validation
+     * Reprocess specific capture with improved validation and page-based chunking
      */
     public function reprocessWithValidation($id)
     {
         $capture = PdfOrderCapture::findOrFail($id);
         
         try {
-            Log::info('Starting reprocess with validation', [
+            Log::info('Starting reprocess with validation and page-based chunking', [
                 'capture_id' => $capture->id,
                 'original_status' => $capture->status
             ]);
@@ -1945,8 +2309,11 @@ Document text to analyze:
                 'processing_error' => null
             ]);
 
-            // Re-extract data with improved parsing
+            // Re-extract data with improved parsing and page-based chunking support
             $extractedData = $this->extractDataWithGroqAI($capture->file_path);
+            
+            // Validate items exist
+            $itemValidation = $this->validateItemsExist($extractedData);
             
             // Log comparison if original data exists
             if ($capture->extracted_data) {
@@ -1957,41 +2324,23 @@ Document text to analyze:
                 'extracted_data' => $extractedData,
                 'ai_raw_response' => $extractedData,
                 'confidence_score' => $extractedData['confidence_score'] ?? null,
-                'status' => 'data_extracted'
-            ]);
-
-            // If there was a sales order, delete it first
-            if ($capture->created_so_id) {
-                $existingSO = SalesOrder::find($capture->created_so_id);
-                if ($existingSO) {
-                    // Delete SO lines first
-                    $existingSO->salesOrderLines()->delete();
-                    $existingSO->delete();
-                    Log::info('Deleted existing sales order for reprocessing', [
-                        'so_id' => $capture->created_so_id
-                    ]);
-                }
-            }
-
-            // Create new sales order with corrected data
-            $salesOrder = $this->createSalesOrderFromData($extractedData, $capture);
-            
-            $capture->update([
-                'created_so_id' => $salesOrder->so_id,
-                'status' => 'so_created',
-                'processed_by' => auth()->id(),
-                'processed_at' => now()
+                'status' => 'data_extracted',
+                'item_validation' => $itemValidation
             ]);
 
             DB::commit();
 
             return response()->json([
                 'success' => true,
-                'message' => 'PDF reprocessed with improved validation',
+                'message' => 'PDF reprocessed with improved validation and page-based chunking',
                 'data' => [
                     'pdf_capture' => $capture->fresh(),
-                    'sales_order' => $salesOrder->load('salesOrderLines.item'),
-                    'validation_applied' => true
+                    'extracted_data' => $extractedData,
+                    'item_validation' => $itemValidation,
+                    'can_create_sales_order' => empty($itemValidation['missing_items']),
+                    'validation_applied' => true,
+                    'page_chunking_used' => isset($extractedData['processing_notes']) && 
+                                          strpos($extractedData['processing_notes'], 'pages') !== false
                 ]
             ]);
 
@@ -2046,6 +2395,10 @@ Document text to analyze:
                         'original_calculation' => ($original['quantity'] ?? 0) * ($original['unit_price'] ?? 0),
                         'corrected_calculation' => ($new['quantity'] ?? 0) * ($new['unit_price'] ?? 0),
                         'expected_total' => $new['total_value'] ?? 0
+                    ],
+                    'source_info' => [
+                        'original_source' => $original['source_chunk'] ?? $original['source_page'] ?? 'unknown',
+                        'new_source' => $new['source_chunk'] ?? $new['source_page'] ?? 'unknown'
                     ]
                 ];
                 
@@ -2053,9 +2406,12 @@ Document text to analyze:
             }
         }
         
-        Log::info('Data comparison after reprocessing', [
+        Log::info('Data comparison after reprocessing with page-based chunking', [
             'items_compared' => count($comparisons),
-            'comparisons' => $comparisons
+            'comparisons' => $comparisons,
+            'processing_method' => isset($newData['processing_notes']) && 
+                                   strpos($newData['processing_notes'], 'pages') !== false ? 'page-based' : 'standard'
         ]);
     }
 }
+?>

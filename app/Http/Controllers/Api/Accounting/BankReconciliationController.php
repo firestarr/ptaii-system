@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api\Accounting;
 
+use App\Http\Controllers\Controller;
 use App\Models\Accounting\BankAccount;
 use App\Models\Accounting\BankReconciliation;
 use App\Models\Accounting\BankReconciliationLine;

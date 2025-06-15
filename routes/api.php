@@ -148,10 +148,13 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('categories/tree', [ItemCategoryController::class, 'tree']);
     Route::resource('categories', ItemCategoryController::class);
 
-    // PDF Order Capture Routes
+    // PDF Order Capture Routes (Updated with New Flow)
     Route::prefix('pdf-order-capture')->group(function () {
-        // Main processing endpoint
+        // Main processing endpoint (NOW ONLY EXTRACTS DATA - NO SO CREATION)
         Route::post('/', [App\Http\Controllers\Api\PdfOrderCaptureController::class, 'processPdf']);
+        
+        // NEW: Create Sales Order from extracted data (separate step)
+        Route::post('/{id}/create-sales-order', [App\Http\Controllers\Api\PdfOrderCaptureController::class, 'createSalesOrderFromCapture']);
         
         // History and listing
         Route::get('/', [App\Http\Controllers\Api\PdfOrderCaptureController::class, 'index']);
@@ -164,14 +167,11 @@ Route::middleware('auth:sanctum')->group(function () {
         // File operations
         Route::get('/{id}/download', [App\Http\Controllers\Api\PdfOrderCaptureController::class, 'downloadFile']);
         
-        // Preview without processing
+        // Preview without processing (DEPRECATED - now same as main processPdf)
         Route::post('/preview', [App\Http\Controllers\Api\PdfOrderCaptureController::class, 'previewExtraction']);
         
-        // Debug endpoints
-        Route::post('/debug/text-extraction', [App\Http\Controllers\Api\PdfOrderCaptureController::class, 'debugTextExtraction']);
-        Route::get('/debug/database-status', [App\Http\Controllers\Api\PdfOrderCaptureController::class, 'debugDatabaseStatus']);
-        Route::get('/debug/system-requirements', [App\Http\Controllers\Api\PdfOrderCaptureController::class, 'debugSystemRequirements']);
-        Route::post('/debug/customer-matching', [App\Http\Controllers\Api\PdfOrderCaptureController::class, 'debugCustomerMatching']);
+        // Enhanced reprocessing with chunking
+        Route::post('/{id}/reprocess-with-validation', [App\Http\Controllers\Api\PdfOrderCaptureController::class, 'reprocessWithValidation']);
         
         // Bulk operations
         Route::post('/bulk/retry', [App\Http\Controllers\Api\PdfOrderCaptureController::class, 'bulkRetry']);
@@ -179,6 +179,20 @@ Route::middleware('auth:sanctum')->group(function () {
         // Statistics and health check
         Route::get('/statistics/overview', [App\Http\Controllers\Api\PdfOrderCaptureController::class, 'getStatistics']);
         Route::get('/health/ai-service', [App\Http\Controllers\Api\PdfOrderCaptureController::class, 'checkAiServiceHealth']);
+        
+        // NEW: Item validation endpoints
+        Route::post('/validate-items', [App\Http\Controllers\Api\PdfOrderCaptureController::class, 'validateExtractedItems']);
+        Route::get('/missing-items/{id}', [App\Http\Controllers\Api\PdfOrderCaptureController::class, 'getMissingItems']);
+        
+        // Debug endpoints (Enhanced with Chunking)
+        Route::post('/debug/text-extraction', [App\Http\Controllers\Api\PdfOrderCaptureController::class, 'debugTextExtraction']);
+        Route::get('/debug/database-status', [App\Http\Controllers\Api\PdfOrderCaptureController::class, 'debugDatabaseStatus']);
+        Route::get('/debug/system-requirements', [App\Http\Controllers\Api\PdfOrderCaptureController::class, 'debugSystemRequirements']);
+        Route::post('/debug/customer-matching', [App\Http\Controllers\Api\PdfOrderCaptureController::class, 'debugCustomerMatching']);
+        Route::get('/debug/number-parsing', [App\Http\Controllers\Api\PdfOrderCaptureController::class, 'debugNumberParsing']);
+        Route::post('/debug/chunking', [App\Http\Controllers\Api\PdfOrderCaptureController::class, 'debugChunking']);
+        Route::post('/debug/chunking-strategies', [App\Http\Controllers\Api\PdfOrderCaptureController::class, 'testChunkingStrategies']);
+        Route::post('/debug/item-validation', [App\Http\Controllers\Api\PdfOrderCaptureController::class, 'debugItemValidation']);
     });
 
     // Unit of Measure Routes

@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api\Accounting;
 
+use App\Http\Controllers\Controller;
 use App\Models\Accounting\Budget;
 use App\Models\Accounting\ChartOfAccount;
 use App\Models\Accounting\AccountingPeriod;

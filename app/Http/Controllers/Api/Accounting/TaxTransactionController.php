@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api\Accounting;
 
+use App\Http\Controllers\Controller;
 use App\Models\Accounting\TaxTransaction;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;

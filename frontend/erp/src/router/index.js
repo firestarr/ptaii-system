@@ -150,7 +150,22 @@ import QualityInspectionDetail from '../views/manufacturing/QualityInspectionDet
 import QualityParameterForm from '../views/manufacturing/QualityParameterForm.vue'
 import QualityAnalysisDashboard from '../views/manufacturing/QualityAnalysisDashboard.vue'
 import SalesOrderPrint from "../views/sales/SalesOrderPrint.vue";
-
+// Accounting
+import ChartOfAccountsList from "../views/accounting/COA/ChartOfAccountsList.vue";
+import ChartOfAccountForm from "../views/accounting/COA/ChartOfAccountForm.vue";
+import ChartOfAccountDetail from "../views/accounting/COA/ChartOfAccountDetail.vue";
+import ChartOfAccountStructure from "../views/accounting/COA/ChartOfAccountStructure.vue";
+// Import komponen Asset Depreciation
+import DepreciationsList from '@/views/accounting/depreciacions/DepreciationsList.vue'
+import CalculateDepreciation from '@/views/accounting/depreciacions/CalculateDepreciation.vue'
+import DepreciationSchedule from '@/views/accounting/depreciacions/DepreciationSchedule.vue'
+import DepreciationJournalEntry from '@/views/accounting/depreciacions/DepreciationJournalEntry.vue'
+import DepreciationDetail from '@/views/accounting/depreciacions/DepreciationDetail.vue'
+// Fixed Assets imports
+import FixedAssetsList from "../views/accounting/fixasset/FixedAssetsList.vue";
+import FixedAssetForm from "../views/accounting/fixasset/FixedAssetForm.vue";
+import FixedAssetDetail from "../views/accounting/fixasset/FixedAssetDetail.vue";
+import FixedAssetReport from "../views/accounting/fixasset/FixedAssetReport.vue";
 // import SalesForecastFormModal from "../views/sales/SalesForecastFormModal.vue";
 // Import other components as needed
 
@@ -1477,7 +1492,6 @@ const routes = [
                 props: true,
                 meta: { title: 'Edit Quality Parameter' }
             },
-
             {
                 path: "/sales/orders/:id/print",
                 name: "PrintSalesOrder",
@@ -1492,8 +1506,416 @@ const routes = [
                     import("../views/sales/DeliveryOrderPrint.vue"),
                 props: true,
                 meta: { requiresAuth: true },
-    },
-            
+            },
+            {
+                path: "/accounting/chart-of-accounts",
+                name: "ChartOfAccountsList",
+                component: ChartOfAccountsList,
+                meta: { 
+                    requiresAuth: true,
+                    title: "Chart of Accounts",
+                    breadcrumb: [
+                    { text: "Accounting", to: "/accounting" },
+                    { text: "Chart of Accounts", active: true }
+                    ]
+                }
+            },
+            {
+                path: "/accounting/chart-of-accounts/create",
+                name: "CreateChartOfAccount",
+                component: ChartOfAccountForm,
+                meta: { 
+                    requiresAuth: true,
+                    title: "Create Account",
+                    breadcrumb: [
+                    { text: "Accounting", to: "/accounting" },
+                    { text: "Chart of Accounts", to: "/accounting/chart-of-accounts" },
+                    { text: "Create Account", active: true }
+                    ]
+                }
+            },
+            {
+                path: "/accounting/chart-of-accounts/structure",
+                name: "ChartOfAccountStructure",
+                component: ChartOfAccountStructure,
+                meta: { 
+                    requiresAuth: true,
+                    title: "Account Structure",
+                    breadcrumb: [
+                    { text: "Accounting", to: "/accounting" },
+                    { text: "Chart of Accounts", to: "/accounting/chart-of-accounts" },
+                    { text: "Structure Viewer", active: true }
+                    ]
+                }
+            },
+            {
+                path: "/accounting/chart-of-accounts/:id",
+                name: "ChartOfAccountDetail",
+                component: ChartOfAccountDetail,
+                props: true,
+                meta: { 
+                    requiresAuth: true,
+                    title: "Account Details",
+                    breadcrumb: [
+                    { text: "Accounting", to: "/accounting" },
+                    { text: "Chart of Accounts", to: "/accounting/chart-of-accounts" },
+                    { text: "Account Details", active: true }
+                    ]
+                }
+            },
+            {
+                path: "/accounting/chart-of-accounts/:id/edit",
+                name: "EditChartOfAccount",
+                component: ChartOfAccountForm,
+                props: true,
+                meta: { 
+                    requiresAuth: true,
+                    title: "Edit Account",
+                    breadcrumb: [
+                    { text: "Accounting", to: "/accounting" },
+                    { text: "Chart of Accounts", to: "/accounting/chart-of-accounts" },
+                    { text: "Edit Account", active: true }
+                    ]
+                }
+            },
+            // Journal Entry Management Routes
+            {
+            path: "/accounting/journal-entries",
+            name: "JournalEntryList",
+            component: () => import("../views/accounting/journal/JournalEntryList.vue"),
+            meta: { 
+                requiresAuth: true,
+                title: "Journal Entries",
+                breadcrumb: [
+                { text: "Accounting", to: "/accounting" },
+                { text: "Journal Entries", active: true }
+                ]
+            }
+            },
+            {
+            path: "/accounting/journal-entries/create",
+            name: "CreateJournalEntry",
+            component: () => import("../views/accounting/journal/JournalEntryForm.vue"),
+            meta: { 
+                requiresAuth: true,
+                title: "Create Journal Entry",
+                breadcrumb: [
+                { text: "Accounting", to: "/accounting" },
+                { text: "Journal Entries", to: "/accounting/journal-entries" },
+                { text: "Create Entry", active: true }
+                ]
+            }
+            },
+            {
+            path: "/accounting/journal-entries/:id/edit",
+            name: "EditJournalEntry",
+            component: () => import("../views/accounting/journal/JournalEntryForm.vue"),
+            props: true,
+            meta: { 
+                requiresAuth: true,
+                title: "Edit Journal Entry",
+                breadcrumb: [
+                { text: "Accounting", to: "/accounting" },
+                { text: "Journal Entries", to: "/accounting/journal-entries" },
+                { text: "Edit Entry", active: true }
+                ]
+            }
+            },
+            {
+            path: "/accounting/journal-entries/:id",
+            name: "JournalEntryDetail",
+            component: () => import("../views/accounting/journal/JournalEntryDetail.vue"),
+            props: true,
+            meta: { 
+                requiresAuth: true,
+                title: "Journal Entry Details",
+                breadcrumb: [
+                { text: "Accounting", to: "/accounting" },
+                { text: "Journal Entries", to: "/accounting/journal-entries" },
+                { text: "Entry Details", active: true }
+                ]
+            }
+            },
+            {
+            path: "/accounting/journal-entries/post",
+            name: "PostJournalEntries",
+            component: () => import("../views/accounting/journal/JournalEntryPost.vue"),
+            meta: { 
+                requiresAuth: true,
+                title: "Post Journal Entries",
+                breadcrumb: [
+                { text: "Accounting", to: "/accounting" },
+                { text: "Journal Entries", to: "/accounting/journal-entries" },
+                { text: "Post Entries", active: true }
+                ]
+            }
+            },
+            {
+            path: "/accounting/journal-entries/batch-upload",
+            name: "JournalBatchUpload",
+            component: () => import("../views/accounting/journal/JournalBatchUpload.vue"),
+            meta: { 
+                requiresAuth: true,
+                title: "Journal Batch Upload",
+                breadcrumb: [
+                { text: "Accounting", to: "/accounting" },
+                { text: "Journal Entries", to: "/accounting/journal-entries" },
+                { text: "Batch Upload", active: true }
+                ]
+            }
+            },
+            // Bank Accounts Routes
+            {
+            path: '/accounting/bank-accounts',
+            name: 'BankAccountsList',
+            component: () => import('../views/accounting/bankacc/BankAccountsList.vue'),
+            meta: { requiresAuth: true }
+            },
+            {
+            path: '/accounting/bank-accounts/create',
+            name: 'CreateBankAccount', 
+            component: () => import('../views/accounting/bankacc/BankAccountForm.vue'),
+            meta: { requiresAuth: true }
+            },
+            {
+            path: '/accounting/bank-accounts/:id',
+            name: 'BankAccountDetail',
+            component: () => import('../views/accounting/bankacc/BankAccountDetail.vue'),
+            props: true,
+            meta: { requiresAuth: true }
+            },
+            {
+            path: '/accounting/bank-accounts/:id/edit',
+            name: 'EditBankAccount',
+            component: () => import('../views/accounting/bankacc/BankAccountForm.vue'),
+            props: true,
+            meta: { requiresAuth: true }
+            },
+            {
+            path: '/accounting/bank-transactions',
+            name: 'BankTransactionHistory',
+            component: () => import('../views/accounting/bankacc/BankTransactionHistory.vue'),
+            meta: { requiresAuth: true }
+            },
+            {
+            path: '/accounting/bank-accounts/:bankId/transactions',
+            name: 'BankAccountTransactions',
+            component: () => import('../views/accounting/bankacc/BankTransactionHistory.vue'),
+            props: true,
+            meta: { requiresAuth: true }
+            },
+            // Additional utility routes for better UX
+            {
+            path: "/accounting",
+            name: "AccountingDashboard",
+            component: () => import("../views/accounting/journal/AccountingDashboard.vue"),
+            meta: { 
+                requiresAuth: true,
+                title: "Accounting Dashboard",
+                breadcrumb: [
+                { text: "Accounting", active: true }
+                ]
+            }
+            },
+            // Bank Reconciliation Routes
+            {
+            path: '/accounting/bank-reconciliations',
+            name: 'BankReconciliationList',
+            component: () => import('@/views/accounting/bankrec/BankReconciliationList.vue')
+            },
+            {
+            path: '/accounting/bank-reconciliations/create',
+            name: 'BankReconciliationCreate',
+            component: () => import('@/views/accounting/bankrec/BankReconciliationForm.vue')
+            },
+            {
+            path: '/accounting/bank-reconciliations/:id',
+            name: 'BankReconciliationDetail',
+            component: () => import('@/views/accounting/bankrec/BankReconciliationDetail.vue')
+            },
+            {
+            path: '/accounting/bank-reconciliations/:id/edit',
+            name: 'BankReconciliationEdit',
+            component: () => import('@/views/accounting/bankrec/BankReconciliationForm.vue')
+            },
+            {
+            path: '/accounting/bank-reconciliations/:id/match',
+            name: 'BankReconciliationMatch',
+            component: () => import('@/views/accounting/bankrec/BankReconciliationMatch.vue')
+            },
+            {
+            path: '/accounting/bank-reconciliations/:id/finalize',
+            name: 'BankReconciliationFinalize',
+            component: () => import('@/views/accounting/bankrec/BankReconciliationFinalize.vue')
+            },
+            // Accounting Periods Routes
+            {
+                path: '/accounting/periods',
+                name: 'AccountingPeriods',
+                component: () => import('@/views/accounting/accperiode/AccountingPeriodsListPage.vue'),
+                meta: { title: 'Accounting Periods' }
+            },
+            {
+                path: '/accounting/periods/create',
+                name: 'CreateAccountingPeriod',
+                component: () => import('@/views/accounting/accperiode/AccountingPeriodForm.vue'),
+                meta: { title: 'Create Accounting Period' }
+            },
+            {
+                path: '/accounting/periods/:id/edit',
+                name: 'EditAccountingPeriod',
+                component: () => import('@/views/accounting/accperiode/AccountingPeriodForm.vue'),
+                meta: { title: 'Edit Accounting Period' }
+            },
+            {
+                path: '/accounting/periods/:id',
+                name: 'AccountingPeriodDetail',
+                component: () => import('@/views/accounting/accperiode/AccountingPeriodDetail.vue'),
+                meta: { title: 'Period Details' }
+            },
+            {
+                path: '/accounting/periods/closing',
+                name: 'PeriodClosing',
+                component: () => import('@/views/accounting/accperiode/PeriodClosingProcess.vue'),
+                meta: { title: 'Period Closing' }
+            },
+            {
+                path: '/accounting/fiscal-years',
+                name: 'FiscalYearSetup',
+                component: () => import('@/views/accounting/accperiode/FiscalYearSetup.vue'),
+                meta: { title: 'Fiscal Year Setup' }
+            },
+            // Asset Depreciation Management Routes
+            {
+                path: '/accounting/asset-depreciations',
+                name: 'AssetDepreciationsList',
+                component: DepreciationsList,
+                meta: { 
+                requiresAuth: true,
+                title: 'Asset Depreciations',
+                breadcrumb: [
+                    { name: 'Dashboard', path: '/dashboard' },
+                    { name: 'Accounting', path: '/accounting' },
+                    { name: 'Asset Depreciations', path: '/accounting/asset-depreciations' }
+                ]
+                }
+            },
+            {
+                path: '/accounting/depreciations/calculate',
+                name: 'CalculateDepreciation',
+                component: CalculateDepreciation,
+                meta: { 
+                requiresAuth: true,
+                title: 'Calculate Depreciation',
+                breadcrumb: [
+                    { name: 'Dashboard', path: '/dashboard' },
+                    { name: 'Accounting', path: '/accounting' },
+                    { name: 'Asset Depreciations', path: '/accounting/asset-depreciations' },
+                    { name: 'Calculate Depreciation', path: '/accounting/depreciations/calculate' }
+                ]
+                }
+            },
+            {
+                path: '/accounting/asset-depreciations/schedule/:assetId?',
+                name: 'DepreciationSchedule',
+                component: DepreciationSchedule,
+                props: true,
+                meta: { 
+                requiresAuth: true,
+                title: 'Depreciation Schedule',
+                breadcrumb: [
+                    { name: 'Dashboard', path: '/dashboard' },
+                    { name: 'Accounting', path: '/accounting' },
+                    { name: 'Asset Depreciations', path: '/accounting/asset-depreciations' },
+                    { name: 'Schedule', path: '/accounting/asset-depreciations/schedule' }
+                ]
+                }
+            },
+            {
+                path: '/accounting/asset-depreciations/journal/:depreciationId',
+                name: 'DepreciationJournalEntry',
+                component: DepreciationJournalEntry,
+                props: true,
+                meta: { 
+                requiresAuth: true,
+                title: 'Journal Entry',
+                breadcrumb: [
+                    { name: 'Dashboard', path: '/dashboard' },
+                    { name: 'Accounting', path: '/accounting' },
+                    { name: 'Asset Depreciations', path: '/accounting/asset-depreciations' },
+                    { name: 'Journal Entry', path: '/accounting/asset-depreciations/journal' }
+                ]
+                }
+            },
+            {
+                path: '/accounting/asset-depreciations/:id',
+                name: 'DepreciationDetail',
+                component: DepreciationDetail,
+                props: true,
+                meta: { 
+                requiresAuth: true,
+                title: 'Depreciation Details',
+                breadcrumb: [
+                    { name: 'Dashboard', path: '/dashboard' },
+                    { name: 'Accounting', path: '/accounting' },
+                    { name: 'Asset Depreciations', path: '/accounting/asset-depreciations' },
+                    { name: 'Details', path: '/accounting/asset-depreciations/detail' }
+                ]
+                }
+            },
+            // Fixed Assets Module Routes
+            {
+                path: "/accounting/fixed-assets",
+                name: "FixedAssetsList",
+                component: FixedAssetsList,
+                meta: { 
+                    requiresAuth: true,
+                    title: "Fixed Assets List",
+                    breadcrumb: "Fixed Assets"
+                },
+            },
+            {
+                path: "/accounting/fixed-assets/create",
+                name: "CreateFixedAsset",
+                component: FixedAssetForm,
+                meta: { 
+                    requiresAuth: true,
+                    title: "Create Fixed Asset",
+                    breadcrumb: "Create Asset"
+                },
+            },
+            {
+                path: "/accounting/fixed-assets/report",
+                name: "FixedAssetReport",
+                component: FixedAssetReport,
+                meta: { 
+                    requiresAuth: true,
+                    title: "Fixed Assets Register Report",
+                    breadcrumb: "Asset Register Report"
+                },
+            },
+            {
+                path: "/accounting/fixed-assets/:id",
+                name: "FixedAssetDetail",
+                component: FixedAssetDetail,
+                props: true,
+                meta: { 
+                    requiresAuth: true,
+                    title: "Fixed Asset Detail",
+                    breadcrumb: "Asset Detail"
+                },
+            },
+            {
+                path: "/accounting/fixed-assets/:id/edit",
+                name: "EditFixedAsset",
+                component: FixedAssetForm,
+                props: true,
+                meta: { 
+                    requiresAuth: true,
+                    title: "Edit Fixed Asset",
+                    breadcrumb: "Edit Asset"
+                },
+            },
             // Dashboard specific route
             {
                 path: 'dashboard',
@@ -1526,6 +1948,7 @@ const routes = [
                 name: "UserList",
                 component: () => import("../views/admin/UsersList.vue"),
             },
+
       // Add other admin routes as needed
     ],
   },
